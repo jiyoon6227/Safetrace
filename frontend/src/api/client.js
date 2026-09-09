@@ -52,13 +52,25 @@ export async function authUpload(path, formData) {
 }
 
 // JWT는 "헤더.내용.서명" 구조라, 가운데 부분(내용)만 base64 디코딩하면
-// 토큰 만들 때 넣었던 memberId, role을 서버 호출 없이 바로 꺼내볼 수 있음
+// 토큰 만들 때 넣었던 memberId, role, name을 서버 호출 없이 바로 꺼내볼 수 있음
+//
+// 주의: atob()만 쓰면 한글 등 멀티바이트 UTF-8 문자가 깨짐(예: "곽지윤" → "ê³½ì§€ìœ¤").
+// atob는 base64를 "바이트값 그대로"만 문자열로 풀기 때문에, UTF-8로 인코딩된 다국어 텍스트를
+// 다시 UTF-8로 재해석해줘야 원래 글자가 나옴 (TextDecoder 사용).
+function decodeJwtPayload(token) {
+  const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(base64);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  const json = new TextDecoder("utf-8").decode(bytes);
+  return JSON.parse(json);
+}
+
 export function getCurrentUser() {
   const token = localStorage.getItem("token");
   if (!token) return null;
   try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return { memberId: Number(payload.sub), role: payload.role };
+    const payload = decodeJwtPayload(token);
+    return { memberId: Number(payload.sub), role: payload.role, name: payload.name };
   } catch {
     return null;
   }

@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import {
   ShieldAlert, ArrowLeft, User, Users, Bell, MapPin, Camera,
-  CheckCircle2, AlertTriangle, Trash2, UserPlus, Lock, X, ClipboardList, Sun, ChevronRight, Home, TreePine, Heart
+  CheckCircle2, AlertTriangle, Trash2, UserPlus, Lock, X, ClipboardList, Sun, ChevronRight, Home, TreePine, Heart,
+  Clock, Flame, Droplets, Mountain, Wind, Thermometer, Snowflake, Image as ImageIcon, Search, Send, FileText
 } from "lucide-react";
 import { authFetch, authUpload } from "../api/client";
+import { connectSafetyCheckSocket } from "../api/socket";
 
 const TABS = [
   { key: "info", label: "내 정보", icon: User },
@@ -38,12 +40,21 @@ const formatDateTime = (iso) => {
   return d.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 };
 
-const SAFETY_STATUS_LABEL = { PENDING: "응답 대기", SAFE: "안전해요", HELP: "도움 필요" };
+// 연도까지 표시 - "2026.09.10 04:48" 형식, 표에서 숫자 자리가 흔들리지 않도록 2자리 고정
+const formatDateTimeFull = (iso) => {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const SAFETY_STATUS_LABEL = { PENDING: "응답 대기중", SAFE: "안전 확인 완료", HELP: "도움 필요" };
 const SAFETY_STATUS_STYLE = {
-  PENDING: "bg-slate-100 text-slate-500",
+  PENDING: "bg-amber-100 text-amber-700",
   SAFE: "bg-emerald-100 text-emerald-700",
   HELP: "bg-red-100 text-red-700",
 };
+const SAFETY_STATUS_ICON = { PENDING: Clock, SAFE: CheckCircle2, HELP: AlertTriangle };
 
 // 사건(Incident) 상태 한글 라벨 - 홈화면/관제탭과 동일한 기준
 const STATUS_LABEL_KO = {
@@ -66,7 +77,13 @@ function loadDaumPostcodeScript() {
 }
 
 export default function MyPage({ onBackToHome, onLogout }) {
-  const [activeTab, setActiveTab] = useState("info");
+  // 새로고침해도 보고 있던 탭(가족 관리 등)이 유지되도록 history.state에서 복원.
+  // history.state는 새로고침해도 남아있으므로, 탭을 바꿀 때마다 같이 기록해둔다 (아래 selectTab).
+  const [activeTab, setActiveTab] = useState(window.history.state?.mypageTab || "info");
+  const selectTab = (key) => {
+    setActiveTab(key);
+    window.history.replaceState({ ...window.history.state, mypageTab: key }, "");
+  };
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
 
   const [member, setMember] = useState(null);
@@ -127,6 +144,15 @@ export default function MyPage({ onBackToHome, onLogout }) {
     loadDaumPostcodeScript();
   }, []);
 
+  // 안전확인 WebSocket - 이 화면에 머무는 동안 누가 나한테 요청을 보내거나
+  // 내가 보낸 요청에 응답이 오면 새로고침 없이 "안전확인 이력" 탭이 자동 갱신됨 (App.jsx 홈 화면과 동일한 패턴)
+  useEffect(() => {
+    const socket = connectSafetyCheckSocket(() => {
+      loadSafetyChecks();
+    });
+    return () => socket.close();
+  }, []);
+
   // 가족 한 명에 대해 내가 마지막으로 보낸 안전확인 요청의 상태 (없으면 null)
   const latestStatusFor = (familyMemberId) => {
     const relevant = sentChecks
@@ -141,7 +167,7 @@ export default function MyPage({ onBackToHome, onLogout }) {
     <div className="min-h-screen bg-slate-50 text-slate-800">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <button onClick={onBackToHome} className="flex items-center gap-2 hover:opacity-80">
+          <button onClick={onBackToHome} className="flex items-center gap-2 hover:opacity-80 cursor-pointer">
             <div className="w-8 h-8 rounded-lg bg-[#0F2540] flex items-center justify-center">
               <ShieldAlert className="w-4 h-4 text-amber-400" />
             </div>
@@ -156,9 +182,13 @@ export default function MyPage({ onBackToHome, onLogout }) {
           </div>
 
           <div className="flex items-center gap-4">
-            <button onClick={onBackToHome} className="text-xs text-slate-400 hover:text-slate-600">홈으로</button>
-            <Bell className="w-4 h-4 text-slate-300" />
-            <button onClick={onLogout} className="text-xs text-slate-400 hover:text-slate-600">로그아웃</button>
+            <button onClick={onBackToHome} className="text-xs font-semibold text-slate-500 hover:text-blue-600 cursor-pointer transition">홈으로</button>
+            <button type="button" className="relative cursor-pointer group">
+              <Bell className="w-4 h-4 text-slate-500 group-hover:text-blue-600 transition" />
+              <span className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-red-500 rounded-full ring-2 ring-white" />
+            </button>
+            <span className="w-px h-4 bg-slate-200" />
+            <button onClick={onLogout} className="text-xs font-semibold text-slate-500 hover:text-red-500 cursor-pointer transition">로그아웃</button>
           </div>
         </div>
       </header>
@@ -197,15 +227,15 @@ export default function MyPage({ onBackToHome, onLogout }) {
 
             <div className="flex items-center gap-3 ml-auto relative">
               {[
-                { icon: Users, label: "가족", value: `${families.length}명`, onClick: () => setActiveTab("family") },
-                { icon: ShieldAlert, label: "안전확인", value: `${safetyCheckTotal}건`, onClick: () => setActiveTab("safety") },
-                { icon: ClipboardList, label: "내 제보", value: `${myReports.length}건`, onClick: () => setActiveTab("reports") },
+                { icon: Users, label: "가족", value: `${families.length}명`, onClick: () => selectTab("family") },
+                { icon: ShieldAlert, label: "안전확인", value: `${safetyCheckTotal}건`, onClick: () => selectTab("safety") },
+                { icon: ClipboardList, label: "내 제보", value: `${myReports.length}건`, onClick: () => selectTab("reports") },
               ].map(({ icon: Icon, label, value, onClick }) => (
                 <button
                   key={label}
                   onClick={onClick}
                   disabled={!onClick}
-                  className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-xl px-3 py-2 hover:bg-white/20 transition disabled:cursor-default"
+                  className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-xl px-3 py-2 hover:bg-white/20 transition disabled:cursor-default cursor-pointer"
                 >
                   <div className="w-8 h-8 rounded-lg bg-amber-400 text-[#0F2540] flex items-center justify-center">
                     <Icon className="w-4 h-4" />
@@ -239,22 +269,22 @@ export default function MyPage({ onBackToHome, onLogout }) {
                 {TABS.map(({ key, label, icon: Icon }) => (
                   <button
                     key={key}
-                    onClick={() => setActiveTab(key)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold transition ${
+                    onClick={() => selectTab(key)}
+                    className={`group w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors duration-200 ${
                       activeTab === key
                         ? "bg-sky-100 text-sky-700"
-                        : "text-slate-600 hover:bg-slate-50"
-                    }`}
+                        : "text-slate-600 hover:bg-sky-50 hover:text-sky-700"
+                    } cursor-pointer`}
                   >
                     <span className="flex items-center gap-2.5">
-                      <span className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                        activeTab === key ? "bg-sky-500 text-white" : "text-slate-400"
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center transition-transform duration-200 group-hover:scale-110 ${
+                        activeTab === key ? "bg-sky-500 text-white" : "text-slate-400 group-hover:text-sky-500"
                       }`}>
                         <Icon className="w-3.5 h-3.5" />
                       </span>
                       {label}
                     </span>
-                    <ChevronRight className={`w-4 h-4 ${activeTab === key ? "text-sky-500" : "text-slate-400"}`} />
+                    <ChevronRight className={`w-4 h-4 transition-transform duration-200 group-hover:translate-x-0.5 ${activeTab === key ? "text-sky-500" : "text-slate-400 group-hover:text-sky-500"}`} />
                   </button>
                 ))}
               </nav>
@@ -266,8 +296,8 @@ export default function MyPage({ onBackToHome, onLogout }) {
                 소중한 사람들의<br />안전을<br />함께 지켜요
               </p>
               <button
-                onClick={() => setActiveTab("family")}
-                className="relative w-9 h-9 rounded-full bg-amber-400 flex items-center justify-center text-[#0F2540] shadow-md hover:bg-amber-300"
+                onClick={() => selectTab("family")}
+                className="relative w-9 h-9 rounded-full bg-amber-400 flex items-center justify-center text-[#0F2540] shadow-md hover:bg-amber-300 cursor-pointer"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -286,15 +316,15 @@ export default function MyPage({ onBackToHome, onLogout }) {
             familiesLoading={familiesLoading}
             latestStatusFor={latestStatusFor}
             regions={regions}
-            onGoToFamily={() => setActiveTab("family")}
-            onGoToRegions={() => setActiveTab("regions")}
-            onGoToNotify={() => setActiveTab("notify")}
+            onGoToFamily={() => selectTab("family")}
+            onGoToRegions={() => selectTab("regions")}
+            onGoToNotify={() => selectTab("notify")}
           />
         )}
         {activeTab === "family" && (
           <FamilyTab families={families} familiesLoading={familiesLoading} onChanged={loadFamilies} latestStatusFor={latestStatusFor} />
         )}
-        {activeTab === "safety" && <SafetyTab sentChecks={sentChecks} receivedChecks={receivedChecks} onChanged={loadSafetyChecks} />}
+        {activeTab === "safety" && <SafetyTab sentChecks={sentChecks} receivedChecks={receivedChecks} families={families} onChanged={loadSafetyChecks} />}
         {activeTab === "reports" && <ReportsTab reports={myReports} loading={reportsLoading} onChanged={loadReports} />}
         {activeTab === "regions" && <RegionsTab regions={regions} onChanged={loadRegions} />}
         {activeTab === "notify" && <NotifyTab member={member} memberLoading={memberLoading} memberError={memberError} onSaved={loadMember} />}
@@ -310,10 +340,10 @@ export default function MyPage({ onBackToHome, onLogout }) {
             <span className="text-slate-400">재난으로부터 안전한 사회, 지금 함께 만들어요.</span>
           </div>
           <div className="flex items-center gap-4 text-xs text-slate-400">
-            <button className="hover:text-slate-600">이용약관</button>
-            <button className="hover:text-slate-600">개인정보처리방침</button>
-            <button className="hover:text-slate-600">고객센터</button>
-            <button onClick={() => setShowWithdrawModal(true)} className="hover:text-red-500">회원탈퇴</button>
+            <button className="hover:text-slate-600 cursor-pointer">이용약관</button>
+            <button className="hover:text-slate-600 cursor-pointer">개인정보처리방침</button>
+            <button className="hover:text-slate-600 cursor-pointer">고객센터</button>
+            <button onClick={() => setShowWithdrawModal(true)} className="hover:text-red-500 cursor-pointer">회원탈퇴</button>
           </div>
         </div>
       </footer>
@@ -341,17 +371,17 @@ function WithdrawModal({ onClose }) {
       <div className="w-full max-w-sm bg-white rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold text-red-600">회원탈퇴</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X className="w-4 h-4" /></button>
         </div>
         <p className="text-xs text-slate-600 bg-red-50 rounded-lg p-3 mb-4">
           탈퇴하면 다시 로그인할 수 없습니다. 작성한 제보/사건 이력은 삭제되지 않고 그대로 보존됩니다. 정말 탈퇴하시겠습니까?
         </p>
         {error && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2 mb-3">{error}</p>}
         <div className="flex gap-2">
-          <button onClick={handleWithdraw} className="flex-1 text-sm font-bold text-white bg-red-600 hover:bg-red-500 rounded-lg py-2.5">
+          <button onClick={handleWithdraw} className="flex-1 text-sm font-bold text-white bg-red-600 hover:bg-red-500 rounded-lg py-2.5 cursor-pointer">
             탈퇴 확정
           </button>
-          <button onClick={onClose} className="flex-1 text-sm font-semibold text-slate-500 border border-slate-200 rounded-lg py-2.5 hover:bg-slate-50">
+          <button onClick={onClose} className="flex-1 text-sm font-semibold text-slate-500 border border-slate-200 rounded-lg py-2.5 hover:bg-slate-50 cursor-pointer">
             취소
           </button>
         </div>
@@ -387,7 +417,6 @@ function InfoTab({
         method: "PUT",
         body: JSON.stringify({
           name: draft.name,
-          email: draft.email,
           phone: draft.phone,
           address: draft.address,
           addressDetail: draft.addressDetail,
@@ -458,11 +487,11 @@ function InfoTab({
           <p className="text-xs text-slate-400 mb-5 ml-9">내 프로필 정보를 관리할 수 있습니다.</p>
 
           <div className="flex items-center gap-4 mb-5">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-sky-100 to-indigo-100 overflow-hidden flex items-center justify-center shrink-0">
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-sky-100 to-indigo-100 overflow-hidden flex items-center justify-center shrink-0 border-2 border-slate-200">
               {draft.profileImageUrl ? (
                 <img src={`http://localhost:8080${draft.profileImageUrl}`} alt="프로필" className="w-full h-full object-cover" />
               ) : (
-                <User className="w-7 h-7 text-sky-400" />
+                <User className="w-8 h-8 text-sky-400" />
               )}
             </div>
             <div>
@@ -475,20 +504,23 @@ function InfoTab({
             </div>
           </div>
 
-          <ul className="space-y-2 text-sm text-slate-600 mb-5">
+          <ul className="space-y-3 text-sm text-slate-600 mb-6">
             <li className="flex items-center gap-2"><span className="text-slate-400 w-16 shrink-0">이메일</span>{draft.email || "-"}</li>
             <li className="flex items-center gap-2"><span className="text-slate-400 w-16 shrink-0">전화번호</span>{draft.phone || "-"}</li>
             <li className="flex items-center gap-2"><span className="text-slate-400 w-16 shrink-0">거주 지역</span>{draft.address || "-"}</li>
+            {draft.addressDetail && (
+              <li className="flex items-center gap-2"><span className="text-slate-400 w-16 shrink-0">상세주소</span>{draft.addressDetail}</li>
+            )}
           </ul>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 mt-6">
             <label className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold text-[#0F2540] border border-slate-200 rounded-lg py-2.5 cursor-pointer hover:bg-sky-50 hover:border-sky-200">
               <Camera className="w-3.5 h-3.5" /> 프로필 이미지 변경
               <input type="file" accept="image/*" className="hidden" onChange={handleProfileImageChange} />
             </label>
             <button
               onClick={() => setShowPasswordModal(true)}
-              className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold text-[#0F2540] border border-slate-200 rounded-lg py-2.5 hover:bg-sky-50 hover:border-sky-200"
+              className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold text-[#0F2540] border border-slate-200 rounded-lg py-2.5 hover:bg-sky-50 hover:border-sky-200 cursor-pointer"
             >
               <Lock className="w-3.5 h-3.5" /> 비밀번호 변경
             </button>
@@ -519,10 +551,11 @@ function InfoTab({
                 <input
                   type="email"
                   value={draft.email || ""}
-                  onChange={(e) => setDraft({ ...draft, email: e.target.value })}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#0F2540]"
+                  disabled
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-400 cursor-not-allowed"
                   placeholder="example@email.com"
                 />
+                <p className="text-[11px] text-slate-400 mt-1 px-3">이메일은 변경할 수 없습니다.</p>
               </div>
             </div>
 
@@ -551,7 +584,7 @@ function InfoTab({
                 <button
                   type="button"
                   onClick={openAddressSearch}
-                  className="text-xs font-semibold text-[#0F2540] border border-slate-200 rounded-lg px-3 hover:bg-slate-50 shrink-0"
+                  className="text-xs font-semibold text-[#0F2540] border border-slate-200 rounded-lg px-3 hover:bg-slate-50 shrink-0 cursor-pointer"
                 >
                   주소 검색
                 </button>
@@ -575,14 +608,14 @@ function InfoTab({
               <button
                 type="submit"
                 disabled={saving}
-                className="flex-1 bg-[#0F2540] hover:bg-[#1B3A5C] text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50"
+                className="flex-1 bg-[#0F2540] hover:bg-[#1B3A5C] text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50 cursor-pointer"
               >
                 {saving ? "저장 중..." : "저장"}
               </button>
               <button
                 type="button"
                 onClick={handleCancel}
-                className="flex-1 text-sm font-semibold text-slate-500 border border-slate-200 rounded-lg py-2.5 hover:bg-slate-50"
+                className="flex-1 text-sm font-semibold text-slate-500 border border-slate-200 rounded-lg py-2.5 hover:bg-slate-50 cursor-pointer"
               >
                 취소
               </button>
@@ -599,7 +632,7 @@ function InfoTab({
               <span className="w-6 h-6 rounded-md bg-sky-100 text-sky-600 flex items-center justify-center"><Users className="w-3.5 h-3.5" /></span>
               가족 관리 미리보기
             </h3>
-            <button onClick={onGoToFamily} className="text-xs text-sky-600 font-semibold hover:underline">전체보기 →</button>
+            <button onClick={onGoToFamily} className="text-xs text-sky-600 font-semibold hover:underline cursor-pointer">전체보기 →</button>
           </div>
           <p className="text-xs text-slate-400 mb-3">등록된 가족 {families.length}명의 안전을 지켜주세요.</p>
           {familiesLoading ? (
@@ -641,7 +674,7 @@ function InfoTab({
               <span className="w-6 h-6 rounded-md bg-emerald-100 text-emerald-600 flex items-center justify-center"><MapPin className="w-3.5 h-3.5" /></span>
               관심 지역
             </h3>
-            <button onClick={onGoToRegions} className="text-xs text-sky-600 font-semibold hover:underline">전체보기 →</button>
+            <button onClick={onGoToRegions} className="text-xs text-sky-600 font-semibold hover:underline cursor-pointer">전체보기 →</button>
           </div>
           <p className="text-xs text-slate-400 mb-3">재난 정보를 받고 싶은 지역을 설정하세요.</p>
           <div className="flex flex-wrap gap-1.5">
@@ -655,7 +688,7 @@ function InfoTab({
               ))
             )}
           </div>
-          <button onClick={onGoToRegions} className="mt-3 text-xs font-semibold text-[#0F2540] hover:underline">
+          <button onClick={onGoToRegions} className="mt-3 text-xs font-semibold text-[#0F2540] hover:underline cursor-pointer">
             + 관심지역 추가
           </button>
         </div>
@@ -666,7 +699,7 @@ function InfoTab({
               <span className="w-6 h-6 rounded-md bg-indigo-100 text-indigo-600 flex items-center justify-center"><Bell className="w-3.5 h-3.5" /></span>
               알림 설정
             </h3>
-            <button onClick={onGoToNotify} className="text-xs text-sky-600 font-semibold hover:underline">전체보기 →</button>
+            <button onClick={onGoToNotify} className="text-xs text-sky-600 font-semibold hover:underline cursor-pointer">전체보기 →</button>
           </div>
           <p className="text-xs text-slate-400 mb-3">중요한 재난 정보와 가족의 안전 알림을 받아보세요.</p>
           <ul className="space-y-2.5 text-xs">
@@ -725,7 +758,7 @@ function PasswordChangeModal({ onClose }) {
       <div className="w-full max-w-sm bg-white rounded-2xl p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-[#0F2540]">비밀번호 변경</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X className="w-4 h-4" /></button>
         </div>
         <form onSubmit={submit} className="space-y-3">
           <div>
@@ -762,7 +795,7 @@ function PasswordChangeModal({ onClose }) {
           <button
             type="submit"
             disabled={saving}
-            className="w-full bg-[#0F2540] hover:bg-[#1B3A5C] text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50"
+            className="w-full bg-[#0F2540] hover:bg-[#1B3A5C] text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50 cursor-pointer"
           >
             {saving ? "변경 중..." : "변경하기"}
           </button>
@@ -918,7 +951,7 @@ function FamilyTab({ families, familiesLoading, onChanged, latestStatusFor }) {
                 </span>
                 <button
                   onClick={() => accept(r.relationId)}
-                  className="text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg px-3 py-1.5"
+                  className="text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg px-3 py-1.5 cursor-pointer"
                 >
                   수락
                 </button>
@@ -949,7 +982,7 @@ function FamilyTab({ families, familiesLoading, onChanged, latestStatusFor }) {
               <button
                 type="button"
                 onClick={() => { setSearchQuery(""); setSearchResults([]); }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -965,7 +998,7 @@ function FamilyTab({ families, familiesLoading, onChanged, latestStatusFor }) {
           <button
             onClick={handleSearch}
             disabled={searching}
-            className="text-sm font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-lg px-4 disabled:opacity-50"
+            className="text-sm font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-lg px-4 disabled:opacity-50 cursor-pointer"
           >
             검색
           </button>
@@ -985,7 +1018,7 @@ function FamilyTab({ families, familiesLoading, onChanged, latestStatusFor }) {
                   </div>
                   <button
                     onClick={() => sendRequest(m.loginId)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 rounded-lg px-3 py-2"
+                    className="flex items-center gap-1.5 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 rounded-lg px-3 py-2 cursor-pointer"
                   >
                     <UserPlus className="w-3.5 h-3.5" /> 가족 요청 보내기
                   </button>
@@ -1042,7 +1075,7 @@ function FamilyTab({ families, familiesLoading, onChanged, latestStatusFor }) {
                     {isPending ? (
                       <button
                         onClick={() => remove(f.relationId)}
-                        className="text-xs font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5"
+                        className="text-xs font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 cursor-pointer"
                       >
                         요청 취소
                       </button>
@@ -1051,13 +1084,13 @@ function FamilyTab({ families, familiesLoading, onChanged, latestStatusFor }) {
                         <button
                           onClick={() => requestSafetyCheck(f.familyMemberId)}
                           disabled={requestingSafetyId === f.familyMemberId}
-                          className="flex items-center gap-1 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg px-3 py-1.5 disabled:opacity-50"
+                          className="flex items-center gap-1 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg px-3 py-1.5 disabled:opacity-50 cursor-pointer"
                         >
                           <ShieldAlert className="w-3.5 h-3.5" /> 안전확인 요청
                         </button>
                         <button
                           onClick={() => remove(f.relationId)}
-                          className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg px-3 py-1.5"
+                          className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg px-3 py-1.5 cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" /> 삭제
                         </button>
@@ -1086,8 +1119,25 @@ function FamilyTab({ families, familiesLoading, onChanged, latestStatusFor }) {
 
 // ---- 안전확인 이력 --------------------------------------------------------------
 
-function SafetyTab({ sentChecks, receivedChecks, onChanged }) {
+// 상태별 아이콘 + 색이 있는 배지 (보낸/받은 요청 표에서 공용으로 사용)
+function SafetyStatusBadge({ status }) {
+  const Icon = SAFETY_STATUS_ICON[status] || Clock;
+  return (
+    <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full ${SAFETY_STATUS_STYLE[status] || "bg-slate-100 text-slate-500"}`}>
+      <Icon className="w-3 h-3 shrink-0" />{SAFETY_STATUS_LABEL[status] || status}
+    </span>
+  );
+}
+
+const SAFETY_HISTORY_FILTERS = [
+  { key: "all", label: "전체" },
+  { key: "sent", label: "보낸 요청" },
+  { key: "received", label: "받은 요청" },
+];
+
+function SafetyTab({ sentChecks, receivedChecks, families, onChanged }) {
   const [error, setError] = useState("");
+  const [filter, setFilter] = useState("all");
 
   const respond = async (checkId, status) => {
     try {
@@ -1101,88 +1151,192 @@ function SafetyTab({ sentChecks, receivedChecks, onChanged }) {
     }
   };
 
-  const pendingReceived = receivedChecks.filter((r) => r.status === "PENDING");
+  // 상대방 id로 가족 관계 라벨(형제자매/친구 등)을 찾아 이름 아래 보조 텍스트로 표시
+  const relationOf = (memberId) => families.find((f) => f.familyMemberId === memberId)?.relationType;
+
+  const showSent = filter !== "received";
+  const showReceived = filter !== "sent";
 
   return (
-    <div className="space-y-6 max-w-lg">
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-[#0F2540] flex items-center gap-2">
+          <ShieldAlert className="w-5 h-5 text-blue-600 shrink-0" /> 안전확인 이력
+        </h2>
+        <p className="text-sm text-slate-500 mt-1">가족과 지인에게 보낸 요청과 받은 요청을 확인할 수 있습니다.</p>
+      </div>
+
+      <div className="flex gap-2">
+        {SAFETY_HISTORY_FILTERS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setFilter(t.key)}
+            className={`text-sm font-bold px-4 py-2 rounded-full transition cursor-pointer ${
+              filter === t.key ? "bg-[#0F2540] text-white" : "bg-white border border-slate-200 text-slate-500 hover:border-slate-300"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {error && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
 
-      {pendingReceived.length > 0 && (
-        <div className="bg-white rounded-2xl border-2 border-[#0F2540] p-5">
-          <h3 className="font-bold text-[#0F2540] mb-3">응답이 필요한 요청</h3>
-          <ul className="space-y-3">
-            {pendingReceived.map((c) => (
-              <li key={c.checkId} className="p-3 rounded-lg border border-slate-100">
-                <p className="text-sm text-slate-700 mb-0.5">
-                  {c.requesterName}님이 안전확인을 요청했어요
-                  {c.incidentTitle && ` (${c.incidentTitle})`}
-                </p>
-                <p className="text-xs text-slate-400 mb-2">{formatDateTime(c.requestedAt)}</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => respond(c.checkId, "SAFE")}
-                    className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg py-2"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" /> 안전해요
-                  </button>
-                  <button
-                    onClick={() => respond(c.checkId, "HELP")}
-                    className="flex-1 flex items-center justify-center gap-1 text-xs font-bold text-white bg-red-600 hover:bg-red-500 rounded-lg py-2"
-                  >
-                    <AlertTriangle className="w-3.5 h-3.5" /> 도움 필요
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+      {showSent && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                <Send className="w-4 h-4 text-blue-600" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-[#0F2540]">내가 보낸 요청</h3>
+                <p className="text-xs text-slate-400 mt-0.5 truncate">내가 보낸 안전확인 요청 내역입니다.</p>
+              </div>
+            </div>
+            <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full shrink-0">총 {sentChecks.length}건</span>
+          </div>
+
+          {sentChecks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 px-5 text-center">
+              <FileText className="w-8 h-8 text-slate-300 mb-2" />
+              <p className="text-sm text-slate-400">아직 보낸 안전확인 요청이 없어요.</p>
+              <p className="text-xs text-slate-300 mt-0.5">가족이나 지인에게 안전 여부를 확인해보세요.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse table-fixed">
+                <colgroup>
+                  <col className="w-[28%]" />
+                  <col className="w-[24%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[28%]" />
+                </colgroup>
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-left text-xs font-bold text-slate-500 tracking-wide">
+                    <th className="pl-[70px] pr-5 py-3 align-middle text-left">대상</th>
+                    <th className="px-5 py-3 align-middle whitespace-nowrap text-center">요청 시간</th>
+                    <th className="px-5 py-3 align-middle whitespace-nowrap text-center">상태</th>
+                    <th className="px-5 py-3 align-middle whitespace-nowrap text-center">응답 시간</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sentChecks.map((c) => (
+                    <tr key={c.checkId} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition">
+                      <td className="px-7 py-3 align-middle">
+                        <div className="flex items-center justify-start gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
+                            <User className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 text-left">
+                            <p className="text-sm font-semibold text-slate-700 truncate">
+                              {c.targetMemberName} <span className="text-xs font-medium text-slate-400">({relationOf(c.targetMemberId) || "지인"})</span>
+                            </p>
+                            {c.incidentTitle && (
+                              <p className="text-[11px] text-slate-400 truncate">{c.incidentTitle}</p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 align-middle text-center text-xs text-slate-500 whitespace-nowrap">{formatDateTimeFull(c.requestedAt)}</td>
+                      <td className="px-5 py-3 align-middle text-center whitespace-nowrap"><div className="flex justify-center"><SafetyStatusBadge status={c.status} /></div></td>
+                      <td className="px-5 py-3 align-middle text-center text-xs text-slate-500 whitespace-nowrap">{c.confirmedAt ? formatDateTimeFull(c.confirmedAt) : "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-        <h3 className="font-bold text-[#0F2540] mb-3">내가 보낸 요청</h3>
-        {sentChecks.length === 0 ? (
-          <p className="text-sm text-slate-400">보낸 요청이 없습니다.</p>
-        ) : (
-          <ul className="space-y-2">
-            {sentChecks.map((c) => (
-              <li key={c.checkId} className="flex items-center justify-between p-2.5 rounded-lg border border-slate-100">
-                <div>
-                  <p className="text-sm text-slate-700">
-                    {c.targetMemberName}{c.incidentTitle && ` · ${c.incidentTitle}`}
-                  </p>
-                  <p className="text-[10px] text-slate-400">{formatDateTime(c.requestedAt)}</p>
-                </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${SAFETY_STATUS_STYLE[c.status]}`}>
-                  {SAFETY_STATUS_LABEL[c.status]}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {showReceived && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                <Users className="w-4 h-4 text-blue-600" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-[#0F2540]">내가 받은 요청</h3>
+                <p className="text-xs text-slate-400 mt-0.5 truncate">다른 사람이 나에게 보낸 안전확인 요청 내역입니다.</p>
+              </div>
+            </div>
+            <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full shrink-0">총 {receivedChecks.length}건</span>
+          </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-        <h3 className="font-bold text-[#0F2540] mb-3">내가 받은 요청</h3>
-        {receivedChecks.length === 0 ? (
-          <p className="text-sm text-slate-400">받은 요청이 없습니다.</p>
-        ) : (
-          <ul className="space-y-2">
-            {receivedChecks.map((c) => (
-              <li key={c.checkId} className="flex items-center justify-between p-2.5 rounded-lg border border-slate-100">
-                <div>
-                  <p className="text-sm text-slate-700">
-                    {c.requesterName}{c.incidentTitle && ` · ${c.incidentTitle}`}
-                  </p>
-                  <p className="text-[10px] text-slate-400">{formatDateTime(c.requestedAt)}</p>
-                </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${SAFETY_STATUS_STYLE[c.status]}`}>
-                  {SAFETY_STATUS_LABEL[c.status]}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+          {receivedChecks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 px-5 text-center">
+              <Users className="w-8 h-8 text-slate-300 mb-2" />
+              <p className="text-sm text-slate-400">아직 받은 안전확인 요청이 없어요.</p>
+              <p className="text-xs text-slate-300 mt-0.5">요청이 오면 여기서 확인하고 응답할 수 있어요.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse table-fixed">
+                <colgroup>
+                  <col className="w-[28%]" />
+                  <col className="w-[24%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[28%]" />
+                </colgroup>
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-left text-xs font-bold text-slate-500 tracking-wide">
+                    <th className="pl-[70px] pr-5 py-3 align-middle text-left">요청자</th>
+                    <th className="px-5 py-3 align-middle whitespace-nowrap text-center">요청 시간</th>
+                    <th className="px-5 py-3 align-middle whitespace-nowrap text-center">상태</th>
+                    <th className="px-5 py-3 align-middle whitespace-nowrap text-center">작업</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {receivedChecks.map((c) => (
+                    <tr key={c.checkId} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition">
+                      <td className="px-7 py-3 align-middle">
+                        <div className="flex items-center justify-start gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
+                            <User className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 text-left">
+                            <p className="text-sm font-semibold text-slate-700 truncate">
+                              {c.requesterName} <span className="text-xs font-medium text-slate-400">({relationOf(c.requesterId) || "지인"})</span>
+                            </p>
+                            {c.incidentTitle && (
+                              <p className="text-[11px] text-slate-400 truncate">{c.incidentTitle}</p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 align-middle text-center text-xs text-slate-500 whitespace-nowrap">{formatDateTimeFull(c.requestedAt)}</td>
+                      <td className="px-5 py-3 align-middle text-center whitespace-nowrap"><div className="flex justify-center"><SafetyStatusBadge status={c.status} /></div></td>
+                      <td className="px-5 py-3 align-middle text-center whitespace-nowrap">
+                        {c.status === "PENDING" ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => respond(c.checkId, "SAFE")}
+                              className="flex items-center gap-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-lg px-3 py-1.5 cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" /> 안전해요
+                            </button>
+                            <button
+                              onClick={() => respond(c.checkId, "HELP")}
+                              className="flex items-center gap-1 text-xs font-bold text-red-600 bg-white border border-red-200 hover:bg-red-50 rounded-lg px-3 py-1.5 cursor-pointer"
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5" /> 도움이 필요해요
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-300">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1191,6 +1345,15 @@ function SafetyTab({ sentChecks, receivedChecks, onChanged }) {
 
 // ---- 내 제보 내역 --------------------------------------------------------------
 
+const DISASTER_ICON = {
+  화재: Flame,
+  침수: Droplets,
+  산사태: Mountain,
+  강풍: Wind,
+  폭염: Thermometer,
+  한파: Snowflake,
+};
+
 const REPORT_STATUS_FILTERS = [
   { key: "all", label: "전체" },
   { key: "pending", label: "접수 대기" },
@@ -1198,9 +1361,53 @@ const REPORT_STATUS_FILTERS = [
   { key: "closed", label: "종료" },
 ];
 
+// 유형별 배지 색상
+const DISASTER_TYPE_STYLE = {
+  화재: "bg-orange-50 text-orange-600",
+  침수: "bg-blue-50 text-blue-600",
+  폭염: "bg-rose-50 text-rose-600",
+  산사태: "bg-amber-50 text-amber-700",
+  강풍: "bg-slate-100 text-slate-600",
+  한파: "bg-sky-50 text-sky-600",
+};
+
+// 유형별 글자 색상 - 제보 내역 표에서 배지 없이 텍스트만 표시할 때 사용
+const DISASTER_TYPE_TEXT_COLOR = {
+  화재: "text-orange-600",
+  침수: "text-blue-600",
+  폭염: "text-rose-600",
+  산사태: "text-amber-700",
+  강풍: "text-slate-600",
+  한파: "text-sky-600",
+};
+
+// 처리상태별 배지 색상 - 회색 배경 + 흰 글씨로 통일 (홈화면과 같은 상태값 기준)
+const REPORT_STATUS_STYLE = {
+  RECEIVED: "bg-gray-600 text-white",
+  CONFIRMING: "bg-gray-600 text-white",
+  RESPONDING: "bg-gray-600 text-white",
+  RECOVERING: "bg-gray-600 text-white",
+  CLOSED: "bg-gray-600 text-white",
+};
+
+// 처리 타임라인 상태 점 색상 (상세보기 모달용)
+const REPORT_STATUS_DOT = {
+  RECEIVED: "bg-slate-300",
+  CONFIRMING: "bg-amber-400",
+  RESPONDING: "bg-emerald-400",
+  RECOVERING: "bg-sky-400",
+  CLOSED: "bg-slate-400",
+};
+
 function ReportsTab({ reports, loading, onChanged }) {
   const [incidentInfo, setIncidentInfo] = useState({});
   const [filter, setFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortOrder, setSortOrder] = useState("newest"); // "newest" | "oldest"
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState(null); // 사진 확대 모달
+  const [detailReportId, setDetailReportId] = useState(null); // 상세보기 모달
+  const [detailTimeline, setDetailTimeline] = useState([]);
+  const [detailTimelineLoading, setDetailTimelineLoading] = useState(false);
 
   useEffect(() => {
     const uniqueIds = [...new Set(reports.filter((r) => r.incidentId).map((r) => r.incidentId))];
@@ -1215,15 +1422,53 @@ function ReportsTab({ reports, loading, onChanged }) {
   }, [reports]);
 
   const statusOf = (report) => {
-    if (!report.incidentId) return { label: "접수 대기", style: "bg-slate-100 text-slate-500", group: "pending" };
+    if (!report.incidentId) return { code: "RECEIVED", label: "접수 대기", style: REPORT_STATUS_STYLE.RECEIVED, group: "pending" };
     const incident = incidentInfo[report.incidentId];
-    if (!incident) return { label: "확인 중...", style: "bg-slate-100 text-slate-400", group: "progress" };
-    if (incident.status === "CLOSED") return { label: "종료", style: "bg-emerald-100 text-emerald-700", group: "closed" };
-    return { label: STATUS_LABEL_KO[incident.status] || incident.status, style: "bg-sky-100 text-sky-700", group: "progress" };
+    if (!incident) return { code: "RECEIVED", label: "확인 중...", style: "bg-slate-100 text-slate-400", group: "progress" };
+    if (incident.status === "CLOSED") return { code: "CLOSED", label: "종료", style: REPORT_STATUS_STYLE.CLOSED, group: "closed" };
+    return {
+      code: incident.status,
+      label: STATUS_LABEL_KO[incident.status] || incident.status,
+      style: REPORT_STATUS_STYLE[incident.status] || REPORT_STATUS_STYLE.RECEIVED,
+      group: "progress",
+    };
   };
 
-  const filtered = reports.filter((r) => filter === "all" || statusOf(r).group === filter);
-  const sorted = [...filtered].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const q = searchQuery.trim();
+  const filtered = reports
+    .filter((r) => filter === "all" || statusOf(r).group === filter)
+    .filter((r) => {
+      if (!q) return true;
+      const incident = r.incidentId ? incidentInfo[r.incidentId] : null;
+      const haystack = `${incident?.title || ""} ${r.content || ""} ${incident?.region || ""} ${r.disasterType}`;
+      return haystack.includes(q);
+    });
+  const sorted = [...filtered].sort((a, b) =>
+    sortOrder === "newest" ? new Date(b.createdAt) - new Date(a.createdAt) : new Date(a.createdAt) - new Date(b.createdAt)
+  );
+
+  const countOf = (group) => reports.filter((r) => group === "all" || statusOf(r).group === group).length;
+
+  const openDetail = async (report) => {
+    setDetailReportId(report.reportId);
+    if (!report.incidentId) {
+      setDetailTimeline([]);
+      return;
+    }
+    setDetailTimelineLoading(true);
+    try {
+      const data = await authFetch(`/api/incidents/${report.incidentId}/timeline`);
+      setDetailTimeline(data);
+    } catch {
+      setDetailTimeline([]);
+    } finally {
+      setDetailTimelineLoading(false);
+    }
+  };
+
+  const detailReport = sorted.find((r) => r.reportId === detailReportId) || reports.find((r) => r.reportId === detailReportId);
+  const detailIncident = detailReport?.incidentId ? incidentInfo[detailReport.incidentId] : null;
+  const detailStatus = detailReport ? statusOf(detailReport) : null;
 
   return (
     <div className="space-y-6">
@@ -1232,46 +1477,234 @@ function ReportsTab({ reports, loading, onChanged }) {
         <p className="text-sm text-slate-500">내가 등록한 현장제보와 처리 상태를 확인할 수 있습니다.</p>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex items-center flex-wrap gap-2">
         {REPORT_STATUS_FILTERS.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setFilter(key)}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-full transition ${
+            className={`flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-full transition cursor-pointer ${
               filter === key ? "bg-[#0F2540] text-white" : "bg-white border border-slate-200 text-slate-500 hover:border-slate-300"
             }`}
           >
             {label}
+            <span className="text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center bg-blue-500 text-white">
+              {countOf(key)}
+            </span>
           </button>
         ))}
+
+        <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-white border border-slate-200 rounded-full px-3.5 py-2 ml-auto">
+          <Search className="w-4 h-4 text-slate-400 shrink-0" />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="제보 제목이나 내용을 검색하세요."
+            className="w-full bg-transparent outline-none text-xs placeholder:text-slate-400"
+          />
+        </div>
+
+        <div className="relative shrink-0">
+          <select
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value)}
+            className="appearance-none text-xs font-bold text-slate-500 bg-white border border-slate-200 rounded-full pl-3.5 pr-8 py-2 outline-none cursor-pointer"
+          >
+            <option value="newest">최신순</option>
+            <option value="oldest">오래된순</option>
+          </select>
+          <ChevronRight className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 -rotate-90 pointer-events-none" />
+        </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         {loading ? (
-          <p className="text-sm text-slate-400">불러오는 중...</p>
+          <p className="text-sm text-slate-400 p-5">불러오는 중...</p>
         ) : sorted.length === 0 ? (
-          <p className="text-sm text-slate-400">해당하는 제보가 없습니다.</p>
+          <p className="text-sm text-slate-400 p-5">해당하는 제보가 없습니다.</p>
         ) : (
-          <ul className="space-y-2">
-            {sorted.map((r) => {
-              const status = statusOf(r);
-              return (
-                <li key={r.reportId} className="flex items-center justify-between p-3 rounded-xl border border-slate-100">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-semibold text-slate-700">{r.disasterType}</span>
-                      <span className="text-[10px] text-slate-400">제보 #{r.reportId}</span>
-                    </div>
-                    <p className="text-xs text-slate-500 truncate">{r.content || "-"}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">{formatDateTime(r.createdAt)}</p>
-                  </div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 ${status.style}`}>{status.label}</span>
-                </li>
-              );
-            })}
-          </ul>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-left text-xs font-bold text-slate-500 tracking-wide">
+                  <th className="px-5 py-4 align-middle">제보 내용</th>
+                  <th className="px-4 py-4 align-middle whitespace-nowrap text-center">유형</th>
+                  <th className="px-4 py-4 align-middle whitespace-nowrap text-center">등록일시</th>
+                  <th className="px-4 py-4 align-middle text-center">위치</th>
+                  <th className="px-4 py-4 align-middle whitespace-nowrap text-center">상태</th>
+                  <th className="px-5 py-4 align-middle whitespace-nowrap text-center">작업</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((r) => {
+                  const status = statusOf(r);
+                  const incident = r.incidentId ? incidentInfo[r.incidentId] : null;
+                  const DisasterIcon = DISASTER_ICON[r.disasterType] || Camera;
+                  const d = new Date(r.createdAt);
+                  const dateLabel = d.toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" });
+                  const timeLabel = d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+                  return (
+                    <tr key={r.reportId} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition align-middle">
+                      <td className="px-5 py-4 align-middle">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => r.photoUrl && setPreviewPhotoUrl(`http://localhost:8080${r.photoUrl}`)}
+                            className="w-14 h-14 rounded-lg bg-slate-100 overflow-hidden flex items-center justify-center shrink-0 cursor-pointer"
+                            aria-label="사진 확대"
+                          >
+                            {r.photoUrl ? (
+                              <img src={`http://localhost:8080${r.photoUrl}`} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <DisasterIcon className="w-5 h-5 text-blue-500" />
+                            )}
+                          </button>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-bold text-[#0F2540] truncate">{incident?.title || `${r.disasterType} 제보`}</span>
+                              <span className="text-[10px] text-slate-400 shrink-0">#{r.reportId}</span>
+                            </div>
+                            <p className="text-xs text-slate-500 truncate mt-0.5 max-w-[260px]">{r.content || "-"}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 align-middle whitespace-nowrap text-center">
+                        <span className={`inline-flex items-center gap-1 text-xs font-bold ${DISASTER_TYPE_TEXT_COLOR[r.disasterType] || "text-slate-600"}`}>
+                          <DisasterIcon className="w-3.5 h-3.5 shrink-0" />{r.disasterType}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 align-middle whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500">
+                          <Clock className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                          <span>
+                            <span className="block tabular-nums">{dateLabel}</span>
+                            <span className="block tabular-nums text-slate-400">{timeLabel}</span>
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 align-middle max-w-[190px]">
+                        <span className="flex items-start justify-center gap-1 text-xs text-slate-500">
+                          <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-400" />
+                          <span className="leading-snug">{incident?.region || "-"}</span>
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 align-middle whitespace-nowrap text-center">
+                        <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${status.style}`}>{status.label}</span>
+                      </td>
+                      <td className="px-5 py-4 align-middle text-center whitespace-nowrap">
+                        <button
+                          onClick={() => openDetail(r)}
+                          className="inline-flex items-center gap-1 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-1.5 hover:border-slate-300 hover:text-blue-600 transition cursor-pointer"
+                        >
+                          상세보기 <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
+
+      {/* 첨부사진 확대 미리보기 모달 */}
+      {previewPhotoUrl && (
+        <div
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4"
+          onClick={() => setPreviewPhotoUrl(null)}
+        >
+          <div className="relative max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setPreviewPhotoUrl(null)}
+              className="absolute -top-10 right-0 text-white/80 hover:text-white cursor-pointer"
+              aria-label="닫기"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <img src={previewPhotoUrl} alt="첨부사진" className="w-full max-h-[80vh] object-contain rounded-xl" />
+          </div>
+        </div>
+      )}
+
+      {/* 상세보기 모달 - 제보 내용 + 처리 타임라인 */}
+      {detailReportId && detailReport && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4"
+          onClick={() => setDetailReportId(null)}
+        >
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl max-h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+              <h2 className="font-extrabold text-[#0F2540]">제보 상세</h2>
+              <button onClick={() => setDetailReportId(null)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto px-5 py-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${detailStatus.style}`}>{detailStatus.label}</span>
+                <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${DISASTER_TYPE_STYLE[detailReport.disasterType] || "bg-slate-100 text-slate-600"}`}>
+                  {detailReport.disasterType}
+                </span>
+                <span className="text-[11px] text-slate-400">#{detailReport.reportId}</span>
+              </div>
+
+              {detailReport.photoUrl && (
+                <img
+                  src={`http://localhost:8080${detailReport.photoUrl}`}
+                  alt=""
+                  className="w-full h-44 object-cover rounded-xl cursor-pointer"
+                  onClick={() => setPreviewPhotoUrl(`http://localhost:8080${detailReport.photoUrl}`)}
+                />
+              )}
+
+              <div>
+                <h3 className="font-bold text-[#0F2540] text-sm mb-1">{detailIncident?.title || `${detailReport.disasterType} 제보`}</h3>
+                <p className="text-sm text-slate-600 leading-6">{detailReport.content || "등록된 내용이 없습니다."}</p>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <Clock className="w-3.5 h-3.5 shrink-0" />
+                {formatDateTimeFull(detailReport.createdAt)}
+              </div>
+              {detailIncident?.region && (
+                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <MapPin className="w-3.5 h-3.5 shrink-0" />
+                  {detailIncident.region}
+                </div>
+              )}
+
+              <div>
+                <h4 className="text-sm font-bold text-[#0F2540] mb-2">처리 타임라인</h4>
+                {!detailReport.incidentId ? (
+                  <p className="text-xs text-slate-400">아직 담당자 확인 전입니다.</p>
+                ) : detailTimelineLoading ? (
+                  <p className="text-xs text-slate-400">불러오는 중...</p>
+                ) : detailTimeline.length === 0 ? (
+                  <p className="text-xs text-slate-400">아직 기록이 없습니다.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {detailTimeline.map((log, i) => (
+                      <div key={log.logId} className="flex gap-2">
+                        <div className="flex flex-col items-center shrink-0">
+                          <span className={`w-3 h-3 rounded-full shrink-0 border-2 border-white shadow-sm ${REPORT_STATUS_DOT[log.newStatus] || "bg-slate-400"}`} />
+                          {i < detailTimeline.length - 1 && <div className="w-px flex-1 bg-slate-200 mt-1" />}
+                        </div>
+                        <div className="min-w-0 flex-1 rounded-lg border border-slate-100 px-2.5 py-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-bold text-[#0F2540]">{STATUS_LABEL_KO[log.newStatus] || log.newStatus}</span>
+                            <span className="text-[11px] text-slate-500 font-medium">{formatDateTime(log.changedAt)}</span>
+                          </div>
+                          {log.memo && <div className="text-xs text-slate-600 mt-0.5">{log.memo}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1320,7 +1753,7 @@ function RegionsTab({ regions, onChanged }) {
           placeholder="예: 대전 유성구"
           className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#0F2540]"
         />
-        <button type="submit" className="text-sm font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-lg px-4">
+        <button type="submit" className="text-sm font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-lg px-4 cursor-pointer">
           추가
         </button>
       </form>
@@ -1334,7 +1767,7 @@ function RegionsTab({ regions, onChanged }) {
               <MapPin className="w-3 h-3 text-slate-400" />
               {r.regionName}
               {r.isPrimary === "Y" && <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1 py-0.5 rounded">대표</span>}
-              <button onClick={() => removeRegion(r.memberRegionId)} className="text-slate-400 hover:text-red-500">
+              <button onClick={() => removeRegion(r.memberRegionId)} className="text-slate-400 hover:text-red-500 cursor-pointer">
                 <X className="w-3 h-3" />
               </button>
             </span>
@@ -1410,7 +1843,7 @@ function NotifyTab({ member: initialMember, memberLoading, memberError, onSaved 
               onClick={() => toggle(field)}
               className={`shrink-0 w-11 h-6 rounded-full transition relative ${
                 draft[field] === "Y" ? "bg-[#0F2540]" : "bg-slate-200"
-              }`}
+              } cursor-pointer`}
             >
               <span
                 className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition ${
@@ -1425,7 +1858,7 @@ function NotifyTab({ member: initialMember, memberLoading, memberError, onSaved 
       <button
         onClick={save}
         disabled={saving}
-        className="w-full bg-[#0F2540] hover:bg-[#1B3A5C] text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50"
+        className="w-full bg-[#0F2540] hover:bg-[#1B3A5C] text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50 cursor-pointer"
       >
         {saving ? "저장 중..." : "저장"}
       </button>

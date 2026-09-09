@@ -47,7 +47,7 @@ export default function SafetyCheckResponsePage({ token, onDone }) {
             </p>
             <button
               onClick={onDone}
-              className="w-full text-sm font-bold text-[#0F2540] border border-slate-200 rounded-lg py-2.5 hover:bg-slate-50"
+              className="w-full text-sm font-bold text-[#0F2540] border border-slate-200 rounded-lg py-2.5 hover:bg-slate-50 cursor-pointer"
             >
               세이프트레이스 홈으로
             </button>
@@ -65,14 +65,14 @@ export default function SafetyCheckResponsePage({ token, onDone }) {
               <button
                 onClick={() => respond("SAFE")}
                 disabled={status === "loading"}
-                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg py-3 disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg py-3 disabled:opacity-50 cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" /> 안전해요
               </button>
               <button
                 onClick={() => respond("HELP")}
                 disabled={status === "loading"}
-                className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg py-3 disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg py-3 disabled:opacity-50 cursor-pointer"
               >
                 <AlertTriangle className="w-4 h-4" /> 도움이 필요해요
               </button>

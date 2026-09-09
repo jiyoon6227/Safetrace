@@ -497,10 +497,14 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
     <div className="min-h-screen bg-slate-50 flex text-slate-800">
       {/* 사이드바 */}
       <aside className="w-56 bg-[#0F2540] text-slate-300 flex flex-col shrink-0">
-        <div className="flex items-center gap-2 px-5 py-5">
+        <button
+          type="button"
+          onClick={onBackToHome}
+          className="flex items-center gap-2 px-5 py-5 hover:opacity-80 transition text-left cursor-pointer"
+        >
           <ShieldAlert className="w-5 h-5 text-amber-400" />
           <span className="font-bold text-white">SafeTrace</span>
-        </div>
+        </button>
         <nav className="flex-1 px-3 space-y-1">
           {NAV_ITEMS.map(({ key, icon: Icon, label }) => (
             <button
@@ -508,7 +512,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
               onClick={() => key && setActiveNav(key)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${
                 activeNav === key ? "bg-white/10 text-white font-semibold" : "hover:bg-white/5"
-              }`}
+              } cursor-pointer`}
             >
               <Icon className="w-4 h-4" /> {label}
             </button>
@@ -517,7 +521,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
         <div className="px-3 pb-5">
           <button
             onClick={onLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm hover:bg-white/5"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm hover:bg-white/5 cursor-pointer"
           >
             <LogOut className="w-4 h-4" /> 로그아웃
           </button>
@@ -535,12 +539,12 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
           <div className="flex items-center gap-4">
             <button
               onClick={activeNav === "reports" ? loadReports : loadIncidents}
-              className="text-slate-400 hover:text-slate-600"
+              className="text-slate-400 hover:text-slate-600 cursor-pointer"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
             <Bell className="w-4 h-4 text-slate-400" />
-            <button onClick={onBackToHome} className="text-xs text-slate-400 hover:text-slate-600">
+            <button onClick={onBackToHome} className="text-xs text-slate-400 hover:text-slate-600 cursor-pointer">
               시민 홈으로
             </button>
           </div>
@@ -622,7 +626,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                   onClick={() => setReportTypeFilter(null)}
                   className={`text-left bg-white rounded-xl border px-4 py-2.5 min-w-[120px] transition ${
                     reportTypeFilter === null ? "border-red-300 ring-1 ring-red-200" : "border-slate-200 hover:border-slate-300"
-                  }`}
+                  } cursor-pointer`}
                 >
                   <div className="text-lg font-extrabold text-red-600">{reports.length}</div>
                   <div className="text-xs text-slate-400">미연결 제보 총 건수</div>
@@ -633,7 +637,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                     onClick={() => setReportTypeFilter(type)}
                     className={`text-left bg-white rounded-xl border px-4 py-2.5 min-w-[100px] transition ${
                       reportTypeFilter === type ? "border-[#0F2540] ring-1 ring-slate-300" : "border-slate-200 hover:border-slate-300"
-                    }`}
+                    } cursor-pointer`}
                   >
                     <div className="text-lg font-extrabold text-[#0F2540]">{count}</div>
                     <div className="text-xs text-slate-400">{type}</div>
@@ -752,7 +756,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                       <p className="text-sm text-slate-400 mb-3">관련된 기존 사건이 없습니다. 새 사건으로 등록해야 합니다.</p>
                       <button
                         onClick={() => startNewIncidentFromReport(selectedReport)}
-                        className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-lg px-3 py-2"
+                        className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-lg px-3 py-2 cursor-pointer"
                       >
                         이 제보로 새 사건 만들기
                       </button>
@@ -775,7 +779,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                           </div>
                           <button
                             onClick={() => handleLinkReport(inc.incidentId)}
-                            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-lg px-3 py-2"
+                            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-lg px-3 py-2 cursor-pointer"
                           >
                             <Link2 className="w-3.5 h-3.5" /> 이 사건에 연결
                           </button>
@@ -872,7 +876,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                         #{selectedIncident.incidentId} · {selectedIncident.region} · {selectedIncident.disasterType}
                       </p>
                     </div>
-                    <button onClick={closeDetail} className="text-slate-400 hover:text-slate-600">
+                    <button onClick={closeDetail} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                       <X className="w-4 h-4" />
                     </button>
                   </div>
@@ -894,8 +898,11 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                           {timeline.map((log) => (
                             <li key={log.logId} className="mb-3 ml-4 last:mb-0">
                               <span className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-[#0F2540] border-2 border-white" />
-                              <div className="text-xs font-semibold text-slate-700">
-                                {STATUS_LABEL[log.newStatus] || log.newStatus}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-semibold text-slate-700">
+                                  {STATUS_LABEL[log.newStatus] || log.newStatus}
+                                </span>
+                                <span className="text-[11px] text-slate-400">{formatDateTime(log.changedAt)}</span>
                               </div>
                               {log.memo && <div className="text-xs text-slate-500">{log.memo}</div>}
                             </li>
@@ -944,7 +951,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                                   <button
                                     type="button"
                                     onClick={() => setViewingPhotoUrl(`http://localhost:8080${r.photoUrl}`)}
-                                    className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-full px-3 py-1.5"
+                                    className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-full px-3 py-1.5 cursor-pointer"
                                   >
                                     <ImageIcon className="w-3.5 h-3.5" /> 첨부된 사진 보기
                                   </button>
@@ -965,7 +972,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                         <button
                           onClick={handleAssignToMe}
                           disabled={actionLoading}
-                          className="flex items-center gap-1.5 text-xs font-semibold text-[#0F2540] border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50 disabled:opacity-50"
+                          className="flex items-center gap-1.5 text-xs font-semibold text-[#0F2540] border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
                         >
                           <UserCheck className="w-3.5 h-3.5" /> 내가 담당하기
                         </button>
@@ -990,7 +997,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                         <button
                           onClick={handleChangeStatus}
                           disabled={actionLoading}
-                          className="w-full bg-[#0F2540] hover:bg-[#1B3A5C] text-white text-sm font-bold rounded-lg py-2 disabled:opacity-50"
+                          className="w-full bg-[#0F2540] hover:bg-[#1B3A5C] text-white text-sm font-bold rounded-lg py-2 disabled:opacity-50 cursor-pointer"
                         >
                           {STATUS_LABEL[nextStatus]}(으)로 전환
                         </button>
@@ -1019,7 +1026,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
         >
           <button
             onClick={() => setViewingPhotoUrl(null)}
-            className="absolute top-6 right-6 text-white hover:text-slate-300"
+            className="absolute top-6 right-6 text-white hover:text-slate-300 cursor-pointer"
           >
             <X className="w-6 h-6" />
           </button>
@@ -1044,7 +1051,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                   setLinkAfterCreateReportId(null);
                   setCreateError("");
                 }}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1131,7 +1138,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
               <button
                 type="submit"
                 disabled={createLoading}
-                className="w-full bg-[#0F2540] hover:bg-[#1B3A5C] text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50"
+                className="w-full bg-[#0F2540] hover:bg-[#1B3A5C] text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50 cursor-pointer"
               >
                 {createLoading ? "등록 중..." : "등록하고 제보 연결하기"}
               </button>

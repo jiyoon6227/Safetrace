@@ -163,7 +163,7 @@ export default function ReportForm({ onClose, onSuccess }) {
       <div className="w-full max-w-sm bg-white rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-bold text-[#0F2540]">현장제보</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -208,7 +208,7 @@ export default function ReportForm({ onClose, onSuccess }) {
                 <button
                   type="button"
                   onClick={handleRemovePhoto}
-                  className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1 hover:bg-black/80"
+                  className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1 hover:bg-black/80 cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -223,7 +223,7 @@ export default function ReportForm({ onClose, onSuccess }) {
               type="button"
               onClick={handleAddressSearch}
               disabled={geocoding}
-              className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-[#0F2540] border border-slate-200 rounded-lg py-2.5 hover:bg-slate-50 disabled:opacity-50 mb-1.5"
+              className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-[#0F2540] border border-slate-200 rounded-lg py-2.5 hover:bg-slate-50 disabled:opacity-50 mb-1.5 cursor-pointer"
             >
               {geocoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
               주소 검색
@@ -233,7 +233,7 @@ export default function ReportForm({ onClose, onSuccess }) {
               type="button"
               onClick={handleLocate}
               disabled={locating}
-              className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-[#0F2540] border border-slate-200 rounded-lg py-2.5 hover:bg-slate-50 disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-[#0F2540] border border-slate-200 rounded-lg py-2.5 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
             >
               {locating ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
               현재 위치로 자동확인
@@ -253,7 +253,7 @@ export default function ReportForm({ onClose, onSuccess }) {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full bg-[#0F2540] hover:bg-[#1B3A5C] text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50"
+            className="w-full bg-[#0F2540] hover:bg-[#1B3A5C] text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50 cursor-pointer"
           >
             {submitting ? "제보 접수 중..." : "제보하기"}
           </button>

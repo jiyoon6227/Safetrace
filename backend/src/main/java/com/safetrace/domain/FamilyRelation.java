@@ -16,4 +16,5 @@ public class FamilyRelation {
     private String familyMemberName;
     private String familyMemberLoginId;
     private String familyMemberPhone;
+    private String familyMemberProfileImageUrl;
 }

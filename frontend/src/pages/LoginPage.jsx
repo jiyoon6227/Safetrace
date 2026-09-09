@@ -123,17 +123,21 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
       setError("이름을 입력해주세요.");
       return;
     }
-    if (email.trim() && !emailVerified) {
-      setError("이메일 인증을 완료해주세요. (이메일을 건너뛰려면 비워두세요)");
+    if (!email.trim()) {
+      setError("이메일을 입력해주세요.");
       return;
     }
+    if (!emailVerified) {
+      setError("이메일 인증을 완료해주세요.");
+      return;
+    }    
 
     setLoading(true);
     try {
       const res = await fetch("http://localhost:8080/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ loginId, password, name, email: email.trim() || undefined }),
+        body: JSON.stringify({ loginId, password, name, email: email.trim() }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -149,16 +153,17 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
   };
 
   const switchMode = (m) => {
-    setMode(m);
-    setError("");
-    setPassword("");
-    setPasswordConfirm("");
-    setEmail("");
-    setEmailVerified(false);
-    setCodeSent(false);
-    setVerificationCode("");
-    setEmailNotice("");
-  };
+  setMode(m);
+  setError("");
+  setLoginId("");
+  setPassword("");
+  setPasswordConfirm("");
+  setEmail("");
+  setEmailVerified(false);
+  setCodeSent(false);
+  setVerificationCode("");
+  setEmailNotice("");
+};
 
   return (
     <div className="min-h-screen bg-slate-100 text-[#0F2540]">
@@ -168,7 +173,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
           <button
             type="button"
             onClick={onBackToHome}
-            className="flex items-center gap-3 hover:opacity-90 transition"
+            className="flex items-center gap-3 hover:opacity-90 transition cursor-pointer"
           >
             <div className="w-11 h-11 rounded-xl bg-[#0F2540] flex items-center justify-center shadow-sm">
               <ShieldAlert className="w-6 h-6 text-amber-400" strokeWidth={2.5} />
@@ -180,16 +185,16 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
           </button>
 
           <nav className="hidden lg:flex items-center gap-10 text-sm font-extrabold text-[#17385E]">
-            <button onClick={onBackToHome} className="hover:text-blue-600 transition">서비스 소개</button>
-            <button onClick={onBackToHome} className="hover:text-blue-600 transition">안전 신고</button>
-            <button onClick={onBackToHome} className="hover:text-blue-600 transition">가족 안전확인</button>
-            <button onClick={onBackToHome} className="hover:text-blue-600 transition">소식 · 알림</button>
+            <button onClick={onBackToHome} className="hover:text-blue-600 transition cursor-pointer">서비스 소개</button>
+            <button onClick={onBackToHome} className="hover:text-blue-600 transition cursor-pointer">안전 신고</button>
+            <button onClick={onBackToHome} className="hover:text-blue-600 transition cursor-pointer">가족 안전확인</button>
+            <button onClick={onBackToHome} className="hover:text-blue-600 transition cursor-pointer">소식 · 알림</button>
           </nav>
 
           <div className="flex items-center gap-3">
             <button
               type="button"
-              className="hidden sm:flex w-10 h-10 rounded-full items-center justify-center hover:bg-slate-100"
+              className="hidden sm:flex w-10 h-10 rounded-full items-center justify-center hover:bg-slate-100 cursor-pointer"
               aria-label="검색"
             >
               <Search className="w-5 h-5" />
@@ -198,7 +203,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
             <button
               type="button"
               onClick={() => switchMode("login")}
-              className="hidden sm:block text-sm font-bold text-[#17385E] px-3 py-2"
+              className="hidden sm:block text-sm font-bold text-[#17385E] px-3 py-2 cursor-pointer"
             >
               로그인
             </button>
@@ -206,7 +211,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
             <button
               type="button"
               onClick={() => switchMode("signup")}
-              className="hidden sm:flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0F2540] hover:bg-[#173b65] text-white text-sm font-extrabold shadow-sm transition"
+              className="hidden sm:flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0F2540] hover:bg-[#173b65] text-white text-sm font-extrabold shadow-sm transition cursor-pointer"
             >
               <User className="w-4 h-4" />
               회원가입
@@ -244,7 +249,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
                       mode === "login"
                         ? "bg-[#0F2540] text-white"
                         : "text-[#617892] hover:bg-slate-50"
-                    }`}
+                    } cursor-pointer`}
                   >
                     로그인
                   </button>
@@ -256,7 +261,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
                       mode === "signup"
                         ? "bg-[#0F2540] text-white"
                         : "text-[#617892] hover:bg-slate-50"
-                    }`}
+                    } cursor-pointer`}
                   >
                     회원가입
                   </button>
@@ -311,7 +316,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
                   {mode === "signup" && (
                     <div>
                       <label className="block text-xs font-extrabold text-[#294D72] mb-1.5">
-                        이메일 <span className="font-medium text-slate-400">(선택)</span>
+                        이메일
                       </label>
 
                       <div className="flex gap-2">
@@ -332,7 +337,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
                             type="button"
                             onClick={sendVerificationCode}
                             disabled={sendingCode}
-                            className="h-12 px-3.5 rounded-xl border border-[#CBD8E7] bg-white text-xs font-extrabold text-[#17385E] hover:bg-blue-50 disabled:opacity-50 whitespace-nowrap"
+                            className="h-12 px-3.5 rounded-xl border border-[#CBD8E7] bg-white text-xs font-extrabold text-[#17385E] hover:bg-blue-50 disabled:opacity-50 whitespace-nowrap cursor-pointer"
                           >
                             {sendingCode ? "발송 중" : codeSent ? "재발송" : "인증"}
                           </button>
@@ -359,7 +364,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
                             type="button"
                             onClick={verifyCode}
                             disabled={verifyingCode}
-                            className="h-10 px-4 rounded-xl bg-[#0F2540] hover:bg-[#173B65] text-white text-xs font-extrabold disabled:opacity-50"
+                            className="h-10 px-4 rounded-xl bg-[#0F2540] hover:bg-[#173B65] text-white text-xs font-extrabold disabled:opacity-50 cursor-pointer"
                           >
                             {verifyingCode ? "확인 중" : "확인"}
                           </button>
@@ -394,7 +399,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
                       <button
                         type="button"
                         onClick={() => setShowPassword((v) => !v)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#7896B6] hover:text-[#274D75]"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#7896B6] hover:text-[#274D75] cursor-pointer"
                         aria-label="비밀번호 표시 전환"
                       >
                         {showPassword
@@ -445,7 +450,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full h-12 rounded-xl bg-[#0F2540] hover:bg-[#173B65] text-white text-[15px] font-extrabold flex items-center justify-center gap-2 shadow-[0_10px_24px_rgba(15,37,64,0.16)] transition disabled:opacity-50"
+                    className="w-full h-12 rounded-xl bg-[#0F2540] hover:bg-[#173B65] text-white text-[15px] font-extrabold flex items-center justify-center gap-2 shadow-[0_10px_24px_rgba(15,37,64,0.16)] transition disabled:opacity-50 cursor-pointer"
                   >
                     {loading
                       ? "처리 중..."
@@ -458,14 +463,14 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
 
                 {mode === "login" && (
                   <div className="mt-5 flex items-center justify-center gap-4 text-xs font-bold text-[#55769A]">
-                    <button type="button" className="hover:text-blue-600">아이디 찾기</button>
+                    <button type="button" className="hover:text-blue-600 cursor-pointer">아이디 찾기</button>
                     <span className="text-slate-300">|</span>
-                    <button type="button" className="hover:text-blue-600">비밀번호 찾기</button>
+                    <button type="button" className="hover:text-blue-600 cursor-pointer">비밀번호 찾기</button>
                     <span className="text-slate-300">|</span>
                     <button
                       type="button"
                       onClick={onBackToHome}
-                      className="hover:text-blue-600"
+                      className="hover:text-blue-600 cursor-pointer"
                     >
                       홈으로 돌아가기
                     </button>

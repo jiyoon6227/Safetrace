@@ -13,6 +13,7 @@ DROP TABLE SF_INCIDENT_LOG CASCADE CONSTRAINTS;
 DROP TABLE SF_REPORT CASCADE CONSTRAINTS;
 DROP TABLE SF_INCIDENT CASCADE CONSTRAINTS;
 DROP TABLE SF_MEMBER CASCADE CONSTRAINTS;
+DROP TABLE SF_DEPARTMENT CASCADE CONSTRAINTS;
 
 DROP SEQUENCE SEQ_SF_MEMBER;
 DROP SEQUENCE SEQ_SF_MEMBER_REGION;
@@ -21,8 +22,27 @@ DROP SEQUENCE SEQ_SF_INCIDENT_LOG;
 DROP SEQUENCE SEQ_SF_REPORT;
 DROP SEQUENCE SEQ_SF_FAMILY_RELATION;
 DROP SEQUENCE SEQ_SF_SAFETY_CHECK;
+DROP SEQUENCE SEQ_SF_DEPARTMENT;
 
--- 2. 회원 테이블============================================
+-- 2. 부서 테이블============================================
+--    STAFF/ADMIN 소속 표시 및 사건 목록 필터용. SF_MEMBER가 이 테이블을 참조하므로
+--    SF_MEMBER보다 먼저 생성되어야 함.
+CREATE TABLE SF_DEPARTMENT (
+    DEPARTMENT_ID  NUMBER          PRIMARY KEY,        -- 부서 PK (SEQ_SF_DEPARTMENT로 채번)
+    NAME           VARCHAR2(100)   NOT NULL,            -- 부서명 (예: '유성구청 재난안전과')
+    REGION         VARCHAR2(100),                       -- 담당 지역 (SF_INCIDENT.REGION과 매칭용, 예: '대전 유성구')
+    PHONE          VARCHAR2(20),                        -- 대표번호 (선택)
+    CREATED_AT     TIMESTAMP       DEFAULT SYSTIMESTAMP -- 등록일시
+);
+
+COMMENT ON TABLE SF_DEPARTMENT IS '담당 부서 - STAFF 소속 표시 및 사건 목록 필터용';
+COMMENT ON COLUMN SF_DEPARTMENT.DEPARTMENT_ID IS '부서 PK (SEQ_SF_DEPARTMENT로 채번)';
+COMMENT ON COLUMN SF_DEPARTMENT.NAME IS '부서명';
+COMMENT ON COLUMN SF_DEPARTMENT.REGION IS '담당 지역 (SF_INCIDENT.REGION과 매칭용)';
+COMMENT ON COLUMN SF_DEPARTMENT.PHONE IS '대표번호';
+COMMENT ON COLUMN SF_DEPARTMENT.CREATED_AT IS '등록일시';
+
+-- 3. 회원 테이블============================================
 --    시민(USER)과 담당 직원(STAFF)을 같은 테이블에서 ROLE로 구분
 --    마이페이지(내 정보관리/알림설정/탈퇴)용 컬럼까지 포함
 CREATE TABLE SF_MEMBER (
@@ -36,6 +56,7 @@ CREATE TABLE SF_MEMBER (
     ADDRESS                   VARCHAR2(200),                      -- 주소 (시/군/구 수준, 배송 등 실사용 목적 아님)
     ADDRESS_DETAIL            VARCHAR2(200),                      -- 상세주소
     ROLE                      VARCHAR2(20)    DEFAULT 'USER' NOT NULL,  -- 권한 구분: USER(시민) / STAFF(담당 직원) / ADMIN(관리자)
+    DEPARTMENT_ID              NUMBER          REFERENCES SF_DEPARTMENT(DEPARTMENT_ID),  -- 소속 부서 FK (STAFF/ADMIN만 값 있음, USER는 NULL)
     EMAIL_NOTIFY_ENABLED      CHAR(1)         DEFAULT 'Y' NOT NULL,  -- 가족 안전확인 이메일 알림 수신 여부 (Y/N)
     DISASTER_NOTIFY_ENABLED   CHAR(1)         DEFAULT 'Y' NOT NULL,  -- 관심지역 재난 알림 수신 여부 (Y/N)
     REPORT_NOTIFY_ENABLED     CHAR(1)         DEFAULT 'Y' NOT NULL,  -- 내 제보 상태변경 알림 수신 여부 (Y/N)
@@ -55,6 +76,7 @@ COMMENT ON COLUMN SF_MEMBER.PROFILE_IMAGE_URL IS '프로필 이미지 경로';
 COMMENT ON COLUMN SF_MEMBER.ADDRESS IS '주소 (시/군/구 수준, 배송 등 실사용 목적 아님)';
 COMMENT ON COLUMN SF_MEMBER.ADDRESS_DETAIL IS '상세주소';
 COMMENT ON COLUMN SF_MEMBER.ROLE IS '권한 구분: USER(시민) / STAFF(담당 직원) / ADMIN(관리자)';
+COMMENT ON COLUMN SF_MEMBER.DEPARTMENT_ID IS '소속 부서 FK (STAFF/ADMIN만 값 있음, USER는 NULL)';
 COMMENT ON COLUMN SF_MEMBER.EMAIL_NOTIFY_ENABLED IS '가족 안전확인 이메일 알림 수신 여부 (Y/N)';
 COMMENT ON COLUMN SF_MEMBER.DISASTER_NOTIFY_ENABLED IS '관심지역 재난 알림 수신 여부 (Y/N)';
 COMMENT ON COLUMN SF_MEMBER.REPORT_NOTIFY_ENABLED IS '내 제보 상태변경 알림 수신 여부 (Y/N)';
@@ -62,7 +84,7 @@ COMMENT ON COLUMN SF_MEMBER.IS_WITHDRAWN IS '탈퇴 여부 (Y/N) - 소프트 삭
 COMMENT ON COLUMN SF_MEMBER.WITHDRAWN_AT IS '탈퇴 처리 일시 (미탈퇴 시 NULL)';
 COMMENT ON COLUMN SF_MEMBER.CREATED_AT IS '가입일시';
 
--- 2-1. 회원 관심지역 테이블============================================
+-- 3-1. 회원 관심지역 테이블============================================
 --      회원 한 명이 관심지역을 여러 개 등록할 수 있도록 별도 테이블로 분리
 --      (공공정보 탭의 기상특보 연동, 재난 알림 필터링에 사용 예정)
 CREATE TABLE SF_MEMBER_REGION (
@@ -82,7 +104,7 @@ COMMENT ON COLUMN SF_MEMBER_REGION.REGION_NAME IS '지역명 (예: 대전 유성
 COMMENT ON COLUMN SF_MEMBER_REGION.IS_PRIMARY IS '대표 관심지역 여부 (Y/N)';
 COMMENT ON COLUMN SF_MEMBER_REGION.CREATED_AT IS '등록일시';
 
--- 3. 사건(재난) 테이블============================================
+-- 4. 사건(재난) 테이블============================================
 --    시민 제보가 병합/승격되어 만들어지거나, 담당자가 직접 생성하는 실제 대응 대상
 CREATE TABLE SF_INCIDENT (
     INCIDENT_ID       NUMBER          PRIMARY KEY,  -- 사건 PK (SEQ_SF_INCIDENT로 채번)
@@ -113,7 +135,7 @@ COMMENT ON COLUMN SF_INCIDENT.CLOSE_REASON IS '종료 사유 (STATUS=CLOSED일 �
 COMMENT ON COLUMN SF_INCIDENT.CREATED_AT IS '사건 생성일시';
 COMMENT ON COLUMN SF_INCIDENT.UPDATED_AT IS '최종 수정일시';
 
--- 3-1. 사건 상태 변경 이력 테이블============================================
+-- 4-1. 사건 상태 변경 이력 테이블============================================
 --      사건의 STATUS가 바뀔 때마다 한 줄씩 쌓아서 처리 히스토리를 추적
 CREATE TABLE SF_INCIDENT_LOG (
     LOG_ID       NUMBER      PRIMARY KEY,  -- 로그 PK (SEQ_SF_INCIDENT_LOG로 채번)
@@ -134,7 +156,7 @@ COMMENT ON COLUMN SF_INCIDENT_LOG.MEMO IS '담당자가 남긴 처리 메모';
 COMMENT ON COLUMN SF_INCIDENT_LOG.CHANGED_BY IS '변경한 직원 FK';
 COMMENT ON COLUMN SF_INCIDENT_LOG.CHANGED_AT IS '변경 일시';
 
--- 4. 시민 제보 테이블============================================
+-- 5. 시민 제보 테이블============================================
 --    시민이 앱/웹에서 올린 신고 원본. 아직 사건(SF_INCIDENT)과 연결 안 된 상태로 시작
 --    담당자가 검토 후 기존 사건에 병합(LINKED)하거나 신규 사건으로 등록함
 CREATE TABLE SF_REPORT (
@@ -162,7 +184,7 @@ COMMENT ON COLUMN SF_REPORT.INCIDENT_ID IS '연결된 사건 FK (병합 전엔 N
 COMMENT ON COLUMN SF_REPORT.STATUS IS '제보 처리 상태 (RECEIVED / LINKED 등)';
 COMMENT ON COLUMN SF_REPORT.CREATED_AT IS '제보 등록일시';
 
--- 5. 가족 관계 테이블============================================
+-- 6. 가족 관계 테이블============================================
 --    "가족 안전확인" 기능용. 한쪽이 등록 요청하면 상대방이 수락(ACCEPTED)해야 실제 연결됨
 --    그룹 개념 없이 1:1 관계로 관리 (지금 규모에는 이게 더 단순하고 충분함)
 CREATE TABLE SF_FAMILY_RELATION (
@@ -182,7 +204,7 @@ COMMENT ON COLUMN SF_FAMILY_RELATION.RELATION_TYPE IS '관계 (배우자/자녀/
 COMMENT ON COLUMN SF_FAMILY_RELATION.STATUS IS '관계 상태 (PENDING / ACCEPTED)';
 COMMENT ON COLUMN SF_FAMILY_RELATION.CREATED_AT IS '등록 요청일시';
 
--- 6. 안전확인 요청/응답 테이블============================================
+-- 7. 안전확인 요청/응답 테이블============================================
 --    "안전확인 요청" 버튼을 누르면 대상 가족 수만큼 한 줄씩 생성됨
 --    INCIDENT_ID는 nullable: 홈에서 그냥 요청하면 NULL, 특정 사건 상세에서 요청하면 그 사건 ID가 들어감
 --    이메일 링크로 로그인 없이 응답할 수 있도록 TOKEN 관련 컬럼 포함 (만료시간 + 재사용 방지용 응답시각)
@@ -220,7 +242,8 @@ CREATE INDEX IDX_SF_SAFETY_REQUESTER ON SF_SAFETY_CHECK(REQUESTER_ID);
 -- 특정 회원 기준으로 관심지역 목록 조회할 때 자주 쓰이므로 인덱스 생성
 CREATE INDEX IDX_SF_MEMBER_REGION_MEMBER ON SF_MEMBER_REGION(MEMBER_ID);
 
--- 7. 시퀀스 생성 (각 테이블 PK 채번용)============================================
+-- 8. 시퀀스 생성 (각 테이블 PK 채번용)============================================
+CREATE SEQUENCE SEQ_SF_DEPARTMENT START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_MEMBER START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_MEMBER_REGION START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_INCIDENT START WITH 1 INCREMENT BY 1 NOCACHE;
@@ -229,20 +252,29 @@ CREATE SEQUENCE SEQ_SF_REPORT START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_FAMILY_RELATION START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_SAFETY_CHECK START WITH 1 INCREMENT BY 1 NOCACHE;
 
--- 8. 테스트 계정 2개 직접 삽입 (비밀번호는 미리 암호화된 값, 둘 다 원문 비번은 1234)
---    test123  = STAFF 계정 (담당자 로그인용)
+-- 9. 부서 시드 데이터 (대전 4개 구 기준)============================================
+--    PHONE은 실제 번호 아니라서 일부러 비워둠 - 필요하면 나중에 UPDATE로 채워넣기
+INSERT INTO SF_DEPARTMENT (DEPARTMENT_ID, NAME, REGION) VALUES (SEQ_SF_DEPARTMENT.NEXTVAL, '유성구청 재난안전과', '대전 유성구');
+INSERT INTO SF_DEPARTMENT (DEPARTMENT_ID, NAME, REGION) VALUES (SEQ_SF_DEPARTMENT.NEXTVAL, '서구청 재난안전과', '대전 서구');
+INSERT INTO SF_DEPARTMENT (DEPARTMENT_ID, NAME, REGION) VALUES (SEQ_SF_DEPARTMENT.NEXTVAL, '동구청 재난안전과', '대전 동구');
+INSERT INTO SF_DEPARTMENT (DEPARTMENT_ID, NAME, REGION) VALUES (SEQ_SF_DEPARTMENT.NEXTVAL, '대덕구청 재난안전과', '대전 대덕구');
+COMMIT;
+
+-- 10. 테스트 계정 2개 직접 삽입 (비밀번호는 미리 암호화된 값, 둘 다 원문 비번은 1234)
+--    test123  = STAFF 계정 (담당자 로그인용) - 유성구청 재난안전과 소속으로 배정
 --    citizen01 = 시민(USER) 계정 (제보자 로그인용)
 --    PK는 SEQ_SF_MEMBER.NEXTVAL로 직접 채번
 --    알림설정/탈퇴여부는 컬럼 기본값(EMAIL_NOTIFY_ENABLED='Y' 등)을 그대로 사용하므로 INSERT에서 생략
-INSERT INTO SF_MEMBER (MEMBER_ID, LOGIN_ID, PASSWORD, NAME, EMAIL, ROLE)
-VALUES (SEQ_SF_MEMBER.NEXTVAL, 'test123', '$2a$10$3G6nByOWnMaAmupkwHj5felIP08YE9eT8lN7Wf2z1wgTgR4sBarfq', '곽지윤', 'test123@example.com', 'STAFF');
+INSERT INTO SF_MEMBER (MEMBER_ID, LOGIN_ID, PASSWORD, NAME, EMAIL, ROLE, DEPARTMENT_ID)
+VALUES (SEQ_SF_MEMBER.NEXTVAL, 's', '$2a$10$3G6nByOWnMaAmupkwHj5felIP08YE9eT8lN7Wf2z1wgTgR4sBarfq', '곽지윤', 'test123@example.com', 'STAFF',
+        (SELECT DEPARTMENT_ID FROM SF_DEPARTMENT WHERE REGION = '대전 유성구'));
 
 INSERT INTO SF_MEMBER (MEMBER_ID, LOGIN_ID, PASSWORD, NAME, EMAIL, ROLE)
-VALUES (SEQ_SF_MEMBER.NEXTVAL, 'citizen01', '$2a$10$3G6nByOWnMaAmupkwHj5felIP08YE9eT8lN7Wf2z1wgTgR4sBarfq', '김민준', 'citizen01@example.com', 'USER');
+VALUES (SEQ_SF_MEMBER.NEXTVAL, 'u', '$2a$10$3G6nByOWnMaAmupkwHj5felIP08YE9eT8lN7Wf2z1wgTgR4sBarfq', '김민준', 'citizen01@example.com', 'USER');
 
 COMMIT;
 
--- 9. 테스트용 사건 4건 + 상태 이력 + 제보 4건 + 가족관계 + 관심지역을 한 번에 생성
+-- 11. 테스트용 사건 4건 + 상태 이력 + 제보 4건 + 가족관계 + 관심지역을 한 번에 생성
 --    방금 INSERT한 회원의 MEMBER_ID를 변수에 담아 FK로 재사용하기 위해 PL/SQL 블록 사용
 --    PK는 전부 각 시퀀스.NEXTVAL로 직접 채번
 DECLARE

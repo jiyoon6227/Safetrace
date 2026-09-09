@@ -23,15 +23,16 @@ public class MemberService {
         if (memberMapper.findByLoginId(loginId) != null) {
             throw new IllegalArgumentException("이미 존재하는 아이디입니다.");
         }
-        if (email != null && !email.isBlank()) {
-            // 이메일을 입력한 경우엔 인증까지 완료된 이메일이어야 함 (안 넣으면 나중에 마이페이지에서 등록 가능)
-            if (!emailVerificationService.isVerified(email)) {
-                throw new IllegalArgumentException("이메일 인증을 먼저 완료해주세요.");
-            }
-            // 인증코드 발송 이후 다른 사람이 그 사이 먼저 가입해버렸을 가능성 대비, 가입 직전에 한번 더 확인
-            if (isEmailTaken(email)) {
-                throw new IllegalArgumentException("이미 사용 중인 이메일입니다.");
-            }
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("이메일을 입력해주세요.");
+        }
+        // 이메일 인증까지 완료된 이메일이어야 가입 가능
+        if (!emailVerificationService.isVerified(email)) {
+            throw new IllegalArgumentException("이메일 인증을 먼저 완료해주세요.");
+        }
+        // 인증코드 발송 이후 다른 사람이 그 사이 먼저 가입해버렸을 가능성 대비, 가입 직전에 한번 더 확인
+        if (isEmailTaken(email)) {
+            throw new IllegalArgumentException("이미 사용 중인 이메일입니다.");
         }
 
         Member member = new Member();
@@ -55,7 +56,7 @@ public class MemberService {
             throw new IllegalArgumentException("아이디 또는 비밀번호가 올바르지 않습니다.");
         }
 
-        return jwtTokenProvider.generateToken(member.getMemberId(), member.getRole());
+        return jwtTokenProvider.generateToken(member.getMemberId(), member.getRole(), member.getName());
     }
 
     // ---- 마이페이지 --------------------------------------------------------
@@ -69,14 +70,11 @@ public class MemberService {
         return member;
     }
 
-    // 내정보 수정 - 이메일/전화/주소/프로필사진만 변경 가능. 로그인ID/이름/권한은 여기서 안 건드림
+    // 내정보 수정 - 이메일/전화/주소/프로필사진만 변경 가능... 이라고 했지만
+    // 이메일은 가입 시 인증된 값으로 고정하고 이후 변경은 막음(중복/재인증 로직이 없어 악용 소지가 있었음).
+    // 로그인ID/이름/권한/이메일은 여기서 안 건드림
     public void updateMyInfo(Long memberId, Member updates) {
-        if (updates.getEmail() != null && !updates.getEmail().isBlank()) {
-            Member existing = memberMapper.findByEmail(updates.getEmail());
-            if (existing != null && !existing.getMemberId().equals(memberId)) {
-                throw new IllegalArgumentException("이미 사용 중인 이메일입니다.");
-            }
-        }
+        updates.setEmail(null); // 요청에 이메일이 실려와도 무시 - 절대 변경되지 않도록
         updates.setMemberId(memberId);
         memberMapper.update(updates);
     }

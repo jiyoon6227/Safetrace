@@ -21,14 +21,15 @@ public class JwtTokenProvider {
         this.expirationMs = expirationMs;
     }
 
-    // 토큰 생성 - memberId, role을 담음
-    public String generateToken(Long memberId, String role) {
+    // 토큰 생성 - memberId, role, name을 담음
+    public String generateToken(Long memberId, String role, String name) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
                 .subject(String.valueOf(memberId))
                 .claim("role", role)
+                .claim("name", name)
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(key)
