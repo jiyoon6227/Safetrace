@@ -503,7 +503,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
           className="flex items-center gap-2 px-5 py-5 hover:opacity-80 transition text-left cursor-pointer"
         >
           <ShieldAlert className="w-5 h-5 text-amber-400" />
-          <span className="font-bold text-white">SafeTrace</span>
+          <span className="font-bold text-white">세이프트레이스</span>
         </button>
         <nav className="flex-1 px-3 space-y-1">
           {NAV_ITEMS.map(({ key, icon: Icon, label }) => (

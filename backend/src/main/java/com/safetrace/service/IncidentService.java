@@ -119,6 +119,15 @@ public class IncidentService {
         return incidentMapper.findActiveByRegion(region);
     }
 
+    // 관심지역 "현재 상황" 패널용 - 등록된 관심지역 좌표 기준 반경 이내의 활성 Incident들
+    public List<Incident> getActiveIncidentsNearby(double lat, double lng, double radiusKm) {
+        double radiusMeters = radiusKm * 1000;
+        return incidentMapper.findAllActive().stream()
+                .filter(inc -> inc.getLatitude() != null && inc.getLongitude() != null)
+                .filter(inc -> calculateDistanceMeters(lat, lng, inc.getLatitude(), inc.getLongitude()) <= radiusMeters)
+                .collect(Collectors.toList());
+    }
+
     // STAFF 대시보드 - 전체 Incident 목록
     public List<Incident> getAllIncidents() {
         return incidentMapper.findAll();

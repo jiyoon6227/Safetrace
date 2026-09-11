@@ -20,6 +20,10 @@ public interface IncidentMapper {
     // 시민 화면 - 관심지역 기준 활성 Incident 목록
     List<Incident> findActiveByRegion(@Param("region") String region);
 
+    // 관심지역 좌표 기준 "근처 최근 재난" 조회용 - 활성 Incident 전체를 가져와서
+    // 서비스 레이어에서 위경도로 거리 필터링(하버사인)함
+    List<Incident> findAllActive();
+
     // 상태 변경 (Workflow 전이 시 사용)
     int updateStatus(@Param("incidentId") Long incidentId,
                       @Param("status") String status);

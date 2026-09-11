@@ -62,13 +62,16 @@ public class MyPageController {
         return memberRegionService.getMyRegions(memberId);
     }
 
-    // body 예시: { "regionName": "대전 유성구", "isPrimary": true }
+    // body 예시: { "regionName": "대전광역시 유성구 어은동 123-4", "latitude": 36.3625, "longitude": 127.3453, "regionLabel": "우리집", "isPrimary": true }
     @PostMapping("/regions")
     public Map<String, String> addRegion(@RequestBody Map<String, Object> body, Authentication authentication) {
         Long memberId = (Long) authentication.getPrincipal();
         String regionName = (String) body.get("regionName");
+        Double latitude = body.get("latitude") != null ? ((Number) body.get("latitude")).doubleValue() : null;
+        Double longitude = body.get("longitude") != null ? ((Number) body.get("longitude")).doubleValue() : null;
+        String regionLabel = (String) body.get("regionLabel");
         boolean isPrimary = Boolean.TRUE.equals(body.get("isPrimary"));
-        memberRegionService.addRegion(memberId, regionName, isPrimary);
+        memberRegionService.addRegion(memberId, regionName, latitude, longitude, regionLabel, isPrimary);
         return Map.of("message", "관심지역이 등록되었습니다.");
     }
 
@@ -77,5 +80,13 @@ public class MyPageController {
         Long memberId = (Long) authentication.getPrincipal();
         memberRegionService.deleteRegion(memberRegionId, memberId);
         return Map.of("message", "관심지역이 삭제되었습니다.");
+    }
+
+    // 대표 지역 변경
+    @PatchMapping("/regions/{memberRegionId}/primary")
+    public Map<String, String> setPrimaryRegion(@PathVariable Long memberRegionId, Authentication authentication) {
+        Long memberId = (Long) authentication.getPrincipal();
+        memberRegionService.setPrimaryRegion(memberRegionId, memberId);
+        return Map.of("message", "대표 지역으로 설정되었습니다.");
     }
 }

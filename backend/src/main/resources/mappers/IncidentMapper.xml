@@ -27,6 +27,12 @@
         ORDER BY CREATED_AT DESC
     </select>
 
+    <select id="findAllActive" resultType="com.safetrace.domain.Incident">
+        SELECT * FROM SF_INCIDENT
+        WHERE STATUS != 'CLOSED'
+        ORDER BY CREATED_AT DESC
+    </select>
+
     <update id="updateStatus">
         UPDATE SF_INCIDENT
         SET STATUS = #{status}, UPDATED_AT = SYSTIMESTAMP

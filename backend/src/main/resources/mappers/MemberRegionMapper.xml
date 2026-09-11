@@ -6,12 +6,13 @@
         <selectKey keyProperty="memberRegionId" resultType="Long" order="BEFORE">
             SELECT SEQ_SF_MEMBER_REGION.NEXTVAL FROM DUAL
         </selectKey>
-        INSERT INTO SF_MEMBER_REGION (MEMBER_REGION_ID, MEMBER_ID, REGION_CODE, REGION_NAME, IS_PRIMARY)
-        VALUES (#{memberRegionId}, #{memberId}, #{regionCode,jdbcType=VARCHAR}, #{regionName}, #{isPrimary})
+        INSERT INTO SF_MEMBER_REGION (MEMBER_REGION_ID, MEMBER_ID, REGION_CODE, REGION_NAME, LATITUDE, LONGITUDE, REGION_LABEL, IS_PRIMARY)
+        VALUES (#{memberRegionId}, #{memberId}, #{regionCode,jdbcType=VARCHAR}, #{regionName},
+                #{latitude,jdbcType=NUMERIC}, #{longitude,jdbcType=NUMERIC}, #{regionLabel}, #{isPrimary})
     </insert>
 
     <select id="findByMemberId" resultType="com.safetrace.domain.MemberRegion">
-        SELECT MEMBER_REGION_ID, MEMBER_ID, REGION_CODE, REGION_NAME, IS_PRIMARY, CREATED_AT
+        SELECT MEMBER_REGION_ID, MEMBER_ID, REGION_CODE, REGION_NAME, LATITUDE, LONGITUDE, REGION_LABEL, IS_PRIMARY, CREATED_AT
         FROM SF_MEMBER_REGION
         WHERE MEMBER_ID = #{memberId}
         ORDER BY IS_PRIMARY DESC, CREATED_AT ASC
@@ -21,5 +22,19 @@
         DELETE FROM SF_MEMBER_REGION
         WHERE MEMBER_REGION_ID = #{memberRegionId}
     </delete>
+
+    <!-- 대표 지역 변경 1단계: 이 회원의 기존 대표 지역을 전부 해제 -->
+    <update id="clearPrimary">
+        UPDATE SF_MEMBER_REGION
+        SET IS_PRIMARY = 'N'
+        WHERE MEMBER_ID = #{memberId}
+    </update>
+
+    <!-- 대표 지역 변경 2단계: 선택한 지역만 대표로 지정 -->
+    <update id="setPrimary">
+        UPDATE SF_MEMBER_REGION
+        SET IS_PRIMARY = 'Y'
+        WHERE MEMBER_REGION_ID = #{memberRegionId}
+    </update>
 
 </mapper>

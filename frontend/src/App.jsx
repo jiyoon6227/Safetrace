@@ -10,6 +10,7 @@ import ControlBoard from "./pages/ControlBoard";
 import ReportForm from "./pages/ReportForm";
 import MyPage from "./pages/MyPage";
 import SafetyCheckResponsePage from "./pages/SafetyCheckResponsePage";
+import ShelterPage from "./pages/ShelterPage";
 import { getCurrentUser, authFetch } from "./api/client";
 import { connectIncidentSocket, connectSafetyCheckSocket } from "./api/socket";
 import mainBg from "./assets/main.png";
@@ -218,7 +219,10 @@ export default function App() {
   // (history.state는 새로고침해도 그대로 남아있음 - 지금까지는 이걸 안 읽어서 새로고침할 때마다 무조건 "home"으로 튕겼었음)
   const [page, setPage] = useState(
     safetyCheckTokenFromUrl ? "safety-check-response" : window.history.state?.page || "home"
-  ); // "home" | "login" | "mypage" | "safety-check-response"
+  ); // "home" | "login" | "mypage" | "shelters" | "safety-check-response"
+  const [selectedShelterRegionId, setSelectedShelterRegionId] = useState(
+    window.history.state?.shelterRegionId ?? null
+  );
   const [token, setToken] = useState(localStorage.getItem("token"));
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef(null);
@@ -232,17 +236,23 @@ export default function App() {
   // 지금까지는 setPage만 써서 화면은 바뀌어도 URL 히스토리엔 기록이 안 남았고,
   // 그래서 뒤로가기를 누르면 앱 안으로 안 돌아오고 이 탭을 열기 전 페이지(구글 등)로 튀어버렸음.
   useEffect(() => {
-    window.history.replaceState({ page }, "");
-    const handlePopState = (e) => setPage(e.state?.page || "home");
+    window.history.replaceState({ ...window.history.state, page }, "");
+    const handlePopState = (e) => {
+      setPage(e.state?.page || "home");
+      setSelectedShelterRegionId(e.state?.shelterRegionId ?? null);
+    };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 페이지 전환은 이제 이걸로 - state 갱신 + 히스토리에 한 칸 쌓기
-  const goTo = (nextPage) => {
+  // 페이지 전환: 추가 state도 같이 저장해두면 새로고침/뒤로가기에서도 선택 정보를 유지할 수 있음
+  const goTo = (nextPage, extraState = {}) => {
     setPage(nextPage);
-    window.history.pushState({ page: nextPage }, "");
+    if (Object.prototype.hasOwnProperty.call(extraState, "shelterRegionId")) {
+      setSelectedShelterRegionId(extraState.shelterRegionId);
+    }
+    window.history.pushState({ page: nextPage, ...extraState }, "");
   };
 
   // 프로필 드롭다운 바깥을 클릭하면 자동으로 닫힘
@@ -260,6 +270,22 @@ export default function App() {
   const [reportSuccess, setReportSuccess] = useState(false);
   const [myReports, setMyReports] = useState([]);
   const [myReportsLoading, setMyReportsLoading] = useState(false);
+
+  // client.js의 authFetch/authUpload가 401(서버 기준 더 이상 유효하지 않은 토큰)을 받으면
+  // 거기서 localStorage의 토큰은 이미 지우고 이 이벤트를 쏨. 여기선 화면 쪽 상태를 정리한다.
+  // (DB 초기화, 회원 탈퇴, 토큰 만료 등으로 실제로는 로그아웃된 상태를 화면에도 반영하는 부분)
+  useEffect(() => {
+    const handleAuthInvalid = () => {
+      setToken(null);
+      setMyProfile(null);
+      if (page === "mypage" || page === "shelters") {
+        goTo("home");
+      }
+    };
+    window.addEventListener("auth:invalid", handleAuthInvalid);
+    return () => window.removeEventListener("auth:invalid", handleAuthInvalid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   // 연결된 사건들의 현재 상태 (incidentId -> Incident 객체)
   const [incidentInfo, setIncidentInfo] = useState({});
@@ -332,6 +358,26 @@ export default function App() {
           .then((data) => setIncidentTimelines((prev) => ({ ...prev, [id]: data })))
           .catch(() => {});
       }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myReports]);
+
+  // "내 현장제보 목록"의 검토 대기중(사건 미연결) 항목들 - 위경도만 있고 주소 텍스트는 DB에 없어서
+  // 카카오 리버스 지오코딩으로 좌표 -> 주소 문자열을 변환해둠 (담당자 대시보드의 제보 관리 탭과 동일한 방식)
+  const [pendingReportAddresses, setPendingReportAddresses] = useState({});
+  useEffect(() => {
+    const targets = myReports.filter((r) => !r.incidentId && !pendingReportAddresses[r.reportId]);
+    if (targets.length === 0 || !window.kakao?.maps?.services) return;
+    const geocoder = new window.kakao.maps.services.Geocoder();
+    targets.forEach((report) => {
+      if (report.latitude == null || report.longitude == null) return;
+      geocoder.coord2Address(report.longitude, report.latitude, (result, status) => {
+        const addr =
+          status === window.kakao.maps.services.Status.OK && result[0]
+            ? result[0].road_address?.address_name || result[0].address?.address_name || "주소 확인 불가"
+            : "주소 확인 불가";
+        setPendingReportAddresses((prev) => ({ ...prev, [report.reportId]: addr }));
+      });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myReports]);
@@ -490,10 +536,18 @@ export default function App() {
     setTrackingOpen(false);
     setDetailIncidentId(null);
     setDetailTimeline([]);
+    setDetailPendingReportId(null);
   };
+
+  // "검토 대기중"(사건 미연결) 제보 상세보기 - 아직 Incident가 없어서 타임라인/진행상태는 없고
+  // 제보 원본 내용만 보여주는 단순 모드
+  const [detailPendingReportId, setDetailPendingReportId] = useState(null);
 
   const uniqueLinkedIds = [...new Set(myReports.filter((r) => r.incidentId).map((r) => r.incidentId))];
   const detailIncident = detailIncidentId ? incidentInfo[detailIncidentId] : null;
+  const detailPendingReport = detailPendingReportId
+    ? myReports.find((r) => r.reportId === detailPendingReportId)
+    : null;
   const unlinkedReports = myReports.filter((r) => !(r.status === "LINKED" && r.incidentId));
 
   // 가족 각자와 나 사이의 안전확인 기록은 방향이 두 가지(내가 보낸 것 / 그 가족이 보낸 것)라
@@ -560,6 +614,23 @@ export default function App() {
   const trackingProgressCount = groupedIncidents.filter((g) => g.incident?.status !== "CLOSED").length;
   const trackingClosedCount = groupedIncidents.filter((g) => g.incident?.status === "CLOSED").length;
 
+  // 아직 담당자가 검토해서 사건에 연결하지 않은 제보들("접수됨" 상태). 이런 제보는 연결된
+  // Incident가 없어서 groupedIncidents에 안 잡히는데, 그렇다고 목록에서 아예 빠지면
+  // 홈 화면 위젯의 "접수된 제보 N건" 카운트와 이 모달의 실제 표시 개수가 안 맞아 혼란스러움.
+  // 그래서 별도로 "검토 대기중" 항목으로 같이 보여줌.
+  const pendingReports = myReports.filter((r) => !r.incidentId);
+  const filteredPendingReports = pendingReports
+    .filter((r) => {
+      if (trackingStatusFilter === "closed") return false; // 대기중인 건 "완료"일 수 없음
+      if (trackingTypeFilter && r.disasterType !== trackingTypeFilter) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const ta = new Date(a.createdAt).getTime();
+      const tb = new Date(b.createdAt).getTime();
+      return trackingSort === "newest" ? tb - ta : ta - tb;
+    });
+
   const filteredTrackingIncidents = groupedIncidents
     .filter((g) => {
       if (trackingStatusFilter === "progress" && g.incident?.status === "CLOSED") return false;
@@ -590,7 +661,24 @@ export default function App() {
   }
 
   if (page === "mypage") {
-    return <MyPage onBackToHome={() => goTo("home")} onLogout={handleLogout} />;
+    return (
+      <MyPage
+        onBackToHome={() => goTo("home")}
+        onLogout={handleLogout}
+        onOpenShelters={(regionId) => goTo("shelters", { shelterRegionId: regionId })}
+      />
+    );
+  }
+
+  if (page === "shelters") {
+    return (
+      <ShelterPage
+        initialRegionId={selectedShelterRegionId}
+        onBackToHome={() => goTo("home")}
+        onLogout={handleLogout}
+        onGoToMyPageTab={(tab) => goTo("mypage", { mypageTab: tab })}
+      />
+    );
   }
 
   if (page === "staff" && isStaff) {
@@ -1022,9 +1110,9 @@ export default function App() {
             {/* 헤더 */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
-                {detailIncidentId && (
+                {(detailIncidentId || detailPendingReportId) && (
                   <button
-                    onClick={() => setDetailIncidentId(null)}
+                    onClick={() => { setDetailIncidentId(null); setDetailPendingReportId(null); }}
                     className="text-slate-400 hover:text-[#0F2540] -ml-1 p-1 shrink-0 cursor-pointer"
                   >
                     <ChevronLeft className="w-4 h-4" />
@@ -1032,6 +1120,8 @@ export default function App() {
                 )}
                 {detailIncidentId ? (
                   <h2 className="font-bold text-[#0F2540]">대응상황 상세</h2>
+                ) : detailPendingReportId ? (
+                  <h2 className="font-bold text-[#0F2540]">제보 상세</h2>
                 ) : (
                   <div className="min-w-0">
                     <h2 className="font-extrabold text-[#0B2A52] flex items-center gap-2"><Camera className="w-5 h-5 text-blue-600 shrink-0" /> 내 현장제보 목록</h2>
@@ -1046,13 +1136,13 @@ export default function App() {
 
             <div className="overflow-y-auto px-5 py-4">
               {/* 목록 모드: 연결된 사건이 여러 개일 때 */}
-              {!detailIncidentId && (
+              {!detailIncidentId && !detailPendingReportId && (
                 <div>
                   {/* 필터 + 정렬 */}
                   <div className="flex items-center flex-wrap gap-2 mb-4">
                     {[
-                      ["all", `전체 ${groupedIncidents.length}`],
-                      ["progress", `진행중 ${trackingProgressCount}`],
+                      ["all", `전체 ${groupedIncidents.length + pendingReports.length}`],
+                      ["progress", `진행중 ${trackingProgressCount + pendingReports.length}`],
                       ["closed", `완료 ${trackingClosedCount}`],
                     ].map(([key, label]) => (
                       <button
@@ -1097,6 +1187,41 @@ export default function App() {
                   </div>
 
                   <ul className="space-y-3">
+                    {filteredPendingReports.map((report) => {
+                      const DisasterIcon = DISASTER_ICON[report.disasterType] || ShieldAlert;
+                      return (
+                        <li
+                          key={`pending-${report.reportId}`}
+                          onClick={() => setDetailPendingReportId(report.reportId)}
+                          className="rounded-xl border border-slate-100 hover:border-slate-200 hover:shadow-sm cursor-pointer transition p-3 flex items-center gap-4"
+                        >
+                          <div className="w-16 h-16 rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                            {report.photoUrl ? (
+                              <img src={`http://localhost:8080${report.photoUrl}`} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <DisasterIcon className="w-6 h-6 text-blue-500" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <b className="text-sm text-[#0B2A52] truncate">{report.content || `${report.disasterType} 제보`}</b>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 bg-slate-200 text-slate-600">
+                                접수됨 · 검토 대기중
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1">
+                              <Clock className="w-3 h-3 shrink-0" />
+                              {formatDateTimeFull(report.createdAt)}
+                            </div>
+                            <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
+                              <MapPin className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{pendingReportAddresses[report.reportId] || "주소 확인 중..."}</span>
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                        </li>
+                      );
+                    })}
                     {filteredTrackingIncidents.map(({ incidentId, incident, reports }) => {
                       const photoUrl = reports.find((r) => r.photoUrl)?.photoUrl;
                       const DisasterIcon = DISASTER_ICON[reports[0]?.disasterType] || ShieldAlert;
@@ -1148,7 +1273,7 @@ export default function App() {
                         </li>
                       );
                     })}
-                    {filteredTrackingIncidents.length === 0 && (
+                    {filteredTrackingIncidents.length === 0 && filteredPendingReports.length === 0 && (
                       <p className="text-sm text-slate-400 py-8 text-center">조건에 맞는 제보가 없습니다.</p>
                     )}
                   </ul>
@@ -1160,6 +1285,52 @@ export default function App() {
               )}
 
               {/* 상세 모드: 사진+설명 배너 + 6단계 진행바 + 타임라인(정렬 가능) + 담당부서/번호/최근업데이트/지도 정보패널 */}
+              {/* 검토 대기중 제보 상세 - 아직 Incident가 없어서 타임라인/진행바 없이 제보 원본만 보여줌 */}
+              {detailPendingReportId && detailPendingReport && (() => {
+                const DetailDisasterIcon = DISASTER_ICON[detailPendingReport.disasterType] || ShieldAlert;
+                return (
+                  <div>
+                    <div className="rounded-xl overflow-hidden mb-5 bg-slate-50 border border-slate-200">
+                      <div className="flex gap-4 p-4">
+                        <div className="w-24 h-24 rounded-lg overflow-hidden bg-white/60 flex items-center justify-center shrink-0">
+                          {detailPendingReport.photoUrl ? (
+                            <img src={`http://localhost:8080${detailPendingReport.photoUrl}`} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <DetailDisasterIcon className="w-8 h-8 text-slate-400" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-600">
+                              접수됨 · 검토 대기중
+                            </span>
+                            <span className="text-[11px] text-slate-500">#{detailPendingReport.reportId}</span>
+                          </div>
+                          <h3 className="font-bold text-[#0F2540] text-base mb-1">{detailPendingReport.disasterType} 제보</h3>
+                          <p className="text-xs text-slate-500 flex items-center gap-1 truncate">
+                            <MapPin className="w-3 h-3 shrink-0" />
+                            <span className="truncate">{pendingReportAddresses[detailPendingReport.reportId] || "주소 확인 중..."}</span>
+                          </p>
+                          <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
+                            <Clock className="w-3 h-3 shrink-0" /> {formatDateTimeFull(detailPendingReport.createdAt)} 접수
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <h4 className="text-sm font-bold text-[#0F2540] mb-2">제보 내용</h4>
+                    <p className="text-sm text-slate-600 leading-6 whitespace-pre-wrap mb-5">
+                      {detailPendingReport.content || "작성된 상세 설명이 없습니다."}
+                    </p>
+
+                    <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-blue-50 text-[12px] text-blue-700">
+                      <Bell className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      아직 담당자가 검토 전이에요. 검토 후 사건으로 연결되면 여기서 처리 진행상황을 확인할 수 있어요.
+                    </div>
+                  </div>
+                );
+              })()}
+
               {detailIncidentId && (
                 <div>
                   {detailIncident && (() => {

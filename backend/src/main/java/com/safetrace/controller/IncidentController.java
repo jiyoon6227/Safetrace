@@ -40,6 +40,15 @@ public class IncidentController {
         return incidentService.getActiveIncidentsByRegion(region);
     }
 
+    // 시민 화면 - 관심지역 좌표 기준 근처(기본 반경 5km) 진행중인 Incident 목록
+    // region 문자열 완전일치(getByRegion) 대신, 관심지역에 저장된 실제 좌표로 조회할 때 사용
+    @GetMapping("/nearby")
+    public List<Incident> getNearby(@RequestParam double lat,
+                                     @RequestParam double lng,
+                                     @RequestParam(defaultValue = "5") double radiusKm) {
+        return incidentService.getActiveIncidentsNearby(lat, lng, radiusKm);
+    }
+
     // STAFF 전용 - 전체 Incident 목록 (대시보드용)
     @GetMapping
     @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")

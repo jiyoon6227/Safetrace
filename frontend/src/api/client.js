@@ -1,5 +1,15 @@
 const BASE_URL = "http://localhost:8080";
 
+// 토큰은 서명/만료시간이 멀쩡해도 서버(DB) 쪽에서 무효가 될 수 있음
+// (회원 탈퇴, DB 초기화 등으로 더 이상 존재하지 않는 회원). 그런 경우 백엔드는 401을 준다.
+// 이럴 때 프론트가 계속 그 토큰을 들고 "로그인된 척" 하지 않도록, 401을 받으면
+// 이 자리에서 바로 토큰을 지우고 전역 이벤트로 앱에 "로그아웃됐다"고 알린다.
+// (403은 로그인 자체는 유효하지만 권한이 없는 것이므로 로그아웃 처리하지 않는다.)
+function handleUnauthorized() {
+  localStorage.removeItem("token");
+  window.dispatchEvent(new Event("auth:invalid"));
+}
+
 // 로그인 시 저장해둔 토큰을 모든 요청에 자동으로 실어 보내는 공통 함수
 export async function authFetch(path, options = {}) {
   const token = localStorage.getItem("token");
@@ -13,7 +23,12 @@ export async function authFetch(path, options = {}) {
     },
   });
 
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new Error("로그인이 만료되었거나 더 이상 유효하지 않습니다.");
+  }
+
+  if (res.status === 403) {
     throw new Error("인증이 필요하거나 권한이 없습니다.");
   }
 
@@ -39,7 +54,12 @@ export async function authUpload(path, formData) {
     body: formData,
   });
 
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new Error("로그인이 만료되었거나 더 이상 유효하지 않습니다.");
+  }
+
+  if (res.status === 403) {
     throw new Error("인증이 필요하거나 권한이 없습니다.");
   }
 
