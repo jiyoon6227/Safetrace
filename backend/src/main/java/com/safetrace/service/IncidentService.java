@@ -4,6 +4,7 @@ import com.safetrace.domain.Incident;
 import com.safetrace.domain.IncidentLog;
 import com.safetrace.domain.IncidentStatus;
 import com.safetrace.mapper.IncidentMapper;
+import com.safetrace.util.GeoUtils;
 import com.safetrace.websocket.IncidentWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ public class IncidentService {
 
     private final IncidentMapper incidentMapper;
     private final IncidentWebSocketHandler webSocketHandler;
+    private final NotificationService notificationService;
 
     // 중복탐지 기준값 (기술서에 "왜 이 값을 썼는지" 설명할 수 있어야 함)
     private static final double DUPLICATE_RADIUS_METERS = 500.0;
@@ -25,7 +27,8 @@ public class IncidentService {
 
     /**
      * 새 Incident 생성.
-     * 생성과 동시에 STAFF 상황판에 WebSocket으로 실시간 전파한다.
+     * 생성과 동시에 STAFF 상황판에 WebSocket으로 실시간 전파하고,
+     * 대표 관심지역이 근처(반경 3km)인 회원들에게 "재난 알림"을 만든다.
      */
     @Transactional
     public Incident createIncident(Incident incident) {
@@ -38,13 +41,20 @@ public class IncidentService {
         log.setMemo("Incident 최초 생성");
         incidentMapper.insertLog(log);
 
-        webSocketHandler.broadcastIncidentCreated(incident);
-        return incidentMapper.findById(incident.getIncidentId());
+        Incident created = incidentMapper.findById(incident.getIncidentId());
+
+        // 알림을 먼저 DB에 저장한 뒤 broadcast를 보내야, 프론트가 이 신호를 받자마자
+        // /api/notifications를 조회해도 이미 저장이 끝나있어서 확실하게 받아짐
+        // (반대 순서면 아주 드물게 "신호는 왔는데 아직 저장 전"인 타이밍이 생길 수 있음)
+        notificationService.notifyNearbyMembersOfNewIncident(created);
+        webSocketHandler.broadcastIncidentCreated(created);
+
+        return created;
     }
 
     /**
      * 상태 전이. Workflow 업무규칙을 여기서 강제한다.
-     *  - 담당자 미배정 시 RESPONDING(대응중) 전환 불가
+     *  - 담당자 미배정 시 어떤 상태로도 전환 불가 (먼저 담당자 배정부터)
      *  - 단계를 건너뛸 수 없음 (IncidentStatus.canTransitionTo에서 검증)
      *  - CLOSED 전환 시 조치내역(memo) 필수
      */
@@ -64,8 +74,10 @@ public class IncidentService {
             );
         }
 
-        if (target == IncidentStatus.RESPONDING && incident.getAssignedStaffId() == null) {
-            throw new IllegalStateException("담당자가 배정되지 않아 대응중으로 전환할 수 없습니다.");
+        // 예전엔 RESPONDING(대응중) 전환에만 담당자 배정을 요구했는데, 담당자 없이 확인중/수습중/종료까지
+        // 다 진행돼버리는 게 실무상 이상해서(누가 처리했는지 책임 소재가 불명확해짐) 모든 전환에 적용하도록 확장.
+        if (incident.getAssignedStaffId() == null) {
+            throw new IllegalStateException("담당자가 배정되지 않아 상태를 전환할 수 없습니다. 먼저 담당자를 배정해주세요.");
         }
 
         if (target == IncidentStatus.CLOSED && (memo == null || memo.isBlank())) {
@@ -88,6 +100,8 @@ public class IncidentService {
 
         Incident updated = incidentMapper.findById(incidentId);
 
+        // 여기도 마찬가지로 알림 DB 저장을 broadcast보다 먼저 실행
+        notificationService.notifyReportersOfStatusChange(updated, current.getLabel(), target.getLabel());
         // 담당자 상황판 + 관심지역 시민 화면 양쪽에 실시간 반영
         webSocketHandler.broadcastStatusChanged(updated, memo);
 
@@ -124,7 +138,7 @@ public class IncidentService {
         double radiusMeters = radiusKm * 1000;
         return incidentMapper.findAllActive().stream()
                 .filter(inc -> inc.getLatitude() != null && inc.getLongitude() != null)
-                .filter(inc -> calculateDistanceMeters(lat, lng, inc.getLatitude(), inc.getLongitude()) <= radiusMeters)
+                .filter(inc -> GeoUtils.distanceMeters(lat, lng, inc.getLatitude(), inc.getLongitude()) <= radiusMeters)
                 .collect(Collectors.toList());
     }
 
@@ -142,27 +156,8 @@ public class IncidentService {
         List<Incident> candidates = incidentMapper.findRecentByType(disasterType, DUPLICATE_TIME_WINDOW_MINUTES);
 
         return candidates.stream()
-                .filter(inc -> calculateDistanceMeters(
+                .filter(inc -> GeoUtils.distanceMeters(
                         reportLat, reportLng, inc.getLatitude(), inc.getLongitude()) <= DUPLICATE_RADIUS_METERS)
                 .collect(Collectors.toList());
-    }
-
-    /**
-     * 하버사인 공식으로 두 좌표 사이의 실제 거리(m)를 계산한다.
-     * 위경도는 구면 좌표라 단순 유클리드 거리로는 오차가 크기 때문에 이 공식을 사용.
-     */
-    private double calculateDistanceMeters(double lat1, double lng1, double lat2, double lng2) {
-        final double EARTH_RADIUS_M = 6371000;
-
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLng = Math.toRadians(lng2 - lng1);
-
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-        return EARTH_RADIUS_M * c;
     }
 }

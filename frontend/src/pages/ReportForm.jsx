@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { X, MapPin, Loader2, Search, Camera } from "lucide-react";
 import { authFetch, authUpload } from "../api/client";
+import { useEscapeKey } from "../hooks/useEscapeKey";
 
 const DISASTER_TYPES = ["침수", "화재", "산사태", "강풍", "폭염", "한파", "기타"];
 
@@ -15,6 +16,7 @@ export default function ReportForm({ onClose, onSuccess }) {
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  useEscapeKey(true, onClose);
 
   // 위경도 -> 실제 주소 문자열로 변환 (카카오 리버스 지오코딩)
   const reverseGeocode = (lat, lng) => {

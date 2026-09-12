@@ -50,3 +50,11 @@ app:
   frontend-base-url: http://localhost:5173
   # 안전확인 이메일 토큰 유효시간 (시간 단위)
   safety-check-token-expiry-hours: 24
+
+# 공공데이터포털(data.go.kr) 인증키 - 기상청 단기예보, 에어코리아 대기오염정보 등
+publicdata:
+  service-key: "YOUR_DATA_GO_KR_SERVICE_KEY"
+
+# 재난안전데이터공유플랫폼(safetydata.go.kr) 인증키 - 긴급재난문자 전용 (위와 별개 발급)
+safetydata:
+  service-key: "YOUR_SAFETYDATA_GO_KR_SERVICE_KEY"

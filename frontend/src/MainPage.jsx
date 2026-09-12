@@ -11,8 +11,11 @@ import ReportForm from "./pages/ReportForm";
 import MyPage from "./pages/MyPage";
 import SafetyCheckResponsePage from "./pages/SafetyCheckResponsePage";
 import ShelterPage from "./pages/ShelterPage";
-import { getCurrentUser, authFetch } from "./api/client";
+import DisasterNewsPage from "./pages/DisasterNewsPage";
+import { getCurrentUser, authFetch, getNotifications } from "./api/client";
 import { connectIncidentSocket, connectSafetyCheckSocket } from "./api/socket";
+import { buildNotificationItems } from "./pages/MyPage/constants";
+import { useEscapeKey } from "./hooks/useEscapeKey";
 import mainBg from "./assets/main.png";
 
 // ---- 색상/토큰 -----------------------------------------------------------
@@ -208,7 +211,7 @@ function LevelBadge({ level, children }) {
   );
 }
 
-export default function App() {
+export default function MainPage() {
   const currentUser = getCurrentUser();
   const isStaff = currentUser?.role === "STAFF" || currentUser?.role === "ADMIN";
 
@@ -219,13 +222,27 @@ export default function App() {
   // (history.state는 새로고침해도 그대로 남아있음 - 지금까지는 이걸 안 읽어서 새로고침할 때마다 무조건 "home"으로 튕겼었음)
   const [page, setPage] = useState(
     safetyCheckTokenFromUrl ? "safety-check-response" : window.history.state?.page || "home"
-  ); // "home" | "login" | "mypage" | "shelters" | "safety-check-response"
+  ); // "home" | "login" | "mypage" | "shelters" | "safety-news" | "safety-check-response"
   const [selectedShelterRegionId, setSelectedShelterRegionId] = useState(
     window.history.state?.shelterRegionId ?? null
+  );
+  const [selectedSafetyNewsRegionId, setSelectedSafetyNewsRegionId] = useState(
+    window.history.state?.safetyNewsRegionId ?? null
   );
   const [token, setToken] = useState(localStorage.getItem("token"));
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef(null);
+
+  // 로그인이 필요한 기능을 로그아웃 상태에서 눌렀을 때 - 진짜 브라우저 네이티브 alert으로 띄움
+  // (커스텀 모달 말고 window.alert 그대로 씀. 확인 누르면 alert이 닫히고 바로 다음 줄인 goTo("login")로 넘어감)
+  const requireLogin = (action) => {
+    if (!token) {
+      window.alert("로그인이 필요한 서비스입니다.");
+      goTo("login");
+      return;
+    }
+    action();
+  };
 
   // 헤더 검색 - "실시간 재난·안전 정보" 목록을 지역/키워드로 필터링
   const [headerSearchQuery, setHeaderSearchQuery] = useState("");
@@ -240,6 +257,7 @@ export default function App() {
     const handlePopState = (e) => {
       setPage(e.state?.page || "home");
       setSelectedShelterRegionId(e.state?.shelterRegionId ?? null);
+      setSelectedSafetyNewsRegionId(e.state?.safetyNewsRegionId ?? null);
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -251,6 +269,9 @@ export default function App() {
     setPage(nextPage);
     if (Object.prototype.hasOwnProperty.call(extraState, "shelterRegionId")) {
       setSelectedShelterRegionId(extraState.shelterRegionId);
+    }
+    if (Object.prototype.hasOwnProperty.call(extraState, "safetyNewsRegionId")) {
+      setSelectedSafetyNewsRegionId(extraState.safetyNewsRegionId);
     }
     window.history.pushState({ page: nextPage, ...extraState }, "");
   };
@@ -278,7 +299,7 @@ export default function App() {
     const handleAuthInvalid = () => {
       setToken(null);
       setMyProfile(null);
-      if (page === "mypage" || page === "shelters") {
+      if (page === "mypage" || page === "shelters" || page === "safety-news") {
         goTo("home");
       }
     };
@@ -344,6 +365,21 @@ export default function App() {
       .finally(() => setMyReportsLoading(false));
   }, [token, reportSuccess]);
 
+  // 헤더 종모양 배지 - 마이페이지 "알림" 탭이랑 완전히 같은 기준(재난/제보/기타/안전확인 다 합쳐서)으로
+  // 세야 하는데, 그중 재난알림/제보알림/기타는 마이페이지에서만 불러오던 데이터라 여기서도 따로 불러옴.
+  // (안전확인은 위에서 이미 sentSafetyChecks/receivedSafetyChecks로 갖고 있어서 재사용)
+  const [regions, setRegions] = useState([]);
+  const [dbNotifications, setDbNotifications] = useState([]);
+  useEffect(() => {
+    if (!token) {
+      setRegions([]);
+      setDbNotifications([]);
+      return;
+    }
+    authFetch("/api/mypage/regions").then(setRegions).catch(() => {});
+    getNotifications().then(setDbNotifications).catch(() => {});
+  }, [token]);
+
   // myReports가 갱신될 때마다, 연결된(고유한) Incident들의 현재 상태 + 타임라인을 같이 가져옴
   useEffect(() => {
     const uniqueIds = [...new Set(myReports.filter((r) => r.incidentId).map((r) => r.incidentId))];
@@ -390,6 +426,12 @@ export default function App() {
     const socket = connectIncidentSocket((data) => {
       const changedId = data.incident?.incidentId;
       if (!changedId) return;
+
+      // 이 broadcast는 STAFF 상황판 + 시민 화면 전체한테 다 가는 신호라, 이 사건이 "내 관심지역
+      // 반경 안"이었는지 "내 제보가 연결돼있었는지"는 클라이언트가 알 방법이 없음(서버만 앎).
+      // 그래서 매번 무조건 다시 조회 - 어차피 서버가 로그인한 나(memberId) 기준으로만 내려주는
+      // API라, 나랑 무관한 사건이었으면 그냥 새 항목 없이 그대로 돌아올 뿐 손해가 없음.
+      getNotifications().then(setDbNotifications).catch(() => {});
 
       // 내가 추적 중인(=이미 incidentInfo에 있는) 사건일 때만 반응 - 남의 사건까지 다 받아서 처리할 필요 없음
       setIncidentInfo((prev) => {
@@ -457,6 +499,7 @@ export default function App() {
       });
       setShowSafetyCheckModal(false);
       setSelectedFamilyIds([]);
+      alert("안전확인 요청을 보냈습니다.");
     } catch (err) {
       alert(err.message);
     } finally {
@@ -487,14 +530,8 @@ export default function App() {
     goTo("home");
   };
 
-  // 로그인 안 한 상태에서 현장제보 누르면 로그인부터 하도록 유도
-  const handleReportClick = () => {
-    if (!token) {
-      goTo("login");
-      return;
-    }
-    setShowReportForm(true);
-  };
+  // 로그인 안 한 상태에서 현장제보 누르면 경고 팝업 띄우고 로그인부터 하도록 유도
+  const handleReportClick = () => requireLogin(() => setShowReportForm(true));
 
   const handleReportSuccess = () => {
     setShowReportForm(false);
@@ -518,11 +555,7 @@ export default function App() {
   };
 
   // "담당기관 대응상황 전체보기" - 연결된 사건이 하나뿐이면 바로 상세로, 여러 개면 목록으로
-  const openTrackingOverview = () => {
-    if (!token) {
-      goTo("login");
-      return;
-    }
+  const openTrackingOverview = () => requireLogin(() => {
     const uniqueIds = [...new Set(myReports.filter((r) => r.incidentId).map((r) => r.incidentId))];
     if (uniqueIds.length === 1) {
       openIncidentDetail(uniqueIds[0]);
@@ -530,7 +563,7 @@ export default function App() {
       setTrackingOpen(true);
       setDetailIncidentId(null);
     }
-  };
+  });
 
   const closeTracking = () => {
     setTrackingOpen(false);
@@ -538,6 +571,7 @@ export default function App() {
     setDetailTimeline([]);
     setDetailPendingReportId(null);
   };
+  useEscapeKey(trackingOpen, closeTracking);
 
   // "검토 대기중"(사건 미연결) 제보 상세보기 - 아직 Incident가 없어서 타임라인/진행상태는 없고
   // 제보 원본 내용만 보여주는 단순 모드
@@ -563,6 +597,33 @@ export default function App() {
   };
   sentSafetyChecks.forEach((c) => considerCheck(c.targetMemberId, c, "sent"));
   receivedSafetyChecks.forEach((c) => considerCheck(c.requesterId, c, "received"));
+
+  // 헤더 종모양 알림 배지 - 마이페이지 "알림" 탭과 완전히 같은 기준으로 계산함
+  // (재난 알림 + 제보 알림 + 기타(관심지역 등록) + 안전확인, 그리고 마이페이지에서 읽음 처리한
+  //  건 localStorage(safeTraceReadNotifications)를 그대로 같이 봐서 두 화면 숫자가 항상 일치하게)
+  const notificationItems = buildNotificationItems({
+    sentChecks: sentSafetyChecks,
+    receivedChecks: receivedSafetyChecks,
+    myReports,
+    regions,
+    dbNotifications,
+  });
+  let readNotificationIds = [];
+  try {
+    readNotificationIds = JSON.parse(localStorage.getItem("safeTraceReadNotifications") || "[]");
+  } catch {
+    readNotificationIds = [];
+  }
+  // 마이페이지에서 삭제한 알림은 홈 화면 배지에서도 똑같이 빠져야 함 (같은 localStorage 키 공유)
+  let dismissedNotificationIds = [];
+  try {
+    dismissedNotificationIds = JSON.parse(localStorage.getItem("safeTraceDismissedNotifications") || "[]");
+  } catch {
+    dismissedNotificationIds = [];
+  }
+  const unreadNotificationCount = notificationItems.filter(
+    (n) => !readNotificationIds.includes(n.id) && !dismissedNotificationIds.includes(n.id)
+  ).length;
 
   // "내 현장제보 추적"을 제보 단위가 아니라 "연결된 사건" 단위로 묶음 —
   // 같은 사건에 제보 여러 개가 묶여도 카드 하나로 압축되고, 최근 업데이트순으로 정렬
@@ -666,6 +727,7 @@ export default function App() {
         onBackToHome={() => goTo("home")}
         onLogout={handleLogout}
         onOpenShelters={(regionId) => goTo("shelters", { shelterRegionId: regionId })}
+        onOpenSafetyNews={(regionId) => goTo("safety-news", { safetyNewsRegionId: regionId })}
       />
     );
   }
@@ -674,6 +736,17 @@ export default function App() {
     return (
       <ShelterPage
         initialRegionId={selectedShelterRegionId}
+        onBackToHome={() => goTo("home")}
+        onLogout={handleLogout}
+        onGoToMyPageTab={(tab) => goTo("mypage", { mypageTab: tab })}
+      />
+    );
+  }
+
+  if (page === "safety-news") {
+    return (
+      <DisasterNewsPage
+        initialRegionId={selectedSafetyNewsRegionId}
         onBackToHome={() => goTo("home")}
         onLogout={handleLogout}
         onGoToMyPageTab={(tab) => goTo("mypage", { mypageTab: tab })}
@@ -746,8 +819,18 @@ export default function App() {
               </div>
             </form>
             <div className="relative">
-              <Bell className="w-5 h-5 cursor-pointer" />
-              <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white" />
+              <button
+                onClick={() => requireLogin(() => goTo("mypage", { mypageTab: "notify" }))}
+                className="relative w-9 h-9 rounded-full flex items-center justify-center hover:bg-slate-100 transition cursor-pointer"
+                aria-label="알림"
+              >
+                <Bell className="w-5 h-5" />
+                {token && unreadNotificationCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
+                    {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
+                  </span>
+                )}
+              </button>
             </div>
            {token ? (
   <>
@@ -876,10 +959,22 @@ export default function App() {
               안전지도: "지도에서 한눈에 확인하세요",
             }[label];
             return (
-              <button key={label} onClick={label === "현장제보" ? handleReportClick : undefined} className={`px-5 py-6 flex items-center gap-4 text-left hover:bg-slate-50 transition cursor-pointer ${index !== 5 ? "lg:border-r border-slate-100" : ""}`}>
+              <button
+                key={label}
+                onClick={
+                  label === "현장제보"
+                    ? handleReportClick
+                    : label === "가족확인"
+                    ? () => requireLogin(() => goTo("mypage", { mypageTab: "family" }))
+                    : label === "대피시설"
+                    ? () => requireLogin(() => goTo("shelters", { shelterRegionId: null }))
+                    : undefined
+                }
+                className={`group px-5 py-6 flex items-center gap-4 text-left hover:bg-slate-50 transition-colors cursor-pointer ${index !== 5 ? "lg:border-r border-slate-100" : ""}`}
+              >
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${iconStyles[index]}`}><Icon className="w-6 h-6" /></div>
                 <div>
-                  <div className="font-bold text-[#0B2A52] text-sm">{label === "가족확인" ? "가족 안전확인" : label === "대피시설" ? "대피시설 찾기" : label === "현장제보" ? "현장 제보하기" : label === "안전지도" ? "안전지도" : label}</div>
+                  <div className="font-bold text-[#0B2A52] text-sm group-hover:text-blue-600 transition-colors">{label === "가족확인" ? "가족 안전확인" : label === "대피시설" ? "대피시설 찾기" : label === "현장제보" ? "현장 제보하기" : label === "안전지도" ? "안전지도" : label}</div>
                   <div className="text-[11px] text-slate-400 mt-1 whitespace-nowrap">{sub}</div>
                 </div>
               </button>
@@ -1051,7 +1146,7 @@ export default function App() {
             </section>
 
             <section className="bg-white rounded-[18px] border border-slate-200 shadow-sm p-5">
-              <div className="flex items-center justify-between mb-4"><h2 className="text-[18px] font-extrabold text-[#0B2A52] flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /> 가족 안전확인</h2><button onClick={() => goTo(token ? "mypage" : "login")} className="text-sm text-[#0B2A52] flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer">더보기 <ChevronRight className="w-4 h-4" /></button></div>
+              <div className="flex items-center justify-between mb-4"><h2 className="text-[18px] font-extrabold text-[#0B2A52] flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /> 가족 안전확인</h2><button onClick={() => requireLogin(() => goTo("mypage", { mypageTab: "family" }))} className="text-sm text-[#0B2A52] flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer">더보기 <ChevronRight className="w-4 h-4" /></button></div>
               {!token ? <p className="text-sm text-slate-400 py-3">로그인하면 가족 안전확인을 이용할 수 있습니다.</p> : families.length === 0 ? <p className="text-sm text-slate-400 py-3">등록된 가족이 없습니다. 마이페이지에서 가족을 등록해보세요.</p> : (
                 <div className="space-y-3">
                   {families.slice(0,2).map((f) => {

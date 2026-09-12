@@ -59,6 +59,15 @@ public class MemberService {
         return jwtTokenProvider.generateToken(member.getMemberId(), member.getRole(), member.getName(), member.getCreatedAt());
     }
 
+    // 세션 연장용 - 이미 유효한 토큰(JwtAuthenticationFilter를 통과해서 SecurityContext에
+    // memberId가 들어와있는 상태)을 가진 회원에게 만료시간만 새로 늘려서 토큰을 재발급.
+    // 필터에서 이미 회원 존재/탈퇴여부까지 검증하고 통과시킨 뒤라 여기선 바로 재발급한다.
+    public String reissueToken(Long memberId) {
+        Member member = memberMapper.findById(memberId);
+        // login()과 똑같이 generateToken 호출 - 단지 발급 시각이 "지금"이라 만료시각(exp)만 늘어남
+        return jwtTokenProvider.generateToken(member.getMemberId(), member.getRole(), member.getName(), member.getCreatedAt());
+    }
+
     // ---- 마이페이지 --------------------------------------------------------
 
     public Member getMyInfo(Long memberId) {
@@ -73,8 +82,8 @@ public class MemberService {
     // 내정보 수정 - 이메일/전화/주소/프로필사진만 변경 가능... 이라고 했지만
     // 이메일은 가입 시 인증된 값으로 고정하고 이후 변경은 막음(중복/재인증 로직이 없어 악용 소지가 있었음).
     // 로그인ID/이름/권한/이메일은 여기서 안 건드림
+    // (UPDATE 쿼리 자체가 EMAIL 컬럼을 SET하지 않으므로, 요청에 이메일이 같이 와도 애초에 반영되지 않음)
     public void updateMyInfo(Long memberId, Member updates) {
-        updates.setEmail(null); // 요청에 이메일이 실려와도 무시 - 절대 변경되지 않도록
         updates.setMemberId(memberId);
         memberMapper.update(updates);
     }

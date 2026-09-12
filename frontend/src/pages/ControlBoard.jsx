@@ -2,10 +2,12 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ShieldAlert, LayoutDashboard, FileText, ClipboardList, Truck,
   Building2, FileBarChart, Bell, LogOut, Search, RefreshCw,
-  Clock, AlertTriangle, CheckCircle2, Activity, X, UserCheck, Link2, Image as ImageIcon
+  Clock, AlertTriangle, CheckCircle2, Activity, X, UserCheck, Link2, Image as ImageIcon,
+  Camera, Loader2
 } from "lucide-react";
-import { authFetch, getCurrentUser } from "../api/client";
+import { authFetch, authUpload, getCurrentUser } from "../api/client";
 import { connectIncidentSocket } from "../api/socket";
+import { useEscapeKey } from "../hooks/useEscapeKey";
 
 const SEVERITY_COLOR = {
   HIGH: "#DC2626",
@@ -84,6 +86,13 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
   const [candidates, setCandidates] = useState([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [reportError, setReportError] = useState("");
+  // 사건 연결/등록 성공했을 때 잠깐 떴다 사라지는 토스트 - "저장은 됐는데 화면이 조용해서 헷갈림" 문제 해결용
+  const [toast, setToast] = useState("");
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), 2500);
+    return () => clearTimeout(timer);
+  }, [toast]);
   const [reportAddresses, setReportAddresses] = useState({}); // reportId -> 주소 문자열
   const [reportSearchQuery, setReportSearchQuery] = useState("");
   const [reportTypeFilter, setReportTypeFilter] = useState(null); // null = 전체, 아니면 특정 재난유형만
@@ -119,6 +128,12 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
   const [linkAfterCreateReportId, setLinkAfterCreateReportId] = useState(null);
   const [showCreateIncidentModal, setShowCreateIncidentModal] = useState(false);
   const [viewingPhotoUrl, setViewingPhotoUrl] = useState(null);
+  useEscapeKey(!!viewingPhotoUrl, () => setViewingPhotoUrl(null));
+  useEscapeKey(showCreateIncidentModal, () => {
+    setShowCreateIncidentModal(false);
+    setLinkAfterCreateReportId(null);
+    setCreateError("");
+  });
 
   // 사건 관리 탭 - 기존 사건 목록 검색어
   const [incidentSearchQuery, setIncidentSearchQuery] = useState("");
@@ -363,6 +378,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
       await loadReports();
       setSelectedReportId(null);
       setCandidates([]);
+      setToast("기존 사건에 연결되었습니다.");
     } catch (err) {
       setReportError(err.message);
     }
@@ -382,7 +398,86 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
     });
     setLinkAfterCreateReportId(report.reportId);
     setCreateError("");
+    setPhotoFile(null);
+    setPhotoPreviewUrl(null);
     setShowCreateIncidentModal(true);
+  };
+
+  // 제보 없이 STAFF가 처음부터 직접 사건을 등록하는 경우 - "사건 관리" 탭에서 진입.
+  // 제보 기반과 달리 자동으로 채워줄 값이 없어서 전부 빈 폼으로 시작함.
+  const startNewIncidentDirect = () => {
+    setNewIncident({ title: "", disasterType: "침수", severity: "MEDIUM", region: "", latitude: "", longitude: "" });
+    setLinkAfterCreateReportId(null);
+    setCreateError("");
+    setPhotoFile(null);
+    setPhotoPreviewUrl(null);
+    setShowCreateIncidentModal(true);
+  };
+
+  // ---- 새 사건 등록 모달 - 주소 검색(위도/경도 자동 변환) + 현장사진 첨부 ------------------
+  const [geocoding, setGeocoding] = useState(false);
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState(null);
+
+  // 주소 문자열 -> 위경도 좌표 변환 (카카오 Geocoder). ReportForm.jsx의 시민 제보 흐름과 동일한 방식.
+  const geocodeAddress = (address) => {
+    if (!window.kakao || !window.kakao.maps) {
+      setCreateError("지도 API를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
+      return;
+    }
+    setGeocoding(true);
+    window.kakao.maps.load(() => {
+      const geocoder = new window.kakao.maps.services.Geocoder();
+      geocoder.addressSearch(address, (result, status) => {
+        setGeocoding(false);
+        if (status === window.kakao.maps.services.Status.OK && result[0]) {
+          setNewIncident((prev) => ({
+            ...prev,
+            region: address,
+            latitude: String(result[0].y),
+            longitude: String(result[0].x),
+          }));
+        } else {
+          setCreateError("좌표 변환에 실패했습니다. 다른 주소로 다시 검색해주세요.");
+        }
+      });
+    });
+  };
+
+  // "주소 검색" 버튼 -> 다음(Daum) 우편번호 검색 팝업 오픈 (스크립트는 index.html에 전역으로 이미 로드돼있음)
+  const handleAddressSearch = () => {
+    setCreateError("");
+    if (!window.daum || !window.daum.Postcode) {
+      setCreateError("주소 검색 서비스를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
+      return;
+    }
+    new window.daum.Postcode({
+      oncomplete: (data) => {
+        const fullAddress = data.roadAddress || data.jibunAddress;
+        geocodeAddress(fullAddress);
+      },
+    }).open();
+  };
+
+  const handlePhotoChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setCreateError("이미지 파일만 첨부할 수 있습니다.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setCreateError("사진 용량은 5MB 이하만 가능합니다.");
+      return;
+    }
+    setCreateError("");
+    setPhotoFile(file);
+    setPhotoPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const handleRemovePhoto = () => {
+    setPhotoFile(null);
+    setPhotoPreviewUrl(null);
   };
 
   // "이 제보로 새 사건 만들기"를 눌렀을 때 주소 변환이 아직 안 끝나 있었다면,
@@ -407,12 +502,21 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
     const lat = parseFloat(newIncident.latitude);
     const lng = parseFloat(newIncident.longitude);
     if (Number.isNaN(lat) || Number.isNaN(lng)) {
-      setCreateError("위도/경도를 숫자로 입력해주세요.");
+      setCreateError("주소 검색으로 위치를 먼저 확인해주세요.");
       return;
     }
 
     setCreateLoading(true);
     try {
+      // 사진을 첨부했으면 먼저 업로드해서 URL부터 받아옴 (시민 제보 폼과 동일한 방식)
+      let photoUrl = null;
+      if (photoFile) {
+        const formData = new FormData();
+        formData.append("file", photoFile);
+        const uploadResult = await authUpload("/api/uploads", formData);
+        photoUrl = uploadResult.url;
+      }
+
       const created = await authFetch("/api/incidents", {
         method: "POST",
         body: JSON.stringify({
@@ -422,8 +526,12 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
           region: newIncident.region,
           latitude: lat,
           longitude: lng,
+          photoUrl,
         }),
       });
+
+      // linkAfterCreateReportId를 null로 비우기 전에 미리 판단해둠 (연결까지 했는지 여부로 문구 구분)
+      const linkedFromReport = !!linkAfterCreateReportId;
 
       if (linkAfterCreateReportId) {
         await authFetch(`/api/reports/${linkAfterCreateReportId}/link`, {
@@ -435,8 +543,11 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
       }
 
       setNewIncident({ title: "", disasterType: "침수", severity: "MEDIUM", region: "", latitude: "", longitude: "" });
+      setPhotoFile(null);
+      setPhotoPreviewUrl(null);
       await loadIncidents();
       setShowCreateIncidentModal(false);
+      setToast(linkedFromReport ? "새 사건으로 등록하고 제보를 연결했습니다." : "새 사건이 등록되었습니다.");
     } catch (err) {
       setCreateError(err.message);
     } finally {
@@ -509,7 +620,17 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
           {NAV_ITEMS.map(({ key, icon: Icon, label }) => (
             <button
               key={label}
-              onClick={() => key && setActiveNav(key)}
+              onClick={() => {
+                if (!key) return;
+                if (key === activeNav) {
+                  // 이미 활성화된 탭을 다시 누른 경우 - activeNav 값이 그대로라 setActiveNav만으론
+                  // 리렌더가 안 일어나므로, 그 탭의 새로고침 함수를 직접 호출해줌
+                  if (key === "reports") loadReports();
+                  else if (key === "incidents" || key === "dashboard") loadIncidents();
+                } else {
+                  setActiveNav(key);
+                }
+              }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${
                 activeNav === key ? "bg-white/10 text-white font-semibold" : "hover:bg-white/5"
               } cursor-pointer`}
@@ -762,30 +883,45 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                       </button>
                     </div>
                   ) : (
-                    <ul className="space-y-2">
-                      {candidates.map((inc) => (
-                        <li
-                          key={inc.incidentId}
-                          className="p-3 rounded-lg border border-slate-100 flex items-center justify-between"
-                        >
-                          <div>
-                            <div className="text-sm font-semibold text-slate-700">{inc.title}</div>
-                            <p className="text-xs text-slate-400">
-                              #{inc.incidentId} · {inc.region} ·{" "}
-                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_STYLE[inc.status] || ""}`}>
-                                {STATUS_LABEL[inc.status] || inc.status}
-                              </span>
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => handleLinkReport(inc.incidentId)}
-                            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-lg px-3 py-2 cursor-pointer"
+                    <div>
+                      <ul className="space-y-2">
+                        {candidates.map((inc) => (
+                          <li
+                            key={inc.incidentId}
+                            className="p-3 rounded-lg border border-slate-100 flex items-center justify-between"
                           >
-                            <Link2 className="w-3.5 h-3.5" /> 이 사건에 연결
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                            <div>
+                              <div className="text-sm font-semibold text-slate-700">{inc.title}</div>
+                              <p className="text-xs text-slate-400">
+                                #{inc.incidentId} · {inc.region} ·{" "}
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_STYLE[inc.status] || ""}`}>
+                                  {STATUS_LABEL[inc.status] || inc.status}
+                                </span>
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => handleLinkReport(inc.incidentId)}
+                              className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-lg px-3 py-2 cursor-pointer"
+                            >
+                              <Link2 className="w-3.5 h-3.5" /> 이 사건에 연결
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                      {/* 후보로 뜨긴 했어도 담당자가 보기엔 실제로 무관할 수 있음 - 그럴 땐 굳이
+                          억지로 연결시키지 말고 별개의 새 사건으로 등록할 수 있는 탈출구를 열어둠 */}
+                      <div className="mt-3 pt-3 border-t border-slate-100">
+                        <p className="text-xs text-slate-400 mb-2">
+                          위 후보들과 관련이 없다면, 별개의 사건으로 새로 등록할 수도 있습니다.
+                        </p>
+                        <button
+                          onClick={() => startNewIncidentFromReport(selectedReport)}
+                          className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50 rounded-lg px-3 py-2 cursor-pointer"
+                        >
+                          이 제보로 새 사건 만들기
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -798,7 +934,15 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
             <div className="space-y-6">
               {/* 기존 사건 목록 - 전체 너비 테이블 */}
               <div className="bg-white rounded-2xl border border-slate-200 p-4">
-                <h3 className="font-bold text-[#0F2540] mb-3">기존 사건 목록</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-[#0F2540]">기존 사건 목록</h3>
+                  <button
+                    onClick={startNewIncidentDirect}
+                    className="text-xs font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-lg px-3 py-2 cursor-pointer"
+                  >
+                    + 새 사건 등록
+                  </button>
+                </div>
                 <div className="flex items-center gap-2 text-slate-400 bg-slate-50 rounded-lg px-3 py-2 mb-3 max-w-md">
                   <Search className="w-4 h-4" />
                   <input
@@ -982,7 +1126,15 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
 
                   {/* 상태 전환 입력 - 패널 맨 아래, 전체 너비 */}
                   <div className="mt-6 pt-6 border-t border-slate-200">
-                    {nextStatus ? (
+                    {!nextStatus ? (
+                      <p className="text-xs text-slate-400">더 이상 전환할 상태가 없습니다.</p>
+                    ) : !selectedIncident.assignedStaffId ? (
+                      // 백엔드가 담당자 미배정 시 모든 상태전환을 막으므로, 프론트에서도 미리
+                      // 막아서 "눌렀는데 에러만 뜨는" 경험 대신 왜 안 되는지 바로 안내함
+                      <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                        담당자가 배정되지 않아 상태를 전환할 수 없습니다. 위에서 먼저 담당자를 배정해주세요.
+                      </p>
+                    ) : (
                       <div>
                         <h4 className="text-xs font-bold text-slate-500 mb-2">
                           다음 상태로 전환: {STATUS_LABEL[nextStatus]}
@@ -1002,8 +1154,6 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                           {STATUS_LABEL[nextStatus]}(으)로 전환
                         </button>
                       </div>
-                    ) : (
-                      <p className="text-xs text-slate-400">더 이상 전환할 상태가 없습니다.</p>
                     )}
                   </div>
                 </div>
@@ -1044,12 +1194,16 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-6">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-1">
-              <h3 className="font-bold text-[#0F2540]">새 사건(Incident) 등록</h3>
+              <h3 className="font-bold text-[#0F2540]">
+                {linkAfterCreateReportId ? "새 사건(Incident) 등록" : "새 사건 직접 등록"}
+              </h3>
               <button
                 onClick={() => {
                   setShowCreateIncidentModal(false);
                   setLinkAfterCreateReportId(null);
                   setCreateError("");
+                  setPhotoFile(null);
+                  setPhotoPreviewUrl(null);
                 }}
                 className="text-slate-400 hover:text-slate-600 cursor-pointer"
               >
@@ -1057,7 +1211,9 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
               </button>
             </div>
             <p className="text-xs text-slate-400 mb-4">
-              재난유형·지역·위치가 이 제보 정보로 자동 채워져 있습니다. 필요하면 지역은 직접 수정해도 됩니다.
+              {linkAfterCreateReportId
+                ? "재난유형·지역·위치가 이 제보 정보로 자동 채워져 있습니다. 필요하면 주소를 다시 검색해 수정해도 됩니다."
+                : "제보 없이 담당자가 직접 사건을 등록합니다. 아래 버튼으로 주소를 검색해 위치를 확인해주세요."}
             </p>
 
             <form onSubmit={handleCreateIncident} className="space-y-3">
@@ -1100,35 +1256,43 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">지역</label>
-                <input
-                  type="text"
-                  value={newIncident.region}
-                  onChange={(e) => setNewIncident({ ...newIncident, region: e.target.value })}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#0F2540]"
-                  placeholder="예: 대전 유성구 궁동"
-                />
+                <label className="block text-xs font-semibold text-slate-500 mb-1">위치</label>
+                <button
+                  type="button"
+                  onClick={handleAddressSearch}
+                  disabled={geocoding}
+                  className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-[#0F2540] border border-slate-200 rounded-lg py-2.5 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+                >
+                  {geocoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                  주소 검색
+                </button>
+                {newIncident.region && newIncident.latitude && newIncident.longitude ? (
+                  <p className="text-xs text-emerald-600 mt-1.5">✓ {newIncident.region}</p>
+                ) : (
+                  <p className="text-xs text-slate-400 mt-1.5">주소 검색으로 위치를 확인해주세요.</p>
+                )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">위도</label>
-                  <input
-                    type="text"
-                    value={newIncident.latitude}
-                    onChange={(e) => setNewIncident({ ...newIncident, latitude: e.target.value })}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#0F2540]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">경도</label>
-                  <input
-                    type="text"
-                    value={newIncident.longitude}
-                    onChange={(e) => setNewIncident({ ...newIncident, longitude: e.target.value })}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#0F2540]"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">현장 사진 (선택)</label>
+                {!photoPreviewUrl ? (
+                  <label className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-[#0F2540] border border-dashed border-slate-300 rounded-lg py-4 hover:bg-slate-50 cursor-pointer">
+                    <Camera className="w-4 h-4" />
+                    사진 첨부하기
+                    <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
+                  </label>
+                ) : (
+                  <div className="relative">
+                    <img src={photoPreviewUrl} alt="현장 사진 미리보기" className="w-full h-40 object-cover rounded-lg" />
+                    <button
+                      type="button"
+                      onClick={handleRemovePhoto}
+                      className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1 hover:bg-black/80 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
 
               {createError && (
@@ -1140,10 +1304,21 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                 disabled={createLoading}
                 className="w-full bg-[#0F2540] hover:bg-[#1B3A5C] text-white font-bold rounded-lg py-2.5 text-sm disabled:opacity-50 cursor-pointer"
               >
-                {createLoading ? "등록 중..." : "등록하고 제보 연결하기"}
+                {createLoading
+                  ? "등록 중..."
+                  : linkAfterCreateReportId
+                  ? "등록하고 제보 연결하기"
+                  : "사건 등록하기"}
               </button>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* 사건 연결/등록 성공 토스트 - MainPage.jsx 제보 접수 토스트와 동일한 스타일 */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#0F2540] text-white text-sm font-semibold rounded-lg px-4 py-3 shadow-lg z-50">
+          {toast}
         </div>
       )}
     </div>

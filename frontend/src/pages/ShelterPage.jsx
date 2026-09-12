@@ -19,6 +19,30 @@ import {
 } from "lucide-react";
 import { authFetch } from "../api/client";
 
+// 행안부 쪽 지역명 표기가 정식명/약칭으로 들쭉날쭉해서 재시도용으로 쓰는 시/도 약칭 매핑
+// (MyPage.jsx의 SIDO_SHORT_NAME과 동일 - 세종처럼 "구" 단위가 없는 지역까지 커버하기 위함)
+const SIDO_SHORT_NAME = {
+  서울특별시: "서울",
+  부산광역시: "부산",
+  대구광역시: "대구",
+  인천광역시: "인천",
+  광주광역시: "광주",
+  대전광역시: "대전",
+  울산광역시: "울산",
+  세종특별자치시: "세종",
+  경기도: "경기",
+  강원도: "강원",
+  강원특별자치도: "강원",
+  충청북도: "충북",
+  충청남도: "충남",
+  전라북도: "전북",
+  전북특별자치도: "전북",
+  전라남도: "전남",
+  경상북도: "경북",
+  경상남도: "경남",
+  제주특별자치도: "제주",
+};
+
 const PAGE_SIZE = 8;
 
 const TABS = [
@@ -136,23 +160,34 @@ export default function ShelterPage({
         const sido = regionCode?.region_1depth_name;
         const gu = regionCode?.region_2depth_name;
 
-        if (!gu) {
+        // 세종특별자치시처럼 "구" 단위 행정구역이 아예 없는 지역은 gu가 빈 문자열로 옴 -
+        // 예전엔 여기서 바로 에러 처리돼서 세종은 대피시설이 항상 안 떴음. gu 없으면 시도명 자체를 씀.
+        if (!sido) {
           setShelters([]);
           setSheltersLoading(false);
           setError("선택한 관심 지역의 행정구역을 확인하지 못했습니다.");
           return;
         }
 
-        const guQuery = sido ? `${sido} ${gu}` : gu;
+        const regionQuery = gu ? `${sido} ${gu}` : sido;
+        const regionFallback = gu || null;
+        const regionShortFallback = gu && SIDO_SHORT_NAME[sido] ? `${SIDO_SHORT_NAME[sido]} ${gu}` : null;
 
         authFetch(
-          `/api/environment/shelters?guName=${encodeURIComponent(guQuery)}&lat=${lat}&lng=${lng}&limit=50`
+          `/api/environment/shelters?guName=${encodeURIComponent(regionQuery)}&lat=${lat}&lng=${lng}&limit=50`
         )
           .then((data) => {
             const first = Array.isArray(data) ? data : [];
-            if (first.length > 0) return first;
+            if (first.length > 0 || !regionFallback) return first;
             return authFetch(
-              `/api/environment/shelters?guName=${encodeURIComponent(gu)}&lat=${lat}&lng=${lng}&limit=50`
+              `/api/environment/shelters?guName=${encodeURIComponent(regionFallback)}&lat=${lat}&lng=${lng}&limit=50`
+            );
+          })
+          .then((data) => {
+            const arr = Array.isArray(data) ? data : [];
+            if (arr.length > 0 || !regionShortFallback) return arr;
+            return authFetch(
+              `/api/environment/shelters?guName=${encodeURIComponent(regionShortFallback)}&lat=${lat}&lng=${lng}&limit=50`
             );
           })
           .then((data) => setShelters(Array.isArray(data) ? data : []))

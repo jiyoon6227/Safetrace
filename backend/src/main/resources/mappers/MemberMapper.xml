@@ -48,11 +48,10 @@
           AND IS_WITHDRAWN = 'N'
     </select>
 
-    <!-- 마이페이지 - 내정보 수정 (이름/비밀번호/역할은 여기서 안 건드림) -->
+    <!-- 마이페이지 - 내정보 수정 (이름/비밀번호/역할/이메일은 여기서 안 건드림) -->
     <update id="update" parameterType="Member">
         UPDATE SF_MEMBER
         SET NAME = #{name},
-            EMAIL = #{email,jdbcType=VARCHAR},
             PHONE = #{phone,jdbcType=VARCHAR},
             PROFILE_IMAGE_URL = #{profileImageUrl,jdbcType=VARCHAR},
             ADDRESS = #{address,jdbcType=VARCHAR},

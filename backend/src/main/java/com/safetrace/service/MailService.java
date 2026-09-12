@@ -77,4 +77,31 @@ public class MailService {
             throw new RuntimeException("인증코드 이메일 발송 중 오류: " + e.getMessage(), e);
         }
     }
+
+    // 관심지역 재난 알림 - 안전확인 메일과 달리 즉각적인 위험을 알리는 거라 주황/빨강 톤으로 구분
+    // (호출부인 NotificationService에서 발송 실패를 잡아서 DB 알림 저장까지는 항상 성공하게 처리함)
+    public void sendDisasterAlert(String toEmail, String incidentTitle, String disasterType, String region, double distanceKm) {
+        String html = "<div style=\"font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;\">"
+                + "<h2 style=\"color:#dc2626;\">⚠ SafeTrace 재난 알림</h2>"
+                + "<p style=\"color:#334155;font-size:15px;\"><b>" + region + "</b>에서 <b>" + disasterType + "</b> 상황이 발생했습니다.</p>"
+                + "<p style=\"color:#475569;margin:0 0 20px;\">관심지역에서 약 " + String.format("%.1f", distanceKm) + "km 떨어진 위치입니다.</p>"
+                + "<a href=\"" + frontendBaseUrl + "\" "
+                + "style=\"display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;"
+                + "padding:12px 24px;border-radius:8px;font-weight:bold;\">상세 확인하기</a>"
+                + "<p style=\"color:#94a3b8;font-size:12px;margin-top:24px;\">"
+                + "버튼이 안 눌리면 아래 주소를 브라우저 주소창에 직접 붙여넣어 주세요.<br>"
+                + "<a href=\"" + frontendBaseUrl + "\" style=\"color:#0F2540;\">" + frontendBaseUrl + "</a></p>"
+                + "</div>";
+
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, "UTF-8");
+            helper.setTo(toEmail);
+            helper.setSubject("[SafeTrace] 관심지역 근처에 재난상황이 발생했습니다");
+            helper.setText(html, true);
+            mailSender.send(message);
+        } catch (MessagingException e) {
+            throw new RuntimeException("이메일 발송 중 오류: " + e.getMessage(), e);
+        }
+    }
 }

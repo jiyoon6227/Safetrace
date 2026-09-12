@@ -13,6 +13,7 @@ public class Incident {
     private String region;
     private Double latitude;
     private Double longitude;
+    private String photoUrl;       // STAFF가 직접 등록할 때 선택 첨부 (없으면 null)
     private Long assignedStaffId;
     private String closeReason;
     private LocalDateTime createdAt;

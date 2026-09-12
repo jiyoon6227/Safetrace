@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.safetrace.mapper.NotificationMapper">
+
+    <insert id="insert" parameterType="com.safetrace.domain.Notification">
+        <selectKey keyProperty="notificationId" resultType="Long" order="BEFORE">
+            SELECT SEQ_SF_NOTIFICATION.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO SF_NOTIFICATION (NOTIFICATION_ID, MEMBER_ID, TYPE, TITLE, CONTENT, INCIDENT_ID)
+        VALUES (#{notificationId}, #{memberId}, #{type}, #{title},
+                #{content,jdbcType=VARCHAR}, #{incidentId,jdbcType=NUMERIC})
+    </insert>
+
+    <!-- 마이페이지 "최근 알림" - 최신순 최대 30건만 (프론트에서 다시 최근 7일로 한 번 더 필터링함) -->
+    <select id="findByMemberId" resultType="com.safetrace.domain.Notification">
+        SELECT NOTIFICATION_ID, MEMBER_ID, TYPE, TITLE, CONTENT, INCIDENT_ID, CREATED_AT
+        FROM (
+            SELECT NOTIFICATION_ID, MEMBER_ID, TYPE, TITLE, CONTENT, INCIDENT_ID, CREATED_AT
+            FROM SF_NOTIFICATION
+            WHERE MEMBER_ID = #{memberId}
+            ORDER BY CREATED_AT DESC
+        )
+        WHERE ROWNUM &lt;= 30
+    </select>
+
+    <select id="findById" resultType="com.safetrace.domain.Notification">
+        SELECT NOTIFICATION_ID, MEMBER_ID, TYPE, TITLE, CONTENT, INCIDENT_ID, CREATED_AT
+        FROM SF_NOTIFICATION
+        WHERE NOTIFICATION_ID = #{notificationId}
+    </select>
+
+    <delete id="delete">
+        DELETE FROM SF_NOTIFICATION WHERE NOTIFICATION_ID = #{notificationId}
+    </delete>
+
+    <delete id="deleteAllByMemberId">
+        DELETE FROM SF_NOTIFICATION WHERE MEMBER_ID = #{memberId}
+    </delete>
+
+</mapper>

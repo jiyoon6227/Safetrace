@@ -7,9 +7,9 @@
             SELECT SEQ_SF_INCIDENT.NEXTVAL FROM DUAL
         </selectKey>
         INSERT INTO SF_INCIDENT
-            (INCIDENT_ID, TITLE, DISASTER_TYPE, SEVERITY, STATUS, REGION, LATITUDE, LONGITUDE)
+            (INCIDENT_ID, TITLE, DISASTER_TYPE, SEVERITY, STATUS, REGION, LATITUDE, LONGITUDE, PHOTO_URL)
         VALUES
-            (#{incidentId}, #{title}, #{disasterType}, #{severity}, 'RECEIVED', #{region}, #{latitude}, #{longitude})
+            (#{incidentId}, #{title}, #{disasterType}, #{severity}, 'RECEIVED', #{region}, #{latitude}, #{longitude}, #{photoUrl,jdbcType=VARCHAR})
     </insert>
 
     <select id="findById" resultType="com.safetrace.domain.Incident">

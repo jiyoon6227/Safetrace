@@ -95,3 +95,40 @@ export function getCurrentUser() {
     return null;
   }
 }
+
+// 토큰의 만료시각을 ms 단위(Date.now()랑 바로 비교 가능한 형태)로 꺼내옴
+// SessionExpiryModal이 "얼마나 남았는지" 계산할 때 씀
+export function getTokenExpiryMs() {
+  const token = localStorage.getItem("token");
+  if (!token) return null;
+  try {
+    const payload = decodeJwtPayload(token);
+    return payload.exp ? payload.exp * 1000 : null; // JWT의 exp는 "초" 단위라 1000 곱해서 ms로 변환
+  } catch {
+    return null;
+  }
+}
+
+// 세션 연장 - 아직 유효한 토큰으로 백엔드 /api/auth/refresh를 호출해서
+// 만료시간이 새로 늘어난 토큰을 발급받고, localStorage에 있는 기존 토큰을 그걸로 교체함.
+// 실패(401 등)하면 authFetch가 알아서 토큰 삭제 + "auth:invalid" 이벤트까지 처리해줌.
+export async function refreshToken() {
+  const data = await authFetch("/api/auth/refresh", { method: "POST" });
+  localStorage.setItem("token", data.token); // 만료시간 갱신된 새 토큰으로 교체
+  window.dispatchEvent(new Event("auth:refreshed")); // 필요하면 다른 컴포넌트도 이 이벤트로 감지 가능
+  return data.token;
+}
+
+// 마이페이지 "최근 알림" - 재난 알림(관심지역 반경 매칭)/제보 알림(내 제보 상태변경).
+// 서버가 실제 이벤트(Incident 생성/상태변경) 시점에 만들어둔 알림만 내려줌.
+export function getNotifications() {
+  return authFetch("/api/notifications");
+}
+
+export function deleteNotification(notificationId) {
+  return authFetch(`/api/notifications/${notificationId}`, { method: "DELETE" });
+}
+
+export function deleteAllNotifications() {
+  return authFetch("/api/notifications", { method: "DELETE" });
+}
