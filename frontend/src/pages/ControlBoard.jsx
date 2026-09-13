@@ -3,7 +3,8 @@ import {
   ShieldAlert, LayoutDashboard, FileText, ClipboardList, Truck,
   Building2, FileBarChart, Bell, LogOut, Search, RefreshCw,
   Clock, AlertTriangle, CheckCircle2, Activity, X, UserCheck, Link2, Image as ImageIcon,
-  Camera, Loader2
+  Camera, Loader2, ChevronDown, User, Plus, Minus, LocateFixed,
+  TrendingUp, TrendingDown, UserPlus, FilePlus, MapPin, Eye, XCircle, Menu,
 } from "lucide-react";
 import { authFetch, authUpload, getCurrentUser } from "../api/client";
 import { connectIncidentSocket } from "../api/socket";
@@ -35,12 +36,104 @@ const STATUS_STYLE = {
 // 화면에서도 그대로 반영하기 위해 씀 (다음 상태 버튼 하나만 보여주는 용도)
 const STATUS_ORDER = ["RECEIVED", "CONFIRMING", "RESPONDING", "RECOVERING", "CLOSED"];
 
-// 서버가 주는 시각 문자열을 "9/6 16:20" 형태로 짧게 표시
+// 시민 ReportForm.jsx와 동일한 재난유형 목록 - 제보 관리 탭 요약 칩에서 0건인 유형도 같이 보여주기 위함
+const REPORT_DISASTER_TYPES = ["침수", "화재", "산사태", "강풍", "폭염", "한파", "기타"];
+
+// 시/도 17개 고정 목록 - 실제 제보 데이터랑 상관없이 항상 다 보여주고, 고른 지역에 제보가 있으면 그것만 필터링
+const REGION_OPTIONS = [
+  "서울특별시", "부산광역시", "대구광역시", "인천광역시", "광주광역시", "대전광역시", "울산광역시",
+  "세종특별자치시", "경기도", "강원특별자치도", "충청북도", "충청남도", "전북특별자치도", "전라남도",
+  "경상북도", "경상남도", "제주특별자치도",
+];
+
+// 제보 처리 상태 - 사건전환된 제보도 원본 데이터를 지우지 않고 상태만 바꿔서 이력으로 보존함
+const REPORT_STATUS_LABEL = { RECEIVED: "접수", LINKED: "사건전환 완료" };
+const REPORT_STATUS_STYLE = {
+  RECEIVED: "bg-slate-200 text-slate-700",
+  LINKED: "bg-emerald-100 text-emerald-700",
+};
+
+// 접수일시 필터 - 너무 오래된/의미없는 연도(0000년 등) 입력 방지용 하한선
+const MIN_REPORT_DATE = "2020-01-01";
+
+// 서버가 주는 시각 문자열을 "2026-09-13 11:24" 형태(24시간제)로 통일해서 표시
 const formatDateTime = (iso) => {
   if (!iso) return "-";
   const d = new Date(iso);
-  return d.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
+
+// "N분 전" / "N시간 전" 형태 - 담당 사건 목록, 최근 활동 카드에서 사용
+const formatTimeAgo = (iso) => {
+  if (!iso) return "-";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return "방금 전";
+  if (min < 60) return `${min}분 전`;
+  const hour = Math.floor(min / 60);
+  if (hour < 24) return `${hour}시간 전`;
+  return `${Math.floor(hour / 24)}일 전`;
+};
+
+// "01012344321" / "010-1234-4321" 등 어떤 형태로 들어와도 "010-****-4321"처럼 가운데를 가려서 표시
+const maskPhone = (phone) => {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 8) return phone; // 형식이 이상하면 마스킹하지 않고 원본 그대로
+  const first = digits.slice(0, 3);
+  const last = digits.slice(-4);
+  return `${first}-****-${last}`;
+};
+
+const sameDay = (isoA, dateB) => {
+  if (!isoA) return false;
+  const a = new Date(isoA);
+  return a.getFullYear() === dateB.getFullYear() && a.getMonth() === dateB.getMonth() && a.getDate() === dateB.getDate();
+};
+
+// 지도 마커/범례 색상 - 위험도가 아니라 "지금 어떤 조치가 필요한지" 기준(상태)으로 구분
+// 긴급(위험도 HIGH·미종료) > 대응중 > 확인중(접수/확인중) > 해결(종료)
+const markerColorOf = (inc) => {
+  if (inc.status !== "CLOSED" && inc.severity === "HIGH") return "#DC2626"; // 긴급
+  if (inc.status === "RESPONDING") return "#F59E0B"; // 대응중
+  if (inc.status === "CLOSED") return "#10B981"; // 해결
+  return "#3B82F6"; // 확인중 (접수/확인중/복구중)
+};
+
+const DISASTER_TYPE_COLOR = {
+  침수: "#3B82F6", 화재: "#EF4444", 산사태: "#8B5CF6", 태풍: "#06B6D4",
+  폭염: "#F59E0B", 강풍: "#64748B", 한파: "#0EA5E9", 기타: "#94A3B8",
+};
+
+// 지도 마커에 넣을 재난유형별 이모지 - 색상 핀만으로는 무슨 재난인지 구분이 안 돼서 추가
+const DISASTER_TYPE_EMOJI = {
+  침수: "💧", 화재: "🔥", 산사태: "⛰️", 태풍: "🌀", 폭염: "☀️", 강풍: "💨", 한파: "❄️", 기타: "⚠️",
+};
+
+// 원형 점 대신 "핀" 모양 마커 - 위쪽 흰 원 안에 재난유형 이모지를 넣어 지도만 보고도 무슨 사건인지 알 수 있게 함
+const buildMarkerImage = (inc) => {
+  const color = markerColorOf(inc);
+  const emoji = DISASTER_TYPE_EMOJI[inc.disasterType] || "⚠️";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42">
+    <path d="M17 0C7.6 0 0 7.6 0 17c0 12 17 25 17 25s17-13 17-25C34 7.6 26.4 0 17 0z" fill="${color}"/>
+    <circle cx="17" cy="16" r="11.5" fill="white"/>
+    <text x="17" y="21" font-size="14" text-anchor="middle">${emoji}</text>
+  </svg>`;
+  return new window.kakao.maps.MarkerImage(
+    `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`,
+    new window.kakao.maps.Size(34, 42),
+    { offset: new window.kakao.maps.Point(17, 42) }
+  );
+};
+
+// 공지사항 - 별도 백엔드 API가 없어 화면 구성용으로 고정해둔 안내 문구
+const STATIC_NOTICES = [
+  { icon: AlertTriangle, tone: "text-red-500", title: "[긴급] 호우주의보 발효에 따른 비상근무 체계 가동", date: "오늘" },
+  { icon: Bell, tone: "text-blue-500", title: "[안내] 추석 연휴 재난상황실 운영 안내", date: "어제" },
+  { icon: Bell, tone: "text-blue-500", title: "[안내] 시스템 정기 점검 일정 안내", date: "이번 주" },
+  { icon: Bell, tone: "text-blue-500", title: "[안내] 여름철 폭염 대응 지침 업데이트", date: "이번 달" },
+];
 
 const NAV_ITEMS = [
   { key: "dashboard", icon: LayoutDashboard, label: "대시보드" },
@@ -60,6 +153,33 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
   const currentUser = getCurrentUser();
 
   const [activeNav, setActiveNav] = useState("dashboard");
+
+  // 헤더 - 프로필/알림 드롭다운, 내 정보(부서 표시용)
+  const [member, setMember] = useState(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true); // 햄버거로 열고 닫는 사이드바(기본 열림)
+  const [notifOpen, setNotifOpen] = useState(false);
+  const profileRef = useRef(null);
+  const notifRef = useRef(null);
+  useEffect(() => {
+    authFetch("/api/mypage").then(setMember).catch(() => {});
+  }, []);
+  useEffect(() => {
+    const handleOutside = (e) => {
+      if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false);
+      if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
+    };
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
+
+  // 대시보드 - 지도 재난유형 필터, 최근 활동용 제보 목록
+  const [mapTypeFilter, setMapTypeFilter] = useState(null); // null = 전체
+  const [dashboardReports, setDashboardReports] = useState([]);
+  useEffect(() => {
+    if (activeNav !== "dashboard") return;
+    authFetch("/api/reports").then(setDashboardReports).catch(() => {});
+  }, [activeNav]);
 
   const [incidents, setIncidents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -96,14 +216,39 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
   const [reportAddresses, setReportAddresses] = useState({}); // reportId -> 주소 문자열
   const [reportSearchQuery, setReportSearchQuery] = useState("");
   const [reportTypeFilter, setReportTypeFilter] = useState(null); // null = 전체, 아니면 특정 재난유형만
+  const [reportRegionFilter, setReportRegionFilter] = useState(null); // null = 전체, 아니면 "대전광역시" 같은 시/도
+  const [reportSortOrder, setReportSortOrder] = useState("newest"); // "newest" | "oldest"
+  const [reportStatusFilter, setReportStatusFilter] = useState("all"); // "all" | "RECEIVED" | "LINKED"
+  const [reportDateFrom, setReportDateFrom] = useState("2026-09-01"); // 접수일시 필터 - 시작일 입력값(아직 조회 버튼 누르기 전)
+  const [reportDateTo, setReportDateTo] = useState("2026-09-13"); // 접수일시 필터 - 종료일 입력값(아직 조회 버튼 누르기 전)
+  const [appliedReportDateFrom, setAppliedReportDateFrom] = useState("2026-09-01"); // "조회" 버튼을 눌러야 여기로 반영되어 실제 필터링에 쓰임
+  const [appliedReportDateTo, setAppliedReportDateTo] = useState("2026-09-13"); // "조회" 버튼을 눌러야 여기로 반영되어 실제 필터링에 쓰임
+  const [reportPage, setReportPage] = useState(1);
+  const REPORT_PAGE_SIZE = 8;
 
-  // 검색어/유형필터가 바뀌어서 지금 선택된 제보가 더 이상 목록에 안 보이면, 상세도 같이 닫는다.
+  // 제보 여러 건을 체크박스로 골라서 한 번에 반려/병합하기 위한 선택 상태
+  const [selectedReportIds, setSelectedReportIds] = useState(new Set());
+  // 반려 모달 - target이 숫자 reportId면 단건, "bulk"면 체크된 제보 전체
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectReasonInput, setRejectReasonInput] = useState("");
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
+  // 체크박스로 여러 제보를 골라 "합치기"할 때 쓰는 모달 상태
+  const [bulkMergeOpen, setBulkMergeOpen] = useState(false);
+  const [bulkMergeCandidates, setBulkMergeCandidates] = useState([]);
+  const [bulkMergeLoading, setBulkMergeLoading] = useState(false);
+  const [bulkMergeSubmitting, setBulkMergeSubmitting] = useState(false);
+  // "새 사건으로 만들기"를 여러 제보 선택 상태에서 눌렀을 때, 생성 후 이 배열 전체를 연결해야 함
+  const [bulkLinkReportIds, setBulkLinkReportIds] = useState(null);
+
+  // 검색어/유형필터/상태필터가 바뀌어서 지금 선택된 제보가 더 이상 목록에 안 보이면, 상세도 같이 닫는다.
   useEffect(() => {
     if (!selectedReportId) return;
     const q = reportSearchQuery.trim().toLowerCase();
     const stillVisible = reports.some((r) => {
       if (r.reportId !== selectedReportId) return false;
       if (reportTypeFilter && r.disasterType !== reportTypeFilter) return false;
+      if (reportRegionFilter && !reportAddresses[r.reportId]?.startsWith(reportRegionFilter)) return false;
+      if (reportStatusFilter !== "all" && r.status !== reportStatusFilter) return false;
       if (!q) return true;
       return (
         r.disasterType?.toLowerCase().includes(q) ||
@@ -117,7 +262,13 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
       setCandidates([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportSearchQuery, reportTypeFilter]);
+  }, [reportSearchQuery, reportTypeFilter, reportRegionFilter, reportStatusFilter]);
+
+  // 검색어/필터가 바뀌면 페이지를 1로 되돌리고, 화면에서 사라진 체크선택도 정리
+  useEffect(() => {
+    setReportPage(1);
+    setSelectedReportIds(new Set());
+  }, [reportSearchQuery, reportTypeFilter, reportRegionFilter, reportStatusFilter]);
 
   // 사건 관리 탭 상태 (신규 Incident 생성)
   const [newIncident, setNewIncident] = useState({
@@ -137,6 +288,9 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
 
   // 사건 관리 탭 - 기존 사건 목록 검색어
   const [incidentSearchQuery, setIncidentSearchQuery] = useState("");
+  const [incidentSortOrder, setIncidentSortOrder] = useState("newest"); // "newest" | "oldest"
+  const [incidentPage, setIncidentPage] = useState(1);
+  const INCIDENT_PAGE_SIZE = 10;
 
   // 검색어가 바뀌어서 지금 선택된 사건이 더 이상 목록에 안 보이면, 상세패널도 같이 닫는다.
   useEffect(() => {
@@ -154,6 +308,11 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
     if (!stillVisible) closeDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incidentSearchQuery]);
+
+  // 검색어/정렬이 바뀌면 페이지를 1로 되돌림
+  useEffect(() => {
+    setIncidentPage(1);
+  }, [incidentSearchQuery, incidentSortOrder]);
 
   useEffect(() => {
     if (activeNav !== "dashboard") return; // 대시보드 탭이 아닐 땐 지도 그릴 필요 없음
@@ -183,22 +342,18 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
     }
   };
 
-  const drawMarkers = (data) => {
+  const drawMarkers = (data, typeFilter = mapTypeFilter) => {
     const map = mapInstanceRef.current;
     if (!map) return;
     markersRef.current.forEach((m) => m.setMap(null));
     markersRef.current = [];
 
-    data.forEach((inc) => {
-      if (inc.latitude == null || inc.longitude == null) return;
+    const visible = (typeFilter ? data.filter((inc) => inc.disasterType === typeFilter) : data)
+      .filter((inc) => inc.latitude != null && inc.longitude != null);
+
+    visible.forEach((inc) => {
       const position = new window.kakao.maps.LatLng(inc.latitude, inc.longitude);
-      const color = SEVERITY_COLOR[inc.severity] || "#64748B";
-      const markerImage = new window.kakao.maps.MarkerImage(
-        `data:image/svg+xml;utf8,${encodeURIComponent(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="9" fill="${color}" stroke="white" stroke-width="2.5"/></svg>`
-        )}`,
-        new window.kakao.maps.Size(24, 24)
-      );
+      const markerImage = buildMarkerImage(inc);
       const marker = new window.kakao.maps.Marker({ position, image: markerImage, map });
       marker.addListener?.("click", () => {
         setActiveNav("incidents");
@@ -206,6 +361,33 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
       });
       markersRef.current.push(marker);
     });
+
+    // 필터링해서 보고 있는 마커들이 항상 화면 안에 들어오도록 지도 범위를 자동으로 맞춤
+    // (예: "폭염" 필터를 눌렀는데 그 사건이 부산이라 대전 근처 화면 밖에 있던 문제)
+    if (visible.length > 0) {
+      const bounds = new window.kakao.maps.LatLngBounds();
+      visible.forEach((inc) => bounds.extend(new window.kakao.maps.LatLng(inc.latitude, inc.longitude)));
+      map.setBounds(bounds);
+      if (visible.length === 1 && map.getLevel() < 5) map.setLevel(5);
+    }
+  };
+
+  // 재난유형 필터 칩을 바꾸면 새로 불러오지 않고 이미 있는 incidents로 마커만 다시 그림
+  useEffect(() => {
+    if (activeNav !== "dashboard") return;
+    drawMarkers(incidents, mapTypeFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapTypeFilter]);
+
+  const handleZoom = (delta) => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    map.setLevel(map.getLevel() + delta);
+  };
+
+  // 지도를 다시 현재 필터 기준 사건들이 전부 보이는 범위로 되돌림
+  const handleLocateReset = () => {
+    drawMarkers(incidents, mapTypeFilter);
   };
 
   // ---- 사건 상세 (담당자 배정 / 상태변경) ----------------------------------
@@ -312,7 +494,9 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
   // ---- 제보 관리 (중복탐지 후보 -> 실제 병합) -------------------------------
 
   // 위경도 -> 실제 주소 문자열로 변환 (카카오 리버스 지오코딩)
+  // 이제 DB에 ADDRESS가 저장되어 오니까, 저장된 게 없는 옛날 제보에 한해서만 좌표로 역지오코딩(하위호환)
   const resolveReportAddress = (report) => {
+    if (report.address) { setReportAddresses((prev) => ({ ...prev, [report.reportId]: report.address })); return; }
     if (!window.kakao?.maps?.services || report.latitude == null || report.longitude == null) return;
     const geocoder = new window.kakao.maps.services.Geocoder();
     geocoder.coord2Address(report.longitude, report.latitude, (result, status) => {
@@ -328,7 +512,8 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
     setReportsLoading(true);
     setReportError("");
     try {
-      const data = await authFetch("/api/reports");
+      // 사건전환된 제보도 이력으로 계속 보여줘야 해서 전체 목록을 받아옴 (연결 여부는 status/incidentId로 구분)
+      const data = await authFetch("/api/reports/all");
       setReports(data);
       data.forEach(resolveReportAddress);
     } catch (err) {
@@ -336,6 +521,22 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
     } finally {
       setReportsLoading(false);
     }
+  };
+
+  // 사이드바에서 "제보 관리" 탭을 이미 켜진 상태에서 또 누르면 목록만 다시 받아오는 게 아니라
+  // 걸어둔 필터(상태/유형/지역/정렬/날짜/검색어)까지 전부 초기 상태로 되돌림 - 새로고침한 느낌을 주기 위함
+  const resetReportFilters = () => {
+    setReportSearchQuery("");
+    setReportTypeFilter(null);
+    setReportRegionFilter(null);
+    setReportSortOrder("newest");
+    setReportStatusFilter("all");
+    setReportDateFrom("2026-09-01");
+    setReportDateTo("2026-09-13");
+    setAppliedReportDateFrom("2026-09-01");
+    setAppliedReportDateTo("2026-09-13");
+    setReportPage(1);
+    setSelectedReportIds(new Set());
   };
 
   useEffect(() => {
@@ -382,6 +583,167 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
     } catch (err) {
       setReportError(err.message);
     }
+  };
+
+  // 담당자가 "검토 시작"을 누르면 - 사건화/반려를 아직 정하지 않았어도 다른 담당자에게 "확인 중"임을 표시
+  const handleMarkReviewing = async (reportId) => {
+    setReportError("");
+    try {
+      await authFetch(`/api/reports/${reportId}/review`, { method: "PATCH" });
+      await loadReports();
+    } catch (err) {
+      setReportError(err.message);
+    }
+  };
+
+  // 반려 모달 열기 - target이 숫자 reportId면 단건, "bulk"면 체크된 제보 전체
+  const openRejectModal = (target) => {
+    setRejectTarget(target);
+    setRejectReasonInput("");
+  };
+
+  // 접수일시 필터 - 시작일. 타이핑 중엔 그대로 받아주고(연도 입력 중 매 자리마다 막히는 것 방지), 포커스 벗어날 때만 보정. 실제 필터링은 "조회" 버튼을 눌러야 반영됨
+  const handleReportDateFromChange = (value) => {
+    setReportDateFrom(value);
+  };
+  const handleReportDateFromBlur = () => {
+    if (!reportDateFrom) return;
+    let v = reportDateFrom;
+    if (v < MIN_REPORT_DATE) { v = MIN_REPORT_DATE; setToast(`${MIN_REPORT_DATE} 이전 날짜는 선택할 수 없습니다.`); }
+    else if (v > todayStr) { v = todayStr; setToast("미래 날짜는 선택할 수 없습니다."); }
+    if (v !== reportDateFrom) setReportDateFrom(v);
+    if (reportDateTo && v > reportDateTo) {
+      setReportDateTo(v); // 시작일이 종료일보다 늦어지면 종료일도 같이 밀어줌
+      setToast("시작일이 종료일보다 늦어 종료일을 시작일에 맞춰 조정했습니다.");
+    }
+  };
+
+  // 접수일시 필터 - 종료일. 타이핑 중엔 그대로 받아주고, 포커스 벗어날 때만 보정. 실제 필터링은 "조회" 버튼을 눌러야 반영됨
+  const handleReportDateToChange = (value) => {
+    setReportDateTo(value);
+  };
+  const handleReportDateToBlur = () => {
+    if (!reportDateTo) return;
+    let v = reportDateTo;
+    if (v < MIN_REPORT_DATE) { v = MIN_REPORT_DATE; setToast(`${MIN_REPORT_DATE} 이전 날짜는 선택할 수 없습니다.`); }
+    else if (v > todayStr) { v = todayStr; setToast("미래 날짜는 선택할 수 없습니다."); }
+    if (v !== reportDateTo) setReportDateTo(v);
+    if (reportDateFrom && v < reportDateFrom) {
+      setReportDateFrom(v); // 종료일이 시작일보다 빨라지면 시작일도 같이 당겨줌
+      setToast("종료일이 시작일보다 빨라 시작일을 종료일에 맞춰 조정했습니다.");
+    }
+  };
+
+  // "조회" 버튼 - 여기서 눌러야 입력해둔 날짜 범위가 실제 목록 필터링에 반영됨
+  const applyReportDateFilter = () => {
+    setAppliedReportDateFrom(reportDateFrom);
+    setAppliedReportDateTo(reportDateTo);
+    setReportPage(1);
+  };
+
+  const submitReject = async () => {
+    if (!rejectTarget || !rejectReasonInput.trim()) return;
+    setRejectSubmitting(true);
+    setReportError("");
+    try {
+      const targetIds = rejectTarget === "bulk" ? [...selectedReportIds] : [rejectTarget];
+      await Promise.all(
+        targetIds.map((id) =>
+          authFetch(`/api/reports/${id}/reject`, {
+            method: "PATCH",
+            body: JSON.stringify({ reason: rejectReasonInput.trim() }),
+          })
+        )
+      );
+      await loadReports();
+      setSelectedReportIds(new Set());
+      if (targetIds.includes(selectedReportId)) {
+        setSelectedReportId(null);
+        setCandidates([]);
+      }
+      setRejectTarget(null);
+      setRejectReasonInput("");
+      setToast(targetIds.length > 1 ? `${targetIds.length}건을 반려했습니다.` : "반려 처리되었습니다.");
+    } catch (err) {
+      setReportError(err.message);
+    } finally {
+      setRejectSubmitting(false);
+    }
+  };
+
+  // 체크박스 - 반려 전 상태(접수/검토중)인 제보만 대상으로 함. 이미 전환/반려된 건 선택 자체를 막음
+  const toggleReportSelected = (reportId) => {
+    setSelectedReportIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(reportId)) next.delete(reportId);
+      else next.add(reportId);
+      return next;
+    });
+  };
+
+  // "선택 합치기" - 체크된 제보들 중 대표(첫 번째)의 재난유형/위치로 병합 후보 사건을 찾아 모달에 띄움
+  const openBulkMerge = async () => {
+    if (selectedReportIds.size === 0) return;
+    setBulkMergeOpen(true);
+    setBulkMergeLoading(true);
+    setReportError("");
+    try {
+      const firstId = [...selectedReportIds][0];
+      const data = await authFetch(`/api/reports/${firstId}/candidates`);
+      setBulkMergeCandidates(data);
+    } catch (err) {
+      setReportError(err.message);
+    } finally {
+      setBulkMergeLoading(false);
+    }
+  };
+
+  // 체크된 제보 전체를 하나의 기존 사건에 한번에 연결
+  const handleBulkLinkToIncident = async (incidentId) => {
+    setBulkMergeSubmitting(true);
+    setReportError("");
+    try {
+      await Promise.all(
+        [...selectedReportIds].map((id) =>
+          authFetch(`/api/reports/${id}/link`, {
+            method: "PATCH",
+            body: JSON.stringify({ incidentId }),
+          })
+        )
+      );
+      await loadReports();
+      setToast(`${selectedReportIds.size}건을 사건에 연결했습니다.`);
+      setSelectedReportIds(new Set());
+      setBulkMergeOpen(false);
+      setBulkMergeCandidates([]);
+    } catch (err) {
+      setReportError(err.message);
+    } finally {
+      setBulkMergeSubmitting(false);
+    }
+  };
+
+  // 체크된 제보들을 묶어서 새 사건 하나를 만들기 - 대표(첫 번째) 제보 정보로 폼을 채우고,
+  // 생성이 끝나면 handleCreateIncident 쪽에서 bulkLinkReportIds 전체를 그 사건에 연결함
+  const startBulkNewIncident = () => {
+    const targetIds = [...selectedReportIds];
+    const first = reports.find((r) => r.reportId === targetIds[0]);
+    if (!first) return;
+    setNewIncident({
+      title: `${first.disasterType} · 제보 ${targetIds.length}건 묶음`,
+      disasterType: first.disasterType,
+      severity: "MEDIUM",
+      region: reportAddresses[first.reportId] || "",
+      latitude: String(first.latitude ?? ""),
+      longitude: String(first.longitude ?? ""),
+    });
+    setBulkLinkReportIds(targetIds);
+    setLinkAfterCreateReportId(null);
+    setCreateError("");
+    setPhotoFile(null);
+    setPhotoPreviewUrl(null);
+    setBulkMergeOpen(false);
+    setShowCreateIncidentModal(true);
   };
 
   const startNewIncidentFromReport = (report) => {
@@ -530,10 +892,22 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
         }),
       });
 
-      // linkAfterCreateReportId를 null로 비우기 전에 미리 판단해둠 (연결까지 했는지 여부로 문구 구분)
-      const linkedFromReport = !!linkAfterCreateReportId;
+      // linkAfterCreateReportId/bulkLinkReportIds를 비우기 전에 미리 판단해둠 (연결까지 했는지 여부로 문구 구분)
+      const linkedFromReport = !!linkAfterCreateReportId || (bulkLinkReportIds && bulkLinkReportIds.length > 0);
 
-      if (linkAfterCreateReportId) {
+      if (bulkLinkReportIds && bulkLinkReportIds.length > 0) {
+        await Promise.all(
+          bulkLinkReportIds.map((id) =>
+            authFetch(`/api/reports/${id}/link`, {
+              method: "PATCH",
+              body: JSON.stringify({ incidentId: created.incidentId }),
+            })
+          )
+        );
+        setBulkLinkReportIds(null);
+        setSelectedReportIds(new Set());
+        await loadReports();
+      } else if (linkAfterCreateReportId) {
         await authFetch(`/api/reports/${linkAfterCreateReportId}/link`, {
           method: "PATCH",
           body: JSON.stringify({ incidentId: created.incidentId }),
@@ -555,119 +929,397 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
     }
   };
 
-  const selectedReport = reports.find((r) => r.reportId === selectedReportId) || null;
-
-  // 사건 관리 탭 - 검색어로 사건명/지역/재난유형 필터링
-  const filteredIncidents = incidents.filter((inc) => {
-    if (!incidentSearchQuery.trim()) return true;
-    const q = incidentSearchQuery.trim().toLowerCase();
-    return (
-      inc.title?.toLowerCase().includes(q) ||
-      inc.region?.toLowerCase().includes(q) ||
-      inc.disasterType?.toLowerCase().includes(q)
+  // 사건 관리 탭 - 검색어로 사건명/지역/재난유형 필터링 + 접수일시 기준 정렬
+  const filteredIncidents = incidents
+    .filter((inc) => {
+      if (!incidentSearchQuery.trim()) return true;
+      const q = incidentSearchQuery.trim().toLowerCase();
+      return (
+        inc.title?.toLowerCase().includes(q) ||
+        inc.region?.toLowerCase().includes(q) ||
+        inc.disasterType?.toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) =>
+      incidentSortOrder === "newest"
+        ? new Date(b.createdAt) - new Date(a.createdAt)
+        : new Date(a.createdAt) - new Date(b.createdAt)
     );
-  });
 
-  // 제보 관리 탭 - 미연결 제보 재난유형별 건수 요약
-  const reportTypeCounts = reports.reduce((acc, r) => {
-    acc[r.disasterType] = (acc[r.disasterType] || 0) + 1;
+  // 목록 정렬(최신순)과 무관하게, 제일 오래 접수된 사건이 1번이 되도록 접수일시 기준으로 번호를 매김
+  const incidentRank = new Map(
+    [...incidents]
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      .map((inc, i) => [inc.incidentId, i + 1])
+  );
+
+  const incidentTotalPages = Math.max(1, Math.ceil(filteredIncidents.length / INCIDENT_PAGE_SIZE));
+  const pagedIncidents = filteredIncidents.slice(
+    (incidentPage - 1) * INCIDENT_PAGE_SIZE,
+    incidentPage * INCIDENT_PAGE_SIZE
+  );
+
+  // ----------------------------------------------------------------------
+  // 제보 관리
+  // 사건으로 전환된 제보도 삭제하지 않고 원본 이력으로 계속 보관한다.
+  // ----------------------------------------------------------------------
+  const unlinkedReports = reports.filter((r) => !r.incidentId);
+
+  // 전체 제보 기준 재난유형별 건수
+  const reportTypeCounts = REPORT_DISASTER_TYPES.reduce((acc, type) => {
+    acc[type] = reports.filter((r) => r.disasterType === type).length;
     return acc;
   }, {});
 
-  // 제보 관리 탭 - 재난유형 필터 + 검색어로 필터링된 목록
-  const filteredReports = reports.filter((r) => {
-    if (reportTypeFilter && r.disasterType !== reportTypeFilter) return false;
-    if (!reportSearchQuery.trim()) return true;
-    const q = reportSearchQuery.trim().toLowerCase();
-    return (
-      r.disasterType?.toLowerCase().includes(q) ||
-      r.content?.toLowerCase().includes(q) ||
-      r.reporterName?.toLowerCase().includes(q) ||
-      reportAddresses[r.reportId]?.toLowerCase().includes(q)
+  const totalReports = reports.length;
+  const receivedReports = reports.filter((r) => !r.incidentId && r.status === "RECEIVED").length;
+  const linkedReportsCount = reports.filter((r) => !!r.incidentId || r.status === "LINKED").length;
+  const reviewingReports = reports.filter((r) => r.status === "REVIEWING").length;
+  const rejectedReports = reports.filter((r) => r.status === "REJECTED").length;
+
+  // 재난유형 / 지역 / 상태 / 검색어 필터
+  const filteredReports = reports
+    .filter((r) => {
+      if (reportTypeFilter && r.disasterType !== reportTypeFilter) return false;
+      if (reportRegionFilter && !reportAddresses[r.reportId]?.startsWith(reportRegionFilter)) return false;
+
+      if (reportStatusFilter === "RECEIVED") {
+        if (r.incidentId || r.status !== "RECEIVED") return false;
+      }
+
+      if (reportStatusFilter === "LINKED") {
+        if (!r.incidentId && r.status !== "LINKED") return false;
+      }
+
+      if (reportStatusFilter === "REVIEWING" && r.status !== "REVIEWING") return false;
+      if (reportStatusFilter === "REJECTED" && r.status !== "REJECTED") return false;
+
+      // 접수일시가 조회 버튼으로 적용한 날짜 범위 안에 있는지 (날짜만 비교, 시간은 무시)
+      const reportDate = r.createdAt?.slice(0, 10);
+      if (appliedReportDateFrom && reportDate < appliedReportDateFrom) return false;
+      if (appliedReportDateTo && reportDate > appliedReportDateTo) return false;
+
+      if (!reportSearchQuery.trim()) return true;
+      const q = reportSearchQuery.trim().toLowerCase();
+      return (
+        r.disasterType?.toLowerCase().includes(q) ||
+        r.content?.toLowerCase().includes(q) ||
+        r.reporterName?.toLowerCase().includes(q) ||
+        reportAddresses[r.reportId]?.toLowerCase().includes(q) ||
+        String(r.reportId).includes(q)
+      );
+    })
+    .sort((a, b) =>
+      reportSortOrder === "oldest"
+        ? new Date(a.createdAt) - new Date(b.createdAt)
+        : new Date(b.createdAt) - new Date(a.createdAt)
     );
-  });
+
+  // 오래 접수된 제보부터 번호 부여
+  const reportRank = new Map(
+    [...reports]
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      .map((r, i) => [r.reportId, i + 1])
+  );
+
+  const reportTotalPages = Math.max(1, Math.ceil(filteredReports.length / REPORT_PAGE_SIZE));
+  const pagedReports = filteredReports.slice(
+    (reportPage - 1) * REPORT_PAGE_SIZE,
+    reportPage * REPORT_PAGE_SIZE
+  );
+  // 체크박스는 반려 전 상태(접수/검토중)인 제보만 대상 - 이미 전환/반려된 건 일괄작업 의미가 없음
+  const selectablePagedReports = pagedReports.filter((r) => r.status === "RECEIVED" || r.status === "REVIEWING");
+  const allPageSelected = selectablePagedReports.length > 0 && selectablePagedReports.every((r) => selectedReportIds.has(r.reportId));
+
+  const selectedReport = reports.find((r) => r.reportId === selectedReportId) || null;
+  const selectedLinkedIncident = selectedReport?.incidentId
+    ? incidents.find((inc) => inc.incidentId === selectedReport.incidentId) || null
+    : null;
+
+  // 사건 목록/제보 목록 표에서 공용으로 쓰는 페이지네이션 컨트롤
+  const renderTablePagination = (currentPage, totalPages, setPage) => {
+    if (totalPages <= 1) return null;
+    return (
+      <div className="flex items-center justify-center gap-1.5 pt-4">
+        <button
+          type="button"
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          disabled={currentPage === 1}
+          className={`w-8 h-8 rounded-lg border text-sm font-bold transition ${
+            currentPage === 1 ? "border-slate-200 text-slate-300 cursor-not-allowed" : "border-slate-200 text-slate-500 hover:bg-slate-50 cursor-pointer"
+          }`}
+        >
+          ‹
+        </button>
+        {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+          <button
+            key={page}
+            type="button"
+            onClick={() => setPage(page)}
+            className={`min-w-8 h-8 px-2 rounded-lg text-sm font-bold transition cursor-pointer ${
+              currentPage === page ? "bg-[#0F2540] text-white" : "bg-white border border-slate-200 text-slate-500 hover:bg-slate-50"
+            }`}
+          >
+            {page}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          disabled={currentPage === totalPages}
+          className={`w-8 h-8 rounded-lg border text-sm font-bold transition ${
+            currentPage === totalPages ? "border-slate-200 text-slate-300 cursor-not-allowed" : "border-slate-200 text-slate-500 hover:bg-slate-50 cursor-pointer"
+          }`}
+        >
+          ›
+        </button>
+      </div>
+    );
+  };
 
   // 통계는 지금 불러온 incidents 배열로 클라이언트에서 즉석 계산
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`; // 접수일시 필터 - 오늘 날짜(미래 선택 방지용)
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const closedToday = incidents.filter((i) => i.status === "CLOSED" && sameDay(i.updatedAt, today)).length;
+  const closedYesterday = incidents.filter((i) => i.status === "CLOSED" && sameDay(i.updatedAt, yesterday)).length;
+  const createdToday = incidents.filter((i) => sameDay(i.createdAt, today)).length;
+  const createdYesterday = incidents.filter((i) => sameDay(i.createdAt, yesterday)).length;
+  const inProgressChangedToday = incidents.filter(
+    (i) => (i.status === "CONFIRMING" || i.status === "RESPONDING") && sameDay(i.updatedAt, today)
+  ).length;
+  const inProgressChangedYesterday = incidents.filter(
+    (i) => (i.status === "CONFIRMING" || i.status === "RESPONDING") && sameDay(i.updatedAt, yesterday)
+  ).length;
+
   const stats = {
     received: incidents.filter((i) => i.status === "RECEIVED").length,
     inProgress: incidents.filter((i) => i.status === "CONFIRMING" || i.status === "RESPONDING").length,
     assigned: incidents.filter((i) => i.assignedStaffId != null && i.status !== "CLOSED").length,
     urgent: incidents.filter((i) => i.severity === "HIGH" && i.status !== "CLOSED").length,
-    closed: incidents.filter((i) => i.status === "CLOSED").length,
+    closedToday,
   };
 
+  // 카드별 "전일 대비" - 접수/진행/해결완료는 실데이터로 계산, 담당·긴급은 시점 스냅샷이 없어 변동표시를 생략
+  const trendOf = (diff) =>
+    diff > 0
+      ? { icon: TrendingUp, text: `전일 대비 +${diff}건`, tone: "text-emerald-600" }
+      : diff < 0
+      ? { icon: TrendingDown, text: `전일 대비 ${diff}건`, tone: "text-red-500" }
+      : { icon: Minus, text: "변동 없음", tone: "text-slate-400" };
+
   const statCards = [
-    { icon: Clock, label: "접수 대기", value: stats.received, color: "text-slate-600 bg-slate-100" },
-    { icon: Activity, label: "진행 중 사건", value: stats.inProgress, color: "text-blue-600 bg-blue-100" },
-    { icon: ClipboardList, label: "담당 사건", value: stats.assigned, color: "text-amber-600 bg-amber-100" },
-    { icon: AlertTriangle, label: "긴급 상황", value: stats.urgent, color: "text-red-600 bg-red-100" },
-    { icon: CheckCircle2, label: "해결 완료", value: stats.closed, color: "text-emerald-600 bg-emerald-100" },
+    { icon: Clock, label: "접수 대기", value: stats.received, color: "text-slate-600 bg-slate-100", trend: trendOf(createdToday - createdYesterday) },
+    { icon: Activity, label: "진행 중 사건", value: stats.inProgress, color: "text-blue-600 bg-blue-100", trend: trendOf(inProgressChangedToday - inProgressChangedYesterday) },
+    { icon: ClipboardList, label: "담당 사건", value: stats.assigned, color: "text-amber-600 bg-amber-100", trend: trendOf(0) },
+    { icon: AlertTriangle, label: "긴급 상황", value: stats.urgent, color: "text-red-600 bg-red-100", trend: trendOf(0) },
+    { icon: CheckCircle2, label: "해결 완료 (오늘)", value: stats.closedToday, color: "text-emerald-600 bg-emerald-100", trend: trendOf(closedToday - closedYesterday) },
   ];
+
+  // 지도 위 재난유형 필터 칩 - 실제 등록된 유형만 노출, 건수는 현재 목록 기준
+  const mapTypeCounts = incidents.reduce((acc, i) => {
+    acc[i.disasterType] = (acc[i.disasterType] || 0) + 1;
+    return acc;
+  }, {});
+  const mapTypeChips = [
+    { key: null, label: "전체", count: incidents.length },
+    ...Object.entries(mapTypeCounts).map(([type, count]) => ({ key: type, label: type, count })),
+  ];
+
+  // 일별 사건 현황 - 최근 7일간 접수(생성) 건수 vs 처리완료(종료) 건수
+  const dailyStats = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (6 - i));
+    return {
+      label: d.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" }),
+      received: incidents.filter((inc) => sameDay(inc.createdAt, d)).length,
+      resolved: incidents.filter((inc) => inc.status === "CLOSED" && sameDay(inc.updatedAt, d)).length,
+    };
+  });
+  const dailyMax = Math.max(1, ...dailyStats.flatMap((d) => [d.received, d.resolved]));
+
+  // 사건 유형별 통계 - 이번 달 등록된 사건 기준 도넛차트
+  const monthIncidents = incidents.filter((inc) => {
+    const d = new Date(inc.createdAt);
+    return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth();
+  });
+  const typeCounts = monthIncidents.reduce((acc, i) => {
+    acc[i.disasterType] = (acc[i.disasterType] || 0) + 1;
+    return acc;
+  }, {});
+  const typeTotal = monthIncidents.length;
+  const typeStats = Object.entries(typeCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([type, count]) => ({
+      type,
+      count,
+      pct: typeTotal ? Math.round((count / typeTotal) * 100) : 0,
+      color: DISASTER_TYPE_COLOR[type] || "#94A3B8",
+    }));
+
+  // 최근 활동 - 사건 상태변화(생성/배정/상태전환) + 제보 접수를 합쳐 최신순 정렬
+  const recentActivity = [
+    ...incidents.map((inc) => {
+      if (inc.status === "CLOSED") {
+        return { key: `inc-closed-${inc.incidentId}`, icon: CheckCircle2, tone: "bg-emerald-100 text-emerald-600", text: "사건이 해결 완료되었습니다.", sub: `${inc.disasterType} · ${inc.title}`, at: inc.updatedAt };
+      }
+      if (inc.status === "RESPONDING") {
+        return { key: `inc-resp-${inc.incidentId}`, icon: AlertTriangle, tone: "bg-red-100 text-red-500", text: "화재 사건이 대응중으로 변경되었습니다.".replace("화재", inc.disasterType), sub: inc.region, at: inc.updatedAt };
+      }
+      if (inc.assignedStaffId != null) {
+        return { key: `inc-assign-${inc.incidentId}`, icon: UserPlus, tone: "bg-blue-100 text-blue-600", text: "담당자 배정이 완료되었습니다.", sub: `${inc.disasterType} · ${inc.title}`, at: inc.updatedAt };
+      }
+      return { key: `inc-new-${inc.incidentId}`, icon: FilePlus, tone: "bg-blue-100 text-blue-600", text: `${inc.disasterType} 사건이 접수되었습니다.`, sub: inc.region, at: inc.createdAt };
+    }),
+    ...dashboardReports
+      .filter((r) => !r.incidentId)
+      .map((r) => ({ key: `report-${r.reportId}`, icon: FilePlus, tone: "bg-blue-100 text-blue-600", text: "시민 제보가 등록되었습니다.", sub: `${r.disasterType} · 제보 #${r.reportId}`, at: r.createdAt })),
+  ]
+    .sort((a, b) => new Date(b.at) - new Date(a.at))
+    .slice(0, 5);
 
   return (
     <div className="min-h-screen bg-slate-50 flex text-slate-800">
-      {/* 사이드바 */}
-      <aside className="w-56 bg-[#0F2540] text-slate-300 flex flex-col shrink-0">
-        <button
-          type="button"
-          onClick={onBackToHome}
-          className="flex items-center gap-2 px-5 py-5 hover:opacity-80 transition text-left cursor-pointer"
-        >
-          <ShieldAlert className="w-5 h-5 text-amber-400" />
-          <span className="font-bold text-white">세이프트레이스</span>
-        </button>
-        <nav className="flex-1 px-3 space-y-1">
-          {NAV_ITEMS.map(({ key, icon: Icon, label }) => (
-            <button
-              key={label}
-              onClick={() => {
-                if (!key) return;
-                if (key === activeNav) {
-                  // 이미 활성화된 탭을 다시 누른 경우 - activeNav 값이 그대로라 setActiveNav만으론
-                  // 리렌더가 안 일어나므로, 그 탭의 새로고침 함수를 직접 호출해줌
-                  if (key === "reports") loadReports();
-                  else if (key === "incidents" || key === "dashboard") loadIncidents();
-                } else {
-                  setActiveNav(key);
-                }
-              }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${
-                activeNav === key ? "bg-white/10 text-white font-semibold" : "hover:bg-white/5"
-              } cursor-pointer`}
-            >
-              <Icon className="w-4 h-4" /> {label}
-            </button>
-          ))}
-        </nav>
-        <div className="px-3 pb-5">
+      {/* 사이드바 - 햄버거로 폭을 접었다 펼쳤다 하는 방식(모바일/데스크톱 공통) */}
+      <aside
+        className={`bg-[#0F2540] text-slate-300 flex flex-col shrink-0 overflow-hidden transition-[width] duration-200 ${
+          sidebarOpen ? "w-56" : "w-0"
+        }`}
+      >
+        <div className="w-56 flex flex-col h-full">
           <button
-            onClick={onLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm hover:bg-white/5 cursor-pointer"
+            type="button"
+            onClick={onBackToHome}
+            className="flex items-center gap-2 px-5 py-5 hover:opacity-80 transition text-left cursor-pointer"
           >
-            <LogOut className="w-4 h-4" /> 로그아웃
+            <ShieldAlert className="w-5 h-5 text-amber-400" />
+            <span className="font-bold text-white">세이프트레이스</span>
           </button>
+          <nav className="flex-1 px-3 space-y-1">
+            {NAV_ITEMS.map(({ key, icon: Icon, label }) => (
+              <button
+                key={label}
+                onClick={() => {
+                  if (!key) return;
+                  if (key === activeNav) {
+                    // 이미 활성화된 탭을 다시 누른 경우 - activeNav 값이 그대로라 setActiveNav만으론
+                    // 리렌더가 안 일어나므로, 그 탭의 새로고침 함수를 직접 호출해줌
+                    if (key === "reports") { resetReportFilters(); loadReports(); }
+                    else if (key === "incidents" || key === "dashboard") loadIncidents();
+                  } else {
+                    setActiveNav(key);
+                  }
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${
+                  activeNav === key ? "bg-white/10 text-white font-semibold" : "hover:bg-white/5"
+                } cursor-pointer`}
+              >
+                <Icon className="w-4 h-4" /> {label}
+              </button>
+            ))}
+          </nav>
+          <div className="px-3 pb-5 space-y-3">
+            <div className="relative overflow-hidden bg-white/5 rounded-xl px-4 py-3.5">
+              <div className="absolute -right-4 -bottom-4 w-16 h-16 rounded-full bg-white/5" />
+              <p className="relative text-xs text-slate-300 leading-relaxed">
+                오늘도<br />안전한 도시를 위해<br />수고하십니다 👍
+              </p>
+            </div>
+            <button
+              onClick={onLogout}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm hover:bg-white/5 cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" /> 로그아웃
+            </button>
+          </div>
         </div>
       </aside>
 
       {/* 메인 */}
       <div className="flex-1 min-w-0">
         {/* 헤더 */}
-        <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-slate-400 bg-slate-50 rounded-lg px-3 py-2 w-80">
-            <Search className="w-4 h-4" />
-            <span className="text-sm">사건번호, 지역, 담당자 검색</span>
+        <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              className="text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg p-1.5 -ml-1.5 transition-colors cursor-pointer shrink-0"
+              aria-label="메뉴 열고 닫기"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
           </div>
           <div className="flex items-center gap-4">
-            <button
-              onClick={activeNav === "reports" ? loadReports : loadIncidents}
-              className="text-slate-400 hover:text-slate-600 cursor-pointer"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-            <Bell className="w-4 h-4 text-slate-400" />
-            <button onClick={onBackToHome} className="text-xs text-slate-400 hover:text-slate-600 cursor-pointer">
-              시민 홈으로
-            </button>
+            <div className="relative" ref={notifRef}>
+              <button
+                type="button"
+                onClick={() => setNotifOpen((v) => !v)}
+                className="relative text-slate-400 hover:text-slate-600 cursor-pointer"
+                aria-label="알림"
+              >
+                <Bell className="w-4.5 h-4.5" />
+                {stats.received > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center ring-2 ring-white">
+                    {stats.received > 9 ? "9+" : stats.received}
+                  </span>
+                )}
+              </button>
+              {notifOpen && (
+                <div className="absolute right-0 top-8 w-72 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-100">
+                    <h3 className="text-sm font-extrabold text-[#0F2540]">알림</h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">접수 대기 중인 사건 {stats.received}건</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNotifOpen(false);
+                      setActiveNav("reports");
+                    }}
+                    className="w-full text-left px-4 py-3 text-xs font-semibold text-[#0F2540] hover:bg-slate-50 cursor-pointer"
+                  >
+                    제보 관리에서 확인하기 →
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="relative" ref={profileRef}>
+              <button
+                type="button"
+                onClick={() => setProfileOpen((v) => !v)}
+                className="flex items-center gap-2 cursor-pointer"
+              >
+                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
+                  {member?.profileImageUrl ? (
+                    <img src={`http://localhost:8080${member.profileImageUrl}`} alt="프로필" className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="w-4 h-4 text-slate-400" />
+                  )}
+                </div>
+                <div className="text-left leading-tight hidden sm:block max-w-[120px]">
+                  <div className="text-xs font-bold text-[#0F2540] truncate">{(currentUser?.name || member?.name || "담당자")}님</div>
+                  <div className="text-[10px] text-slate-400 truncate">{member?.address || "담당자"}</div>
+                </div>
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${profileOpen ? "rotate-180" : ""}`} />
+              </button>
+              {profileOpen && (
+                <div className="absolute right-0 top-10 w-52 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-100">
+                    <p className="text-sm font-bold text-[#0F2540]">{currentUser?.name || member?.name}</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">{member?.email || "-"}</p>
+                  </div>
+                  <button onClick={onBackToHome} className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer">
+                    홈으로
+                  </button>
+                  <button onClick={onLogout} className="w-full text-left px-4 py-2.5 text-xs font-semibold text-red-500 hover:bg-red-50 transition-colors cursor-pointer">
+                    로그아웃
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -677,254 +1329,695 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
               <div className="bg-red-50 text-red-600 text-sm rounded-lg px-4 py-3 mb-4">{error}</div>
             )}
 
+            {/* 인사말 + 새로고침 */}
+            <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
+              <div>
+                <h2 className="text-xl font-extrabold text-[#0F2540]">{(currentUser?.name || member?.name || "담당자")}님, 안녕하세요!</h2>
+                <p className="text-sm text-slate-500 mt-0.5">시민의 안전을 지키는 든든한 파트너, 세이프트레이스입니다.</p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-xs text-slate-400">
+                  {today.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" })} {today.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+                <button
+                  onClick={loadIncidents}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> 새로고침
+                </button>
+              </div>
+            </div>
+
             {/* 통계 카드 */}
-            <div className="grid grid-cols-5 gap-4 mb-6">
-              {statCards.map(({ icon: Icon, label, value, color }) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+              {statCards.map(({ icon: Icon, label, value, color, trend }) => (
                 <div key={label} className="bg-white rounded-2xl border border-slate-200 p-4">
                   <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 ${color}`}>
                     <Icon className="w-4.5 h-4.5" />
                   </div>
                   <div className="text-2xl font-extrabold text-[#0F2540]">{value}</div>
-                  <div className="text-xs text-slate-400 mt-0.5">{label}</div>
+                  <div className="flex items-center justify-between mt-0.5">
+                    <span className="text-xs text-slate-400">{label}</span>
+                    <span className={`flex items-center gap-0.5 text-[10px] font-bold shrink-0 ${trend.tone}`}>
+                      <trend.icon className="w-3 h-3" />
+                    </span>
+                  </div>
+                  <p className={`text-[10px] mt-0.5 ${trend.tone}`}>{trend.text}</p>
                 </div>
               ))}
             </div>
 
-            {/* 지도 + 목록 */}
-            <div className="grid grid-cols-3 gap-6 mb-6">
-              <div className="col-span-2 bg-white rounded-2xl border border-slate-200 p-4">
-                <h3 className="font-bold text-[#0F2540] mb-3">실시간 사고 현황 지도</h3>
-                <div ref={mapRef} className="w-full rounded-xl overflow-hidden" style={{ height: 340 }} />
+            {/* 지도 + 목록 + 최근활동 */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+              <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-4">
+                <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+                  <div>
+                    <h3 className="font-bold text-[#0F2540]">실시간 사고 현황 지도</h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">지도를 클릭하면 상세 정보를 확인할 수 있습니다.</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {mapTypeChips.map((chip) => (
+                      <button
+                        key={chip.label}
+                        type="button"
+                        onClick={() => setMapTypeFilter(chip.key)}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-full transition cursor-pointer ${
+                          mapTypeFilter === chip.key ? "bg-[#0F2540] text-white" : "bg-white border border-slate-200 text-slate-500 hover:border-slate-300"
+                        }`}
+                      >
+                        {chip.label} ({chip.count})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="relative mt-3">
+                  <div ref={mapRef} className="w-full rounded-xl overflow-hidden" style={{ height: 480 }} />
+                  <div className="absolute right-2.5 top-2.5 flex flex-col gap-1">
+                    <button type="button" onClick={() => handleZoom(-1)} className="w-8 h-8 rounded-lg bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-500 hover:bg-slate-50 cursor-pointer">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                    <button type="button" onClick={() => handleZoom(1)} className="w-8 h-8 rounded-lg bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-500 hover:bg-slate-50 cursor-pointer">
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <button type="button" onClick={handleLocateReset} className="w-8 h-8 rounded-lg bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-500 hover:bg-slate-50 cursor-pointer">
+                      <LocateFixed className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 mt-2.5 flex-wrap">
+                  {[
+                    ["#DC2626", "긴급"],
+                    ["#F59E0B", "대응중"],
+                    ["#3B82F6", "확인중"],
+                    ["#10B981", "해결"],
+                  ].map(([color, label]) => (
+                    <span key={label} className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="bg-white rounded-2xl border border-slate-200 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold text-[#0F2540]">담당 사건 목록</h3>
+                    <button onClick={() => setActiveNav("incidents")} className="text-xs font-semibold text-sky-600 hover:underline cursor-pointer">전체보기 →</button>
+                  </div>
+                  {loading ? (
+                    <p className="text-sm text-slate-400">불러오는 중...</p>
+                  ) : incidents.length === 0 ? (
+                    <p className="text-sm text-slate-400">등록된 Incident가 없습니다.</p>
+                  ) : (
+                    <ul className="space-y-2 max-h-56 overflow-y-auto">
+                      {incidents.slice(0, 4).map((inc) => (
+                        <li
+                          key={inc.incidentId}
+                          onClick={() => {
+                            setActiveNav("incidents");
+                            openIncidentDetail(inc.incidentId);
+                          }}
+                          className="flex items-start gap-2.5 p-2 rounded-lg cursor-pointer hover:bg-slate-50 transition"
+                        >
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${markerColorOf(inc)}1A`, color: markerColorOf(inc) }}>
+                            <AlertTriangle className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold text-[#0F2540] truncate">{inc.disasterType} · 제보 #{inc.incidentId}</span>
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${STATUS_STYLE[inc.status] || ""}`}>
+                                {STATUS_LABEL[inc.status] || inc.status}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 truncate">{inc.region}</p>
+                            <p className="text-[10px] text-slate-300 mt-0.5">{formatTimeAgo(inc.updatedAt || inc.createdAt)}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold text-[#0F2540]">최근 활동</h3>
+                    <button onClick={() => setActiveNav("incidents")} className="text-xs font-semibold text-sky-600 hover:underline cursor-pointer">전체보기 →</button>
+                  </div>
+                  {recentActivity.length === 0 ? (
+                    <p className="text-sm text-slate-400">최근 활동이 없습니다.</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {recentActivity.map((a) => (
+                        <li key={a.key} className="flex items-start gap-2.5">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${a.tone}`}>
+                            <a.icon className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-slate-700 leading-snug">{a.text}</p>
+                            <p className="text-[10px] text-slate-400 truncate mt-0.5">{a.sub}</p>
+                          </div>
+                          <span className="text-[10px] text-slate-300 shrink-0">{formatTimeAgo(a.at)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 일별 사건 현황 + 유형별 통계 + 공지사항 */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="bg-white rounded-2xl border border-slate-200 p-4">
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="font-bold text-[#0F2540] text-sm">일별 사건 현황</h3>
+                  <div className="flex items-center gap-3 text-[10px] text-slate-500">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-sky-400" />접수</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" />처리 완료</span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 mb-4">최근 7일간 사건 접수 및 처리 현황입니다.</p>
+                <div className="flex items-end justify-between gap-2 h-32">
+                  {dailyStats.map((d) => (
+                    <div key={d.label} className="flex-1 flex items-end justify-center gap-1 h-full">
+                      <div className="w-2.5 bg-sky-300 rounded-t" style={{ height: `${(d.received / dailyMax) * 100}%` }} title={`접수 ${d.received}건`} />
+                      <div className="w-2.5 bg-emerald-400 rounded-t" style={{ height: `${(d.resolved / dailyMax) * 100}%` }} title={`처리완료 ${d.resolved}건`} />
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-between mt-2">
+                  {dailyStats.map((d) => (
+                    <span key={d.label} className="flex-1 text-center text-[9px] text-slate-400">{d.label}</span>
+                  ))}
+                </div>
               </div>
 
               <div className="bg-white rounded-2xl border border-slate-200 p-4">
-                <h3 className="font-bold text-[#0F2540] mb-3">담당 사건 목록</h3>
-                {loading ? (
-                  <p className="text-sm text-slate-400">불러오는 중...</p>
-                ) : incidents.length === 0 ? (
-                  <p className="text-sm text-slate-400">등록된 Incident가 없습니다.</p>
+                <h3 className="font-bold text-[#0F2540] text-sm mb-1">사건 유형별 통계</h3>
+                <p className="text-[10px] text-slate-400 mb-4">이번 달 등록된 사건의 유형별 비율입니다.</p>
+                {typeTotal === 0 ? (
+                  <p className="text-sm text-slate-400">이번 달 등록된 사건이 없습니다.</p>
                 ) : (
-                  <ul className="space-y-2 max-h-80 overflow-y-auto">
-                    {incidents.map((inc) => (
-                      <li
-                        key={inc.incidentId}
-                        onClick={() => {
-                          setActiveNav("incidents");
-                          openIncidentDetail(inc.incidentId);
-                        }}
-                        className={`p-3 rounded-lg border cursor-pointer transition ${
-                          selectedIncidentId === inc.incidentId
-                            ? "border-[#0F2540] bg-slate-50"
-                            : "border-slate-100 hover:border-slate-300"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-semibold text-slate-700 truncate">{inc.title}</span>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ml-2 ${STATUS_STYLE[inc.status] || ""}`}>
-                            {STATUS_LABEL[inc.status] || inc.status}
+                  <div className="flex items-center gap-4">
+                    <div className="relative w-28 h-28 shrink-0">
+                      <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                        {(() => {
+                          let offset = 0;
+                          return typeStats.map((t) => {
+                            const dash = (t.count / typeTotal) * 100;
+                            const circle = (
+                              <circle
+                                key={t.type}
+                                cx="18" cy="18" r="15.9"
+                                fill="none"
+                                stroke={t.color}
+                                strokeWidth="4"
+                                strokeDasharray={`${dash} ${100 - dash}`}
+                                strokeDashoffset={-offset}
+                              />
+                            );
+                            offset += dash;
+                            return circle;
+                          });
+                        })()}
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="text-[10px] text-slate-400">총</span>
+                        <span className="text-base font-extrabold text-[#0F2540]">{typeTotal}건</span>
+                        <span className="text-[9px] text-slate-400">이번 달</span>
+                      </div>
+                    </div>
+                    <ul className="space-y-1.5 min-w-0 flex-1">
+                      {typeStats.map((t) => (
+                        <li key={t.type} className="flex items-center justify-between text-xs">
+                          <span className="flex items-center gap-1.5 text-slate-600 truncate">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
+                            {t.type}
                           </span>
-                        </div>
-                        <p className="text-xs text-slate-400">{inc.region}</p>
-                      </li>
-                    ))}
-                  </ul>
+                          <span className="font-bold text-slate-500 shrink-0">{t.pct}%</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-[#0F2540] text-sm">주요 공지사항</h3>
+                  <button className="text-xs font-semibold text-sky-600 hover:underline cursor-pointer">전체보기 →</button>
+                </div>
+                <ul className="space-y-3">
+                  {STATIC_NOTICES.map((n) => (
+                    <li key={n.title} className="flex items-start gap-2.5">
+                      <n.icon className={`w-4 h-4 mt-0.5 shrink-0 ${n.tone}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs text-slate-600 leading-snug truncate">{n.title}</p>
+                      </div>
+                      <span className="text-[10px] text-slate-300 shrink-0">{n.date}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           </main>
         )}
 
         {activeNav === "reports" && (
-          <main className="p-6">
+          <main className="px-5 py-4 bg-[#F7F9FC] min-h-[calc(100vh-64px)]">
             {reportError && (
-              <div className="bg-red-50 text-red-600 text-sm rounded-lg px-4 py-3 mb-4">{reportError}</div>
+              <div className="bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg px-4 py-3 mb-4">
+                {reportError}
+              </div>
             )}
 
-            <div className="space-y-6">
-              {/* 요약 통계 - 총 건수 + 재난유형별 건수. 클릭하면 아래 목록이 해당 유형만 필터링됨 */}
-              <div className="flex flex-wrap gap-3">
+            {/* 헤더 */}
+            <div className="flex items-start justify-between flex-wrap gap-2 mb-3">
+              <div>
+                <h2 className="text-2xl sm:text-[28px] leading-none font-extrabold text-[#0F2540]">제보 관리</h2>
+                <p className="text-[13px] text-slate-500 mt-2">
+                  시민이 접수한 제보를 확인하고 검토하여 사건으로 전환할 수 있습니다.
+                </p>
+              </div>
+              <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 pt-1">
+                <span>홈</span><span>›</span><span className="text-slate-500">제보 관리</span>
+              </div>
+            </div>
+
+            {/* 상단 요약 카드 - 넓은 화면에서만 5개 한 줄, 좁아지면 2~3열로 쌓임 */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
+              {[
+                { key: "all", label: "전체 제보", value: totalReports, sub: "전체 제보 건수", icon: ClipboardList, box: "bg-blue-100 text-blue-700" },
+                { key: "RECEIVED", label: "접수", value: receivedReports, sub: totalReports ? `전체의 ${Math.round((receivedReports / totalReports) * 1000) / 10}%` : "전체의 0%", icon: FileText, box: "bg-blue-100 text-blue-700" },
+                { key: "REVIEWING", label: "검토중", value: reviewingReports, sub: totalReports ? `전체의 ${Math.round((reviewingReports / totalReports) * 1000) / 10}%` : "전체의 0%", icon: Clock, box: "bg-amber-100 text-amber-700" },
+                { key: "LINKED", label: "사건전환", value: linkedReportsCount, sub: totalReports ? `전체의 ${Math.round((linkedReportsCount / totalReports) * 1000) / 10}%` : "전체의 0%", icon: Link2, box: "bg-emerald-100 text-emerald-700" },
+                { key: "REJECTED", label: "반려", value: rejectedReports, sub: totalReports ? `전체의 ${Math.round((rejectedReports / totalReports) * 1000) / 10}%` : "전체의 0%", icon: X, box: "bg-rose-100 text-rose-700" },
+              ].map((card) => (
                 <button
-                  onClick={() => setReportTypeFilter(null)}
-                  className={`text-left bg-white rounded-xl border px-4 py-2.5 min-w-[120px] transition ${
-                    reportTypeFilter === null ? "border-red-300 ring-1 ring-red-200" : "border-slate-200 hover:border-slate-300"
-                  } cursor-pointer`}
+                  key={card.key}
+                  type="button"
+                  onClick={() => { setReportStatusFilter(card.key); setReportTypeFilter(null); }}
+                  className={`h-[92px] bg-white rounded-xl border px-4 py-3 text-left transition cursor-pointer ${
+                    reportStatusFilter === card.key ? "border-[#0F2540] shadow-sm" : "border-slate-200 hover:border-slate-300"
+                  }`}
                 >
-                  <div className="text-lg font-extrabold text-red-600">{reports.length}</div>
-                  <div className="text-xs text-slate-400">미연결 제보 총 건수</div>
+                  <div className="flex items-center gap-3 h-full">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${card.box}`}>
+                      <card.icon className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-bold text-slate-600">{card.label}</p>
+                      <p className="text-[25px] leading-7 font-extrabold text-[#0F2540] mt-0.5">
+                        {card.value}<span className="text-xs font-semibold ml-1">건</span>
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">{card.sub}</p>
+                    </div>
+                  </div>
                 </button>
-                {Object.entries(reportTypeCounts).map(([type, count]) => (
-                  <button
-                    key={type}
-                    onClick={() => setReportTypeFilter(type)}
-                    className={`text-left bg-white rounded-xl border px-4 py-2.5 min-w-[100px] transition ${
-                      reportTypeFilter === type ? "border-[#0F2540] ring-1 ring-slate-300" : "border-slate-200 hover:border-slate-300"
-                    } cursor-pointer`}
+              ))}
+            </div>
+
+            {/* 목록 카드 */}
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-3">
+              {/* 필터 툴바 - 좁아지면 여러 줄로 자연스럽게 감싸짐 */}
+              <div className="px-3 py-2.5 flex items-center flex-wrap gap-2 border-b border-slate-100">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {[
+                    { key: "all", label: `전체 (${totalReports})` },
+                    { key: "RECEIVED", label: `접수 (${receivedReports})` },
+                    { key: "REVIEWING", label: `검토중 (${reviewingReports})` },
+                    { key: "LINKED", label: `사건전환 (${linkedReportsCount})` },
+                    { key: "REJECTED", label: `반려 (${rejectedReports})` },
+                  ].map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setReportStatusFilter(tab.key)}
+                      className={`h-8 px-3 rounded-lg text-xs font-bold border-2 transition-colors cursor-pointer whitespace-nowrap ${
+                        reportStatusFilter === tab.key
+                          ? "bg-[#0F2540] border-[#0F2540] text-white hover:bg-[#16345c]"
+                          : "bg-white border-slate-300 text-slate-500 hover:bg-slate-100 hover:border-slate-400 hover:text-slate-700"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
+                  <select
+                    value={reportTypeFilter || ""}
+                    onChange={(e) => setReportTypeFilter(e.target.value || null)}
+                    className="h-8 min-w-[104px] rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 outline-none cursor-pointer"
                   >
-                    <div className="text-lg font-extrabold text-[#0F2540]">{count}</div>
-                    <div className="text-xs text-slate-400">{type}</div>
+                    <option value="">전체 유형</option>
+                    {REPORT_DISASTER_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                  </select>
+
+                  <select
+                    value={reportRegionFilter || ""}
+                    onChange={(e) => setReportRegionFilter(e.target.value || null)}
+                    className="h-8 min-w-[104px] rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 outline-none cursor-pointer"
+                  >
+                    <option value="">전체 지역</option>
+                    {REGION_OPTIONS.map((region) => (
+                      <option key={region} value={region}>{region}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={reportSortOrder}
+                    onChange={(e) => setReportSortOrder(e.target.value)}
+                    className="h-8 min-w-[92px] rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 outline-none cursor-pointer"
+                  >
+                    <option value="newest">최신순</option>
+                    <option value="oldest">오래된순</option>
+                  </select>
+
+                  <div className="h-8 rounded-lg border border-slate-200 bg-white px-2 flex items-center gap-1.5 text-xs font-semibold text-slate-600 whitespace-nowrap transition-colors hover:border-slate-400 hover:bg-slate-50 hover:shadow-sm focus-within:border-blue-400 focus-within:bg-blue-50/40 focus-within:shadow-sm">
+                    <input
+                      type="date"
+                      value={reportDateFrom}
+                      min={MIN_REPORT_DATE}
+                      max={reportDateTo || todayStr}
+                      onChange={(e) => handleReportDateFromChange(e.target.value)}
+                      onBlur={handleReportDateFromBlur}
+                      className="h-full border-0 p-0 bg-transparent outline-none cursor-pointer text-slate-600 [color-scheme:light] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:transition-opacity hover:[&::-webkit-calendar-picker-indicator]:opacity-100"
+                    />
+                    <span className="text-slate-300">~</span>
+                    <input
+                      type="date"
+                      value={reportDateTo}
+                      min={reportDateFrom || MIN_REPORT_DATE}
+                      max={todayStr}
+                      onChange={(e) => handleReportDateToChange(e.target.value)}
+                      onBlur={handleReportDateToBlur}
+                      className="h-full border-0 p-0 bg-transparent outline-none cursor-pointer text-slate-600 [color-scheme:light] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:transition-opacity hover:[&::-webkit-calendar-picker-indicator]:opacity-100"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={applyReportDateFilter}
+                    className="h-8 px-3 rounded-lg bg-[#0F2540] text-white text-xs font-bold hover:bg-[#16345c] transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    조회
                   </button>
-                ))}
+
+                  <div className="h-8 w-full sm:w-[275px] rounded-lg border border-slate-200 bg-white px-3 flex items-center gap-2">
+                    <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                    <input
+                      value={reportSearchQuery}
+                      onChange={(e) => setReportSearchQuery(e.target.value)}
+                      placeholder="제보 내용, 주소, 신고자 검색..."
+                      className="w-full bg-transparent outline-none text-xs text-slate-700 placeholder:text-slate-400"
+                    />
+                  </div>
+                </div>
               </div>
 
-              {/* 미연결 제보 목록 - 전체 너비 테이블 */}
-              <div className="bg-white rounded-2xl border border-slate-200 p-4">
-                <h3 className="font-bold text-[#0F2540] mb-3">
-                  사건에 연결되지 않은 제보 {reportTypeFilter && `- ${reportTypeFilter}`}
-                </h3>
-                <div className="flex items-center gap-2 text-slate-400 bg-slate-50 rounded-lg px-3 py-2 mb-3 max-w-md">
-                  <Search className="w-4 h-4" />
-                  <input
-                    type="text"
-                    value={reportSearchQuery}
-                    onChange={(e) => setReportSearchQuery(e.target.value)}
-                    placeholder="재난유형, 내용, 신고자, 주소 검색"
-                    className="bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none w-full"
-                  />
+              {selectedReportIds.size > 0 && (
+                <div className="px-3 py-2.5 flex items-center justify-between flex-wrap gap-2 border-b border-slate-100 bg-amber-50">
+                  <span className="text-xs font-bold text-amber-700">{selectedReportIds.size}건 선택됨</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={openBulkMerge}
+                      className="h-8 flex items-center gap-1.5 px-3 rounded-lg bg-[#0F2540] hover:bg-[#1B3A5C] text-white text-xs font-bold cursor-pointer"
+                    >
+                      <Link2 className="w-3.5 h-3.5" /> 선택 합치기
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openRejectModal("bulk")}
+                      className="h-8 flex items-center gap-1.5 px-3 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-bold cursor-pointer"
+                    >
+                      <XCircle className="w-3.5 h-3.5" /> 선택 반려
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedReportIds(new Set())}
+                      className="h-8 px-3 rounded-lg border border-amber-200 text-amber-700 text-xs font-bold hover:bg-amber-100 cursor-pointer"
+                    >
+                      선택 해제
+                    </button>
+                  </div>
                 </div>
-                {reportsLoading ? (
-                  <p className="text-sm text-slate-400">불러오는 중...</p>
-                ) : filteredReports.length === 0 ? (
-                  <p className="text-sm text-slate-400">
-                    {reportSearchQuery || reportTypeFilter ? "검색 결과가 없습니다." : "연결 대기 중인 제보가 없습니다."}
-                  </p>
-                ) : (
+              )}
+
+              {reportsLoading ? (
+                <div className="py-16 text-center text-sm text-slate-400">제보를 불러오는 중입니다...</div>
+              ) : filteredReports.length === 0 ? (
+                <div className="py-16 text-center text-sm text-slate-400">조건에 맞는 제보가 없습니다.</div>
+              ) : (
+                <>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="w-full min-w-[1180px] table-fixed text-[12px]">
+                      <colgroup>
+                        <col className="w-[38px]" />
+                        <col className="w-[86px]" />
+                        <col className="w-[90px]" />
+                        <col className="w-[220px]" />
+                        <col className="w-[110px]" />
+                        <col className="w-[150px]" />
+                        <col className="w-[250px]" />
+                        <col className="w-[125px]" />
+                        <col className="w-[150px]" />
+                        <col className="w-[95px]" />
+                      </colgroup>
                       <thead>
-                        <tr className="text-left text-xs text-slate-400 border-b border-slate-200">
-                          <th className="py-2 pr-4 font-semibold">재난유형</th>
-                          <th className="py-2 pr-4 font-semibold">내용</th>
-                          <th className="py-2 pr-4 font-semibold">신고자</th>
-                          <th className="py-2 pr-4 font-semibold">접수일시</th>
-                          <th className="py-2 pr-4 font-semibold">주소</th>
+                        <tr className="h-9 bg-slate-50/80 text-left text-[11px] text-slate-500 border-b border-slate-100">
+                          <th className="px-3">
+                            <input
+                              type="checkbox"
+                              checked={allPageSelected}
+                              disabled={selectablePagedReports.length === 0}
+                              onChange={() =>
+                                setSelectedReportIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (allPageSelected) selectablePagedReports.forEach((r) => next.delete(r.reportId));
+                                  else selectablePagedReports.forEach((r) => next.add(r.reportId));
+                                  return next;
+                                })
+                              }
+                              className="w-4 h-4 rounded border-slate-300 cursor-pointer disabled:opacity-30"
+                            />
+                          </th>
+                          <th className="px-2 font-semibold text-center">제보번호</th>
+                          <th className="px-2 font-semibold text-center">재난유형</th>
+                          <th className="px-2 font-semibold">내용</th>
+                          <th className="px-2 font-semibold">신고자</th>
+                          <th className="px-2 font-semibold text-center">접수일시</th>
+                          <th className="px-2 font-semibold">주소</th>
+                          <th className="px-2 font-semibold text-center">상태</th>
+                          <th className="px-2 font-semibold text-center">연결 사건</th>
+                          <th className="px-2 font-semibold text-center">작업</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredReports.map((r) => (
-                          <tr
-                            key={r.reportId}
-                            onClick={() => openReportCandidates(r.reportId)}
-                            className={`cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50 ${
-                              selectedReportId === r.reportId ? "bg-slate-50" : ""
-                            }`}
-                          >
-                            <td className="py-2.5 pr-4 font-semibold text-slate-700">{r.disasterType}</td>
-                            <td className="py-2.5 pr-4 text-slate-500 max-w-xs truncate">{r.content}</td>
-                            <td className="py-2.5 pr-4 text-slate-500">{r.reporterName || `#${r.memberId}`}</td>
-                            <td className="py-2.5 pr-4 text-slate-500">{formatDateTime(r.createdAt)}</td>
-                            <td className="py-2.5 pr-4 text-slate-500">
-                              {reportAddresses[r.reportId] || "확인 중..."}
-                            </td>
-                          </tr>
-                        ))}
+                        {pagedReports.map((r) => {
+                          const linked = !!r.incidentId;
+                          const selected = selectedReportId === r.reportId;
+                          return (
+                            <tr
+                              key={r.reportId}
+                              onClick={() => {
+                                setSelectedReportId(r.reportId);
+                                if (linked) { setCandidates([]); setReportError(""); }
+                                else openReportCandidates(r.reportId);
+                              }}
+                              className={`h-[39px] border-b border-slate-100 cursor-pointer transition ${selected ? "bg-blue-50/70" : "hover:bg-slate-50"}`}
+                            >
+                              <td className="px-3" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedReportIds.has(r.reportId)}
+                                  disabled={r.status !== "RECEIVED" && r.status !== "REVIEWING"}
+                                  onChange={() => toggleReportSelected(r.reportId)}
+                                  className="w-4 h-4 rounded border-slate-300 cursor-pointer disabled:opacity-30"
+                                />
+                              </td>
+                              <td className="px-2 text-center font-bold text-[#0F2540] whitespace-nowrap">#R-{r.reportId}</td>
+                              <td className="px-2 text-center">
+                                <span className="inline-flex rounded-md px-2 py-0.5 text-[11px] font-bold bg-slate-100 text-slate-600">
+                                  {r.disasterType}
+                                </span>
+                              </td>
+                              <td className="px-2 text-slate-600 truncate" title={r.content}>{r.content || "-"}</td>
+                              <td className="px-2 text-slate-600 truncate">{r.reporterName || `#${r.memberId}`}</td>
+                              <td className="px-2 text-center text-slate-500 whitespace-nowrap">{formatDateTime(r.createdAt)}</td>
+                              <td className="px-2 text-slate-500 truncate" title={reportAddresses[r.reportId]}>{reportAddresses[r.reportId] || "주소 확인 중..."}</td>
+                              <td className="px-2 text-center">
+                                {linked ? (
+                                  <span className="inline-flex rounded-md bg-emerald-50 text-emerald-600 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap">사건전환 완료</span>
+                                ) : r.status === "REVIEWING" ? (
+                                  <span className="inline-flex rounded-md bg-amber-50 text-amber-600 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap">검토중</span>
+                                ) : r.status === "REJECTED" ? (
+                                  <span className="inline-flex rounded-md bg-rose-50 text-rose-600 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap">반려</span>
+                                ) : (
+                                  <span className="inline-flex rounded-md bg-blue-50 text-blue-600 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap">접수</span>
+                                )}
+                              </td>
+                              <td className="px-2 text-center">
+                                {linked ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setActiveNav("incidents"); openIncidentDetail(r.incidentId); }}
+                                    className="text-[11px] font-bold text-blue-600 hover:underline whitespace-nowrap cursor-pointer"
+                                  >사건 #{incidentRank.get(r.incidentId) ?? r.incidentId} 보기 ↗</button>
+                                ) : <span className="text-slate-300">-</span>}
+                              </td>
+                              <td className="px-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation(); setSelectedReportId(r.reportId);
+                                    if (linked) setCandidates([]); else openReportCandidates(r.reportId);
+                                  }}
+                                  className="h-7 px-3 rounded-md border border-slate-200 bg-white text-[11px] font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                                >상세보기</button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
-                )}
-              </div>
 
-              {/* 아래: 제보 상세 + 병합 후보 (선택 시에만 채워짐) */}
-              <div className="grid grid-cols-2 gap-6">
-                {selectedReport && (
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4">
-                    <h3 className="font-bold text-[#0F2540] mb-3">제보 상세</h3>
+                  <div className="px-4 py-2.5 flex items-center justify-between flex-wrap gap-2 border-t border-slate-100">
+                    <p className="text-xs text-slate-500">총 {filteredReports.length}건의 제보가 있습니다.</p>
+                    <div className="scale-[0.92] origin-right overflow-x-auto max-w-full">{renderTablePagination(reportPage, reportTotalPages, setReportPage)}</div>
+                  </div>
+                </>
+              )}
+            </div>
 
-                    {selectedReport.photoUrl && (
-                      <img
-                        src={`http://localhost:8080${selectedReport.photoUrl}`}
-                        alt="제보 첨부 사진"
-                        className="w-full max-h-96 object-contain bg-slate-100 rounded-lg mb-4"
-                      />
-                    )}
+            {/* 하단 상세 - 넓은 화면에선 왼쪽 55%/오른쪽 45%, 좁아지면 위아래로 쌓임 */}
+            <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-3 items-stretch">
+              <section className="bg-white rounded-xl border border-slate-200 p-4 min-h-[255px]">
+                <h3 className="text-[15px] font-extrabold text-[#0F2540] mb-3">제보 상세</h3>
 
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                      <div>
-                        <span className="text-xs text-slate-400 block mb-0.5">재난유형</span>
-                        {selectedReport.disasterType}
-                      </div>
-                      <div>
-                        <span className="text-xs text-slate-400 block mb-0.5">접수 시각</span>
-                        {formatDateTime(selectedReport.createdAt)}
-                      </div>
-                      <div className="col-span-2">
-                        <span className="text-xs text-slate-400 block mb-0.5">현장 상황</span>
-                        {selectedReport.content || "-"}
-                      </div>
-                      <div className="col-span-2">
-                        <span className="text-xs text-slate-400 block mb-0.5">위치</span>
-                        {reportAddresses[selectedReport.reportId] || "주소 확인 중..."}
-                      </div>
-                      <div>
-                        <span className="text-xs text-slate-400 block mb-0.5">제보자</span>
-                        {selectedReport.reporterName || `#${selectedReport.memberId}`}
-                      </div>
+                {!selectedReport ? (
+                  <div className="h-[205px] rounded-lg bg-slate-50 flex items-center justify-center text-sm text-slate-400">
+                    제보를 선택하면 상세 정보가 표시됩니다.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-[320px_1fr] gap-5">
+                    <div className="h-[205px] rounded-lg overflow-hidden bg-slate-100">
+                      {selectedReport.photoUrl ? (
+                        <img src={`http://localhost:8080${selectedReport.photoUrl}`} alt="제보 첨부" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-300"><ImageIcon className="w-10 h-10" /></div>
+                      )}
                     </div>
+
+                    <dl className="text-[12px] divide-y divide-slate-100">
+                      <div className="grid grid-cols-[92px_1fr] py-2"><dt className="text-slate-400">제보번호</dt><dd className="font-bold text-[#0F2540]">#R-{selectedReport.reportId}</dd></div>
+                      <div className="grid grid-cols-[92px_1fr] py-2"><dt className="text-slate-400">재난유형</dt><dd className="font-semibold text-slate-700">{selectedReport.disasterType}</dd></div>
+                      <div className="grid grid-cols-[92px_1fr] py-2"><dt className="text-slate-400">제보 내용</dt><dd className="text-slate-600 leading-5 line-clamp-2">{selectedReport.content || "-"}</dd></div>
+                      <div className="grid grid-cols-[92px_1fr] py-2"><dt className="text-slate-400">신고자</dt><dd className="text-slate-700">{selectedReport.reporterName || `#${selectedReport.memberId}`}{maskPhone(selectedReport.reporterPhone) && ` (${maskPhone(selectedReport.reporterPhone)})`}</dd></div>
+                      <div className="grid grid-cols-[92px_1fr] py-2"><dt className="text-slate-400">접수일시</dt><dd className="text-slate-700">{formatDateTime(selectedReport.createdAt)}</dd></div>
+                      <div className="grid grid-cols-[92px_1fr] py-2"><dt className="text-slate-400">주소</dt><dd className="text-slate-700 truncate">{reportAddresses[selectedReport.reportId] || "주소 확인 중..."}</dd></div>
+                    </dl>
                   </div>
                 )}
+              </section>
 
-                <div className="bg-white rounded-2xl border border-slate-200 p-4">
-                  <h3 className="font-bold text-[#0F2540] mb-1">병합 후보 사건</h3>
-                  <p className="text-xs text-slate-400 mb-4">
-                    같은 재난유형 · 최근 30분 이내 · 반경 500m 조건으로 찾은 후보입니다. 담당자가 확인 후 직접 연결합니다.
-                  </p>
-
-                  {!selectedReport ? (
-                    <p className="text-sm text-slate-400">왼쪽에서 제보를 먼저 선택하세요.</p>
-                  ) : candidatesLoading ? (
-                    <p className="text-sm text-slate-400">후보를 찾는 중...</p>
-                  ) : candidates.length === 0 ? (
-                    <div>
-                      <p className="text-sm text-slate-400 mb-3">관련된 기존 사건이 없습니다. 새 사건으로 등록해야 합니다.</p>
-                      <button
-                        onClick={() => startNewIncidentFromReport(selectedReport)}
-                        className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-lg px-3 py-2 cursor-pointer"
-                      >
-                        이 제보로 새 사건 만들기
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <ul className="space-y-2">
-                        {candidates.map((inc) => (
-                          <li
-                            key={inc.incidentId}
-                            className="p-3 rounded-lg border border-slate-100 flex items-center justify-between"
-                          >
-                            <div>
-                              <div className="text-sm font-semibold text-slate-700">{inc.title}</div>
-                              <p className="text-xs text-slate-400">
-                                #{inc.incidentId} · {inc.region} ·{" "}
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_STYLE[inc.status] || ""}`}>
-                                  {STATUS_LABEL[inc.status] || inc.status}
-                                </span>
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => handleLinkReport(inc.incidentId)}
-                              className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#0F2540] hover:bg-[#1B3A5C] rounded-lg px-3 py-2 cursor-pointer"
-                            >
-                              <Link2 className="w-3.5 h-3.5" /> 이 사건에 연결
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                      {/* 후보로 뜨긴 했어도 담당자가 보기엔 실제로 무관할 수 있음 - 그럴 땐 굳이
-                          억지로 연결시키지 말고 별개의 새 사건으로 등록할 수 있는 탈출구를 열어둠 */}
-                      <div className="mt-3 pt-3 border-t border-slate-100">
-                        <p className="text-xs text-slate-400 mb-2">
-                          위 후보들과 관련이 없다면, 별개의 사건으로 새로 등록할 수도 있습니다.
-                        </p>
-                        <button
-                          onClick={() => startNewIncidentFromReport(selectedReport)}
-                          className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50 rounded-lg px-3 py-2 cursor-pointer"
-                        >
-                          이 제보로 새 사건 만들기
-                        </button>
+              <section className="bg-white rounded-xl border border-slate-200 p-4 min-h-[255px]">
+                {selectedReport?.incidentId ? (
+                  <>
+                    <h3 className="text-[15px] font-extrabold text-[#0F2540] mb-3">연결된 사건 정보</h3>
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 mb-3 flex items-start gap-3">
+                      <Link2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-[13px] font-bold text-emerald-700">이 제보는 사건으로 전환되었습니다.</p>
+                        <p className="text-[11px] text-emerald-600 leading-5 mt-0.5">원본 제보는 삭제되지 않고 사건과 연결되어 계속 보관됩니다.<br />제보와 사건의 처리 과정을 함께 추적할 수 있습니다.</p>
                       </div>
                     </div>
-                  )}
-                </div>
-              </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-[1fr_150px] gap-4 items-center">
+                      <dl className="text-[12px] space-y-1.5">
+                        <div className="grid grid-cols-[82px_1fr]"><dt className="text-slate-400">사건번호</dt><dd className="font-bold text-blue-600">#{incidentRank.get(selectedReport.incidentId) ?? selectedReport.incidentId}</dd></div>
+                        <div className="grid grid-cols-[82px_1fr]"><dt className="text-slate-400">사건 제목</dt><dd className="font-semibold text-slate-700 truncate">{selectedLinkedIncident?.title || `${selectedReport.disasterType} 관련 사건`}</dd></div>
+                        <div className="grid grid-cols-[82px_1fr]"><dt className="text-slate-400">현재 상태</dt><dd>{selectedLinkedIncident ? <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold ${STATUS_STYLE[selectedLinkedIncident.status] || "bg-slate-100 text-slate-600"}`}>{STATUS_LABEL[selectedLinkedIncident.status] || selectedLinkedIncident.status}</span> : <span className="text-slate-500">-</span>}</dd></div>
+                        <div className="grid grid-cols-[82px_1fr]"><dt className="text-slate-400">담당자</dt><dd className="text-slate-700">{selectedLinkedIncident?.assignedStaffName || "-"}</dd></div>
+                        <div className="grid grid-cols-[82px_1fr]"><dt className="text-slate-400">사건 생성일</dt><dd className="text-slate-700">{selectedLinkedIncident?.createdAt ? formatDateTime(selectedLinkedIncident.createdAt) : "-"}</dd></div>
+                      </dl>
+                      <button
+                        type="button"
+                        onClick={() => { setActiveNav("incidents"); openIncidentDetail(selectedReport.incidentId); }}
+                        className="h-10 rounded-lg bg-[#0F2540] text-white text-sm font-bold hover:bg-[#183A60] cursor-pointer"
+                      >사건 상세 보기 ↗</button>
+                    </div>
+                    <div className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-[11px] text-blue-600 flex items-center gap-2">
+                      <Bell className="w-4 h-4 shrink-0" /> 제보에서 사건으로 전환되어도, 원본 제보 데이터는 그대로 보존되며 목록에서 확인할 수 있습니다.
+                    </div>
+                  </>
+                ) : selectedReport?.status === "REJECTED" ? (
+                  <>
+                    <h3 className="text-[15px] font-extrabold text-[#0F2540] mb-3">반려 정보</h3>
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 flex items-start gap-3">
+                      <XCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-[13px] font-bold text-rose-600">이 제보는 반려되었습니다.</p>
+                        <p className="text-[12px] text-rose-500 leading-5 mt-2 whitespace-pre-line">
+                          {selectedReport.rejectReason || "사유가 기록되지 않았습니다."}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500 flex items-center gap-2">
+                      <Bell className="w-4 h-4 shrink-0" /> 반려된 제보도 삭제되지 않고 이력으로 그대로 보존됩니다.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <h3 className="text-[15px] font-extrabold text-[#0F2540]">병합 후보 사건</h3>
+                      {selectedReport && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {selectedReport.status === "RECEIVED" && (
+                            <button
+                              type="button"
+                              onClick={() => handleMarkReviewing(selectedReport.reportId)}
+                              className="h-7 flex items-center gap-1 px-2.5 rounded-md border border-amber-300 bg-amber-100 text-amber-800 text-[11px] font-bold hover:bg-amber-200 hover:border-amber-400 cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5" /> 검토 시작
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openRejectModal(selectedReport.reportId)}
+                            className="h-7 flex items-center gap-1 px-2.5 rounded-md border border-rose-300 bg-rose-100 text-rose-700 text-[11px] font-bold hover:bg-rose-200 hover:border-rose-400 cursor-pointer"
+                          >
+                            <XCircle className="w-3.5 h-3.5" /> 반려
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1 mb-3">같은 재난유형 · 최근 30분 이내 · 반경 500m의 기존 사건을 자동으로 찾아 보여줍니다.</p>
+                    {!selectedReport ? (
+                      <div className="h-[185px] rounded-lg bg-slate-50 flex items-center justify-center text-sm text-slate-400">제보를 먼저 선택해주세요.</div>
+                    ) : candidatesLoading ? (
+                      <div className="h-[185px] flex items-center justify-center gap-2 text-sm text-slate-400"><Loader2 className="w-4 h-4 animate-spin" />후보 사건을 찾는 중...</div>
+                    ) : candidates.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4">
+                        <p className="text-sm font-semibold text-slate-600">병합 가능한 기존 사건이 없습니다.</p>
+                        <p className="text-xs text-slate-400 mt-1">해당 제보가 독립적인 사건이라면 새로운 사건으로 등록해주세요.</p>
+                        <button type="button" onClick={() => startNewIncidentFromReport(selectedReport)} className="w-full h-9 mt-4 rounded-lg bg-[#0F2540] text-white text-xs font-bold cursor-pointer">이 제보로 새 사건 만들기</button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                        {candidates.map((inc) => (
+                          <div key={inc.incidentId} className="rounded-lg border border-slate-200 p-3 flex items-center justify-between gap-3">
+                            <div className="min-w-0"><p className="text-sm font-bold text-[#0F2540] truncate">{inc.title}</p><p className="text-[11px] text-slate-400 mt-1">사건 #{incidentRank.get(inc.incidentId) ?? inc.incidentId} · {inc.region}</p></div>
+                            <button type="button" onClick={() => handleLinkReport(inc.incidentId)} className="h-8 px-3 rounded-lg bg-[#0F2540] text-white text-xs font-bold cursor-pointer shrink-0">이 사건에 연결</button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => startNewIncidentFromReport(selectedReport)} className="w-full h-9 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">별개의 새 사건으로 등록</button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
             </div>
           </main>
         )}
@@ -943,15 +2036,34 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                     + 새 사건 등록
                   </button>
                 </div>
-                <div className="flex items-center gap-2 text-slate-400 bg-slate-50 rounded-lg px-3 py-2 mb-3 max-w-md">
-                  <Search className="w-4 h-4" />
-                  <input
-                    type="text"
-                    value={incidentSearchQuery}
-                    onChange={(e) => setIncidentSearchQuery(e.target.value)}
-                    placeholder="사건명, 지역, 재난유형 검색"
-                    className="bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none w-full"
-                  />
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-2 text-slate-400 bg-slate-50 rounded-lg px-3 py-2 max-w-md flex-1">
+                    <Search className="w-4 h-4" />
+                    <input
+                      type="text"
+                      value={incidentSearchQuery}
+                      onChange={(e) => setIncidentSearchQuery(e.target.value)}
+                      placeholder="사건명, 지역, 재난유형 검색"
+                      className="bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none w-full"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1 bg-slate-50 rounded-lg p-1 shrink-0">
+                    {[
+                      { key: "newest", label: "최신순" },
+                      { key: "oldest", label: "오래된순" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => setIncidentSortOrder(opt.key)}
+                        className={`text-xs font-semibold px-3 py-1.5 rounded-md transition cursor-pointer ${
+                          incidentSortOrder === opt.key ? "bg-[#0F2540] text-white" : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {loading ? (
@@ -962,9 +2074,20 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                   </p>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-sm table-fixed">
+                      <colgroup>
+                        <col className="w-[6%]" />
+                        <col className="w-[19%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[24%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[10%]" />
+                      </colgroup>
                       <thead>
                         <tr className="text-left text-xs text-slate-400 border-b border-slate-200">
+                          <th className="py-2 pr-2 font-semibold">번호</th>
                           <th className="py-2 pr-4 font-semibold">사건명</th>
                           <th className="py-2 pr-4 font-semibold">재난유형</th>
                           <th className="py-2 pr-4 font-semibold">지역</th>
@@ -975,7 +2098,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredIncidents.map((inc) => (
+                        {pagedIncidents.map((inc) => (
                           <tr
                             key={inc.incidentId}
                             onClick={() => openIncidentDetail(inc.incidentId)}
@@ -983,13 +2106,14 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                               selectedIncidentId === inc.incidentId ? "bg-slate-50" : ""
                             }`}
                           >
-                            <td className="py-2.5 pr-4 font-semibold text-slate-700">{inc.title}</td>
-                            <td className="py-2.5 pr-4 text-slate-500">{inc.disasterType}</td>
-                            <td className="py-2.5 pr-4 text-slate-500">{inc.region}</td>
+                            <td className="py-2.5 pr-2 text-slate-400">{incidentRank.get(inc.incidentId)}</td>
+                            <td className="py-2.5 pr-4 font-semibold text-slate-700 truncate" title={inc.title}>{inc.title}</td>
+                            <td className="py-2.5 pr-4 text-slate-500 truncate" title={inc.disasterType}>{inc.disasterType}</td>
+                            <td className="py-2.5 pr-4 text-slate-500 truncate" title={inc.region}>{inc.region}</td>
                             <td className="py-2.5 pr-4 text-slate-500">{inc.severity}</td>
-                            <td className="py-2.5 pr-4 text-slate-500">{formatDateTime(inc.createdAt)}</td>
-                            <td className="py-2.5 pr-4 text-slate-500">
-                              {inc.assignedStaffId ? `#${inc.assignedStaffId}` : "미배정"}
+                            <td className="py-2.5 pr-4 text-slate-500 whitespace-nowrap">{formatDateTime(inc.createdAt)}</td>
+                            <td className="py-2.5 pr-4 text-slate-500 truncate">
+                              {inc.assignedStaffName || (inc.assignedStaffId ? `#${inc.assignedStaffId}` : "미배정")}
                             </td>
                             <td className="py-2.5 pr-4">
                               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_STYLE[inc.status] || ""}`}>
@@ -1000,6 +2124,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                         ))}
                       </tbody>
                     </table>
+                    {renderTablePagination(incidentPage, incidentTotalPages, setIncidentPage)}
                   </div>
                 )}
               </div>
@@ -1067,31 +2192,30 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                       ) : (
                         <ul className="space-y-3">
                           {linkedReports.map((r) => (
-                            <li key={r.reportId} className="p-3 rounded-lg border border-slate-100">
-                              <div className="grid grid-cols-4 gap-x-4 gap-y-2 text-sm mb-2">
-                                <div>
-                                  <span className="text-xs text-slate-400 block mb-0.5">신고자</span>
-                                  {r.reporterName || `#${r.memberId}`}
-                                </div>
-                                <div>
-                                  <span className="text-xs text-slate-400 block mb-0.5">접수일시</span>
-                                  {formatDateTime(r.createdAt)}
-                                </div>
-                                <div>
-                                  <span className="text-xs text-slate-400 block mb-0.5">재난유형</span>
-                                  {r.disasterType} · 제보 #{r.reportId}
-                                </div>
-                                <div>
-                                  <span className="text-xs text-slate-400 block mb-0.5">주소</span>
-                                  {reportAddresses[r.reportId] || "확인 중..."}
-                                </div>
+                            <li key={r.reportId} className="rounded-xl border border-slate-200 overflow-hidden">
+                              <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-100">
+                                <span className="text-xs font-bold text-[#0F2540]">{r.disasterType} · 제보 #{r.reportId}</span>
+                                <span className="text-[11px] text-slate-400">{formatDateTime(r.createdAt)}</span>
                               </div>
-                              <div>
-                                <span className="text-xs text-slate-400 block mb-0.5">현장 상황</span>
-                                <p className="text-sm text-slate-700">{r.content || "-"}</p>
+                              <div className="px-4 py-3 space-y-2">
+                                <div className="flex items-center gap-2 text-sm">
+                                  <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                  <span className="text-xs text-slate-400 w-14 shrink-0">신고자</span>
+                                  <span className="text-slate-700 font-medium">{r.reporterName || `#${r.memberId}`}</span>
+                                </div>
+                                <div className="flex items-start gap-2 text-sm">
+                                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                                  <span className="text-xs text-slate-400 w-14 shrink-0 mt-0.5">주소</span>
+                                  <span className="text-slate-700">{reportAddresses[r.reportId] || "확인 중..."}</span>
+                                </div>
+                                <div className="flex items-start gap-2 text-sm">
+                                  <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                                  <span className="text-xs text-slate-400 w-14 shrink-0 mt-0.5">현장상황</span>
+                                  <p className="text-slate-700 flex-1">{r.content || "-"}</p>
+                                </div>
                               </div>
                               {r.photoUrl && (
-                                <div className="flex justify-end mt-2">
+                                <div className="flex justify-end px-4 pb-3">
                                   <button
                                     type="button"
                                     onClick={() => setViewingPhotoUrl(`http://localhost:8080${r.photoUrl}`)}
@@ -1111,7 +2235,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                     <div>
                       <h4 className="text-xs font-bold text-slate-500 mb-2">담당자</h4>
                       {selectedIncident.assignedStaffId ? (
-                        <p className="text-sm text-slate-700">#{selectedIncident.assignedStaffId} 배정됨</p>
+                        <p className="text-sm text-slate-700">{selectedIncident.assignedStaffName || `#${selectedIncident.assignedStaffId}`} 배정됨</p>
                       ) : (
                         <button
                           onClick={handleAssignToMe}
@@ -1195,12 +2319,13 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
           <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-1">
               <h3 className="font-bold text-[#0F2540]">
-                {linkAfterCreateReportId ? "새 사건(Incident) 등록" : "새 사건 직접 등록"}
+                {bulkLinkReportIds ? `새 사건(Incident) 등록 · 제보 ${bulkLinkReportIds.length}건 묶음` : linkAfterCreateReportId ? "새 사건(Incident) 등록" : "새 사건 직접 등록"}
               </h3>
               <button
                 onClick={() => {
                   setShowCreateIncidentModal(false);
                   setLinkAfterCreateReportId(null);
+                  setBulkLinkReportIds(null);
                   setCreateError("");
                   setPhotoFile(null);
                   setPhotoPreviewUrl(null);
@@ -1211,7 +2336,9 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
               </button>
             </div>
             <p className="text-xs text-slate-400 mb-4">
-              {linkAfterCreateReportId
+              {bulkLinkReportIds
+                ? `체크한 제보 ${bulkLinkReportIds.length}건이 모두 이 사건 하나로 연결됩니다. 대표로 첫 번째 제보 정보를 채워뒀으니 필요하면 수정하세요.`
+                : linkAfterCreateReportId
                 ? "재난유형·지역·위치가 이 제보 정보로 자동 채워져 있습니다. 필요하면 주소를 다시 검색해 수정해도 됩니다."
                 : "제보 없이 담당자가 직접 사건을 등록합니다. 아래 버튼으로 주소를 검색해 위치를 확인해주세요."}
             </p>
@@ -1306,11 +2433,127 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
               >
                 {createLoading
                   ? "등록 중..."
+                  : bulkLinkReportIds
+                  ? `등록하고 제보 ${bulkLinkReportIds.length}건 연결하기`
                   : linkAfterCreateReportId
                   ? "등록하고 제보 연결하기"
                   : "사건 등록하기"}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 반려 모달 - 사유 입력 필수, 단건/일괄(rejectTarget === "bulk") 공용 */}
+      {rejectTarget && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-6"
+          onClick={() => !rejectSubmitting && setRejectTarget(null)}
+        >
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-bold text-[#0F2540] flex items-center gap-1.5">
+                <XCircle className="w-4 h-4 text-rose-500" /> 제보 반려
+              </h3>
+              <button
+                onClick={() => setRejectTarget(null)}
+                disabled={rejectSubmitting}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer disabled:opacity-50"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-400 mb-4">
+              {rejectTarget === "bulk"
+                ? `선택한 ${selectedReportIds.size}건의 제보를 반려합니다. 반려 사유는 필수입니다.`
+                : "이 제보를 반려합니다. 원본 제보는 삭제되지 않고 반려 사유와 함께 이력으로 남습니다."}
+            </p>
+            <textarea
+              value={rejectReasonInput}
+              onChange={(e) => setRejectReasonInput(e.target.value)}
+              placeholder="반려 사유를 입력하세요 (필수)"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:border-[#0F2540]"
+              rows={3}
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRejectTarget(null)}
+                disabled={rejectSubmitting}
+                className="flex-1 text-sm font-semibold text-slate-500 border border-slate-200 rounded-lg py-2.5 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                onClick={submitReject}
+                disabled={rejectSubmitting || !rejectReasonInput.trim()}
+                className="flex-1 text-sm font-bold text-white bg-rose-500 hover:bg-rose-600 rounded-lg py-2.5 disabled:opacity-50 cursor-pointer"
+              >
+                {rejectSubmitting ? "처리 중..." : "반려 확정"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 체크박스로 여러 건을 골라 한번에 합치는 모달 - 첫 번째 선택 건 기준으로 후보를 찾음 */}
+      {bulkMergeOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-6"
+          onClick={() => !bulkMergeSubmitting && setBulkMergeOpen(false)}
+        >
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-bold text-[#0F2540]">선택한 제보 {selectedReportIds.size}건 합치기</h3>
+              <button
+                onClick={() => setBulkMergeOpen(false)}
+                disabled={bulkMergeSubmitting}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer disabled:opacity-50"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-400 mb-4">
+              체크한 제보 전부가 아래에서 고른 사건 하나에 연결됩니다. 후보는 첫 번째로 선택한 제보의 재난유형·위치 기준으로 찾았습니다.
+            </p>
+
+            {bulkMergeLoading ? (
+              <div className="h-[140px] flex items-center justify-center gap-2 text-sm text-slate-400">
+                <Loader2 className="w-4 h-4 animate-spin" />후보 사건을 찾는 중...
+              </div>
+            ) : bulkMergeCandidates.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-semibold text-slate-600">병합 가능한 기존 사건이 없습니다.</p>
+                <p className="text-xs text-slate-400 mt-1">선택한 제보들을 묶어서 새 사건으로 등록해주세요.</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 mb-2">
+                {bulkMergeCandidates.map((inc) => (
+                  <div key={inc.incidentId} className="rounded-lg border border-slate-200 p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-[#0F2540] truncate">{inc.title}</p>
+                      <p className="text-[11px] text-slate-400 mt-1">사건 #{incidentRank.get(inc.incidentId) ?? inc.incidentId} · {inc.region}</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={bulkMergeSubmitting}
+                      onClick={() => handleBulkLinkToIncident(inc.incidentId)}
+                      className="h-8 px-3 rounded-lg bg-[#0F2540] text-white text-xs font-bold cursor-pointer shrink-0 disabled:opacity-50"
+                    >
+                      이 사건에 연결
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={startBulkNewIncident}
+              disabled={bulkMergeSubmitting}
+              className="w-full h-9 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+            >
+              {selectedReportIds.size}건을 묶어서 새 사건으로 만들기
+            </button>
           </div>
         </div>
       )}

@@ -7,17 +7,23 @@
             SELECT SEQ_SF_INCIDENT.NEXTVAL FROM DUAL
         </selectKey>
         INSERT INTO SF_INCIDENT
-            (INCIDENT_ID, TITLE, DISASTER_TYPE, SEVERITY, STATUS, REGION, LATITUDE, LONGITUDE, PHOTO_URL)
+            (INCIDENT_ID, TITLE, DISASTER_TYPE, SEVERITY, STATUS, REGION, LATITUDE, LONGITUDE, PHOTO_URL, ASSIGNED_STAFF_ID)
         VALUES
-            (#{incidentId}, #{title}, #{disasterType}, #{severity}, 'RECEIVED', #{region}, #{latitude}, #{longitude}, #{photoUrl,jdbcType=VARCHAR})
+            (#{incidentId}, #{title}, #{disasterType}, #{severity}, 'RECEIVED', #{region}, #{latitude}, #{longitude}, #{photoUrl,jdbcType=VARCHAR}, #{assignedStaffId,jdbcType=NUMERIC})
     </insert>
 
     <select id="findById" resultType="com.safetrace.domain.Incident">
-        SELECT * FROM SF_INCIDENT WHERE INCIDENT_ID = #{incidentId}
+        SELECT i.*, m.NAME AS ASSIGNED_STAFF_NAME
+        FROM SF_INCIDENT i
+        LEFT JOIN SF_MEMBER m ON i.ASSIGNED_STAFF_ID = m.MEMBER_ID
+        WHERE i.INCIDENT_ID = #{incidentId}
     </select>
 
     <select id="findAll" resultType="com.safetrace.domain.Incident">
-        SELECT * FROM SF_INCIDENT ORDER BY CREATED_AT DESC
+        SELECT i.*, m.NAME AS ASSIGNED_STAFF_NAME
+        FROM SF_INCIDENT i
+        LEFT JOIN SF_MEMBER m ON i.ASSIGNED_STAFF_ID = m.MEMBER_ID
+        ORDER BY i.CREATED_AT DESC
     </select>
 
     <select id="findActiveByRegion" resultType="com.safetrace.domain.Incident">

@@ -28,9 +28,12 @@ public class IncidentController {
     }
 
     // STAFF 전용 - 새 Incident 등록
+    // 생성한 담당자를 자동으로 배정 - 상태 변경 화면에서 따로 "담당자 지정" 안 해도
+    // 사건이 만들어지는 시점에 이미 담당자가 붙어있게 하기 위함
     @PostMapping
     @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
-    public Incident create(@RequestBody Incident incident) {
+    public Incident create(@RequestBody Incident incident, Authentication authentication) {
+        incident.setAssignedStaffId(currentMemberId(authentication));
         return incidentService.createIncident(incident);
     }
 

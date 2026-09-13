@@ -7,9 +7,9 @@
             SELECT SEQ_SF_REPORT.NEXTVAL FROM DUAL
         </selectKey>
         INSERT INTO SF_REPORT
-            (REPORT_ID, MEMBER_ID, DISASTER_TYPE, CONTENT, LATITUDE, LONGITUDE, PHOTO_URL)
+            (REPORT_ID, MEMBER_ID, DISASTER_TYPE, CONTENT, LATITUDE, LONGITUDE, ADDRESS, PHOTO_URL, REPORTER_PHONE)
         VALUES
-            (#{reportId}, #{memberId}, #{disasterType}, #{content}, #{latitude}, #{longitude}, #{photoUrl,jdbcType=VARCHAR})
+            (#{reportId}, #{memberId}, #{disasterType}, #{content}, #{latitude}, #{longitude}, #{address,jdbcType=VARCHAR}, #{photoUrl,jdbcType=VARCHAR}, #{reporterPhone,jdbcType=VARCHAR})
     </insert>
 
     <select id="findById" resultType="com.safetrace.domain.Report">
@@ -26,6 +26,14 @@
         ORDER BY r.CREATED_AT DESC
     </select>
 
+    <!-- STAFF 화면 - 연결 여부와 무관하게 전체 제보 (사건전환된 제보도 이력으로 계속 조회할 수 있어야 함) -->
+    <select id="findAll" resultType="com.safetrace.domain.Report">
+        SELECT r.*, m.NAME AS REPORTER_NAME
+        FROM SF_REPORT r
+        JOIN SF_MEMBER m ON r.MEMBER_ID = m.MEMBER_ID
+        ORDER BY r.CREATED_AT DESC
+    </select>
+
     <!-- 시민 화면 - 내가 등록한 제보 목록. 최신순으로 상태 추적하기 좋게 정렬 -->
     <select id="findByMemberId" resultType="com.safetrace.domain.Report">
         SELECT * FROM SF_REPORT
@@ -36,6 +44,16 @@
     <update id="linkIncident">
         UPDATE SF_REPORT
         SET INCIDENT_ID = #{incidentId}, STATUS = 'LINKED'
+        WHERE REPORT_ID = #{reportId}
+    </update>
+
+    <update id="markReviewing">
+        UPDATE SF_REPORT SET STATUS = 'REVIEWING' WHERE REPORT_ID = #{reportId}
+    </update>
+
+    <update id="reject">
+        UPDATE SF_REPORT
+        SET STATUS = 'REJECTED', REJECT_REASON = #{reason}
         WHERE REPORT_ID = #{reportId}
     </update>
 

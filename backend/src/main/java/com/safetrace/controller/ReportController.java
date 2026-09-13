@@ -35,6 +35,13 @@ public class ReportController {
         return reportService.getUnlinkedReports();
     }
 
+    // STAFF 전용 - 사건전환 여부와 무관하게 전체 제보 목록 (전환된 제보도 이력으로 계속 조회)
+    @GetMapping("/all")
+    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    public List<Report> getAll() {
+        return reportService.getAllReports();
+    }
+
     // 시민 전용 - 내가 등록한 제보 목록 (내 제보 추적 화면)
     // "/my"가 "/{reportId}" 계열 경로와 겹치지 않는지 확인: 현재 GET 단일조회 경로가 없어서 충돌 없음
     @GetMapping("/my")
@@ -58,5 +65,20 @@ public class ReportController {
     @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
     public Report link(@PathVariable Long reportId, @RequestBody Map<String, Long> body) {
         return reportService.linkToIncident(reportId, body.get("incidentId"));
+    }
+
+    // STAFF 전용 - 제보를 검토 중으로 표시
+    @PatchMapping("/{reportId}/review")
+    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    public Report review(@PathVariable Long reportId) {
+        return reportService.markReviewing(reportId);
+    }
+
+    // STAFF 전용 - 제보 반려 (원본은 삭제하지 않고 상태/사유만 기록)
+    // body 예시: { "reason": "중복 제보로 확인됨" }
+    @PatchMapping("/{reportId}/reject")
+    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    public Report reject(@PathVariable Long reportId, @RequestBody Map<String, String> body) {
+        return reportService.reject(reportId, body.get("reason"));
     }
 }

@@ -4,10 +4,14 @@ import { authFetch, authUpload } from "../api/client";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 
 const DISASTER_TYPES = ["침수", "화재", "산사태", "강풍", "폭염", "한파", "기타"];
+const PHONE_PREFIXES = ["010", "011", "016", "017", "018", "019"];
 
 export default function ReportForm({ onClose, onSuccess }) {
   const [disasterType, setDisasterType] = useState(DISASTER_TYPES[0]);
   const [content, setContent] = useState("");
+  const [phonePrefix, setPhonePrefix] = useState("010");
+  const [phoneMid, setPhoneMid] = useState("");
+  const [phoneLast, setPhoneLast] = useState("");
   const [coords, setCoords] = useState(null);
   const [locating, setLocating] = useState(false);
   const [addressResult, setAddressResult] = useState("");
@@ -129,6 +133,14 @@ export default function ReportForm({ onClose, onSuccess }) {
       setError("현장 상황을 간단히 입력해주세요.");
       return;
     }
+    // 연락처는 선택이지만, 반쯤만 입력한 채로 제출되면 나중에 연락이 안 가니
+    // "둘 다 채우거나 둘 다 비우거나" 중 하나로 명확히 하게 함
+    const phoneFilled = phoneMid.length === 4 && phoneLast.length === 4;
+    const phoneEmpty = phoneMid === "" && phoneLast === "";
+    if (!phoneFilled && !phoneEmpty) {
+      setError("연락처를 입력하시려면 뒷자리 8자리를 모두 입력해주세요. 남기지 않으려면 비워두세요.");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -149,7 +161,9 @@ export default function ReportForm({ onClose, onSuccess }) {
           content,
           latitude: coords.lat,
           longitude: coords.lng,
+          address: addressResult || null,
           photoUrl,
+          reporterPhone: phoneMid && phoneLast ? `${phonePrefix}-${phoneMid}-${phoneLast}` : null,
         }),
       });
       onSuccess();
@@ -193,6 +207,42 @@ export default function ReportForm({ onClose, onSuccess }) {
               rows={3}
               className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#0F2540]"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">연락처 (선택)</label>
+            <div className="flex items-center gap-1.5">
+              <select
+                value={phonePrefix}
+                onChange={(e) => setPhonePrefix(e.target.value)}
+                className="w-[84px] shrink-0 border border-slate-200 rounded-lg px-2 py-2.5 text-sm focus:outline-none focus:border-[#0F2540]"
+              >
+                {PHONE_PREFIXES.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+              <span className="text-slate-300">-</span>
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={4}
+                value={phoneMid}
+                onChange={(e) => setPhoneMid(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                placeholder="1234"
+                className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2.5 text-sm text-center focus:outline-none focus:border-[#0F2540]"
+              />
+              <span className="text-slate-300">-</span>
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={4}
+                value={phoneLast}
+                onChange={(e) => setPhoneLast(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                placeholder="5678"
+                className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2.5 text-sm text-center focus:outline-none focus:border-[#0F2540]"
+              />
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">현장 확인이 필요할 때 담당자가 연락드릴 수 있어요.</p>
           </div>
 
           <div>

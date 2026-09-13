@@ -15,6 +15,7 @@ public class Incident {
     private Double longitude;
     private String photoUrl;       // STAFF가 직접 등록할 때 선택 첨부 (없으면 null)
     private Long assignedStaffId;
+    private String assignedStaffName; // 담당 직원 이름 (SF_MEMBER 조인 결과, STAFF 화면 표시용)
     private String closeReason;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
