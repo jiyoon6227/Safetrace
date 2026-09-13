@@ -81,4 +81,11 @@ public class ReportController {
     public Report reject(@PathVariable Long reportId, @RequestBody Map<String, String> body) {
         return reportService.reject(reportId, body.get("reason"));
     }
+
+    // STAFF 전용 - 제보에 등록된 사진 전체 목록 (0번째 = 대표)
+    @GetMapping("/{reportId}/photos")
+    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    public List<String> getPhotos(@PathVariable Long reportId) {
+        return reportService.getPhotoUrls(reportId);
+    }
 }

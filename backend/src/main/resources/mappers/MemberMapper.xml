@@ -11,16 +11,23 @@
     </insert>
 
     <!-- 회원 전체 컬럼 - 여러 조회 메서드에서 재사용 -->
+    <!-- DEPARTMENT_NAME은 SF_DEPARTMENT 조인 결과 (아래 memberFromDept와 세트로 사용) -->
     <sql id="memberColumns">
-        MEMBER_ID, LOGIN_ID, PASSWORD, NAME, EMAIL, PHONE, PROFILE_IMAGE_URL,
-        ADDRESS, ADDRESS_DETAIL, ROLE,
+        SF_MEMBER.MEMBER_ID, LOGIN_ID, PASSWORD, SF_MEMBER.NAME, EMAIL, PHONE, PROFILE_IMAGE_URL,
+        ADDRESS, ADDRESS_DETAIL, ROLE, SF_MEMBER.DEPARTMENT_ID, SF_DEPARTMENT.NAME AS DEPARTMENT_NAME,
         EMAIL_NOTIFY_ENABLED, DISASTER_NOTIFY_ENABLED, REPORT_NOTIFY_ENABLED,
         IS_WITHDRAWN, WITHDRAWN_AT, CREATED_AT
     </sql>
 
+    <!-- STAFF 부서명 표시용 LEFT JOIN - 시민(DEPARTMENT_ID NULL)은 DEPARTMENT_NAME도 자연히 NULL -->
+    <sql id="memberFromDept">
+        FROM SF_MEMBER
+        LEFT JOIN SF_DEPARTMENT ON SF_MEMBER.DEPARTMENT_ID = SF_DEPARTMENT.DEPARTMENT_ID
+    </sql>
+
     <select id="findByLoginId" resultType="Member">
         SELECT <include refid="memberColumns"/>
-        FROM SF_MEMBER
+        <include refid="memberFromDept"/>
         WHERE LOGIN_ID = #{loginId}
           AND IS_WITHDRAWN = 'N'
     </select>
@@ -28,14 +35,14 @@
     <!-- 마이페이지 - 내정보 조회 -->
     <select id="findById" resultType="Member">
         SELECT <include refid="memberColumns"/>
-        FROM SF_MEMBER
-        WHERE MEMBER_ID = #{memberId}
+        <include refid="memberFromDept"/>
+        WHERE SF_MEMBER.MEMBER_ID = #{memberId}
     </select>
 
     <!-- 이메일 중복 확인용 -->
     <select id="findByEmail" resultType="Member">
         SELECT <include refid="memberColumns"/>
-        FROM SF_MEMBER
+        <include refid="memberFromDept"/>
         WHERE EMAIL = #{email}
           AND IS_WITHDRAWN = 'N'
     </select>
@@ -43,7 +50,7 @@
     <!-- 가족 등록 - 로그인ID로 상대방 검색 (탈퇴한 회원 제외) -->
     <select id="searchByLoginId" resultType="Member">
         SELECT <include refid="memberColumns"/>
-        FROM SF_MEMBER
+        <include refid="memberFromDept"/>
         WHERE LOGIN_ID LIKE '%' || #{loginId} || '%'
           AND IS_WITHDRAWN = 'N'
     </select>

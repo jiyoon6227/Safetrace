@@ -24,6 +24,9 @@ public interface IncidentMapper {
     // 서비스 레이어에서 위경도로 거리 필터링(하버사인)함
     List<Incident> findAllActive();
 
+    // 사건 상세정보 수정 (제목/유형/위험도/위치/현장사진) - STATUS/담당자는 별도 API(전용 워크플로우)에서만 변경
+    int updateDetails(Incident incident);
+
     // 상태 변경 (Workflow 전이 시 사용)
     int updateStatus(@Param("incidentId") Long incidentId,
                       @Param("status") String status);
@@ -46,4 +49,10 @@ public interface IncidentMapper {
     // 실제 거리 계산(하버사인 공식)은 서비스 로직에서 위경도로 계산
     List<Incident> findRecentByType(@Param("disasterType") String disasterType,
                                      @Param("minutesAgo") int minutesAgo);
+
+    // 대표(0번째)~5번째 현장 사진 저장 - sortOrder는 0부터
+    int insertPhoto(@Param("incidentId") Long incidentId, @Param("photoUrl") String photoUrl, @Param("sortOrder") int sortOrder);
+
+    // 사건에 등록된 사진 전체 목록 조회 (0번째 = 대표)
+    List<String> findPhotoUrlsByIncidentId(@Param("incidentId") Long incidentId);
 }

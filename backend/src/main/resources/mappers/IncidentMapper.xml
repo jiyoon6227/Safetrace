@@ -2,42 +2,65 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.safetrace.mapper.IncidentMapper">
 
+    <!-- 대표 사진(SORT_ORDER=0)을 PHOTO_URL이라는 이름으로 끌어오는 상관서브쿼리.
+         사진은 SF_INCIDENT_PHOTO 한 곳에서만 관리하고, 목록/지도마커처럼 "사진 1장만" 필요한
+         화면은 이 값을 그대로 쓰면 됨(=기존에 PHOTO_URL 컬럼 읽던 프론트 코드를 그대로 유지). -->
+    <sql id="coverPhoto">
+        (SELECT p.PHOTO_URL FROM SF_INCIDENT_PHOTO p
+         WHERE p.INCIDENT_ID = i.INCIDENT_ID AND p.SORT_ORDER = 0) AS PHOTO_URL
+    </sql>
+
     <insert id="insertIncident" parameterType="com.safetrace.domain.Incident">
         <selectKey keyProperty="incidentId" resultType="Long" order="BEFORE">
             SELECT SEQ_SF_INCIDENT.NEXTVAL FROM DUAL
         </selectKey>
         INSERT INTO SF_INCIDENT
-            (INCIDENT_ID, TITLE, DISASTER_TYPE, SEVERITY, STATUS, REGION, LATITUDE, LONGITUDE, PHOTO_URL, ASSIGNED_STAFF_ID)
+            (INCIDENT_ID, TITLE, DISASTER_TYPE, SEVERITY, STATUS, REGION, LATITUDE, LONGITUDE, ASSIGNED_STAFF_ID, SOURCE_REPORT_ID)
         VALUES
-            (#{incidentId}, #{title}, #{disasterType}, #{severity}, 'RECEIVED', #{region}, #{latitude}, #{longitude}, #{photoUrl,jdbcType=VARCHAR}, #{assignedStaffId,jdbcType=NUMERIC})
+            (#{incidentId}, #{title}, #{disasterType}, #{severity}, 'RECEIVED', #{region}, #{latitude}, #{longitude}, #{assignedStaffId,jdbcType=NUMERIC}, #{sourceReportId,jdbcType=NUMERIC})
     </insert>
 
     <select id="findById" resultType="com.safetrace.domain.Incident">
-        SELECT i.*, m.NAME AS ASSIGNED_STAFF_NAME
+        SELECT i.*, m.NAME AS ASSIGNED_STAFF_NAME, <include refid="coverPhoto"/>
         FROM SF_INCIDENT i
         LEFT JOIN SF_MEMBER m ON i.ASSIGNED_STAFF_ID = m.MEMBER_ID
         WHERE i.INCIDENT_ID = #{incidentId}
     </select>
 
     <select id="findAll" resultType="com.safetrace.domain.Incident">
-        SELECT i.*, m.NAME AS ASSIGNED_STAFF_NAME
+        SELECT i.*, m.NAME AS ASSIGNED_STAFF_NAME, <include refid="coverPhoto"/>
         FROM SF_INCIDENT i
         LEFT JOIN SF_MEMBER m ON i.ASSIGNED_STAFF_ID = m.MEMBER_ID
         ORDER BY i.CREATED_AT DESC
     </select>
 
     <select id="findActiveByRegion" resultType="com.safetrace.domain.Incident">
-        SELECT * FROM SF_INCIDENT
+        SELECT i.*, <include refid="coverPhoto"/>
+        FROM SF_INCIDENT i
         WHERE REGION = #{region}
           AND STATUS != 'CLOSED'
         ORDER BY CREATED_AT DESC
     </select>
 
     <select id="findAllActive" resultType="com.safetrace.domain.Incident">
-        SELECT * FROM SF_INCIDENT
+        SELECT i.*, <include refid="coverPhoto"/>
+        FROM SF_INCIDENT i
         WHERE STATUS != 'CLOSED'
         ORDER BY CREATED_AT DESC
     </select>
+
+    <!-- 사건 상세정보 수정 - 제목/유형/위험도/위치만 다룸. 사진은 별도 API(추가/조회)로 관리 -->
+    <update id="updateDetails" parameterType="com.safetrace.domain.Incident">
+        UPDATE SF_INCIDENT
+        SET TITLE = #{title},
+            DISASTER_TYPE = #{disasterType},
+            SEVERITY = #{severity},
+            REGION = #{region},
+            LATITUDE = #{latitude},
+            LONGITUDE = #{longitude},
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE INCIDENT_ID = #{incidentId}
+    </update>
 
     <update id="updateStatus">
         UPDATE SF_INCIDENT
@@ -75,10 +98,24 @@
 
     <!-- 중복탐지 1단계: 유형+시간으로 후보군을 좁힘. 거리 계산은 자바에서 처리 -->
     <select id="findRecentByType" resultType="com.safetrace.domain.Incident">
-        SELECT * FROM SF_INCIDENT
+        SELECT i.*, <include refid="coverPhoto"/>
+        FROM SF_INCIDENT i
         WHERE DISASTER_TYPE = #{disasterType}
           AND STATUS != 'CLOSED'
           AND CREATED_AT >= SYSTIMESTAMP - NUMTODSINTERVAL(#{minutesAgo}, 'MINUTE')
+    </select>
+
+    <!-- 현장 사진 저장 - 대표(0번째)든 추가분(1~4번째)이든 전부 여기 한 곳에만 씀 -->
+    <insert id="insertPhoto">
+        INSERT INTO SF_INCIDENT_PHOTO (INCIDENT_PHOTO_ID, INCIDENT_ID, PHOTO_URL, SORT_ORDER)
+        VALUES (SEQ_SF_INCIDENT_PHOTO.NEXTVAL, #{incidentId}, #{photoUrl}, #{sortOrder})
+    </insert>
+
+    <!-- 사건에 등록된 사진 전체 목록 (0번째 = 대표) -->
+    <select id="findPhotoUrlsByIncidentId" resultType="String">
+        SELECT PHOTO_URL FROM SF_INCIDENT_PHOTO
+        WHERE INCIDENT_ID = #{incidentId}
+        ORDER BY SORT_ORDER
     </select>
 
 </mapper>

@@ -78,6 +78,14 @@ public class IncidentController {
         return reportService.getReportsByIncidentId(incidentId);
     }
 
+    // STAFF 전용 - 사건 상세정보 수정 (제목/유형/위험도/위치/현장사진)
+    // STATUS/담당자는 여기서 안 바꿈 - 각자 전용 API(assign, status)를 써야 함
+    @PatchMapping("/{incidentId}")
+    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    public Incident updateDetails(@PathVariable Long incidentId, @RequestBody Incident incident) {
+        return incidentService.updateIncidentDetails(incidentId, incident);
+    }
+
     // STAFF 전용 - 담당자 배정
     @PatchMapping("/{incidentId}/assign")
     @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
@@ -102,5 +110,20 @@ public class IncidentController {
                                        @RequestParam double lat,
                                        @RequestParam double lng) {
         return incidentService.findRelatedIncidents(disasterType, lat, lng);
+    }
+
+    // STAFF 전용 - 현장 사진 추가 (등록 순서대로 SF_INCIDENT_PHOTO에 쌓임. 최대 5장)
+    // body 예시: { "photoUrl": "/uploads/xxx.jpg" }
+    @PostMapping("/{incidentId}/photos")
+    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    public Incident addPhoto(@PathVariable Long incidentId, @RequestBody Map<String, String> body) {
+        return incidentService.addIncidentPhoto(incidentId, body.get("photoUrl"));
+    }
+
+    // STAFF 전용 - 등록된 현장 사진 전체 목록 (0번째 = 대표)
+    @GetMapping("/{incidentId}/photos")
+    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    public List<String> getPhotos(@PathVariable Long incidentId) {
+        return incidentService.getPhotoUrls(incidentId);
     }
 }

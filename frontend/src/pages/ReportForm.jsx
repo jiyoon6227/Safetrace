@@ -16,8 +16,8 @@ export default function ReportForm({ onClose, onSuccess }) {
   const [locating, setLocating] = useState(false);
   const [addressResult, setAddressResult] = useState("");
   const [geocoding, setGeocoding] = useState(false);
-  const [photoFile, setPhotoFile] = useState(null);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState(null);
+  const [photoFiles, setPhotoFiles] = useState([]); // 최대 5장, 업로드 전 File 목록
+  const [photoPreviewUrls, setPhotoPreviewUrls] = useState([]); // photoFiles와 같은 순서의 미리보기 URL
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   useEscapeKey(true, onClose);
@@ -97,28 +97,39 @@ export default function ReportForm({ onClose, onSuccess }) {
     }).open();
   };
 
-  // 사진 선택 -> 미리보기용 URL만 먼저 만들어둠 (실제 업로드는 제출 시점에)
-  const handlePhotoChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // 사진 선택 -> 미리보기용 URL만 먼저 만들어둠 (실제 업로드는 제출 시점에). 최대 5장, 여러 장 한번에 선택 가능
+  const MAX_PHOTOS = 5;
 
-    if (!file.type.startsWith("image/")) {
-      setError("이미지 파일만 첨부할 수 있습니다.");
+  const handlePhotoChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ""; // 같은 파일을 다시 골라도 onChange가 또 발생하도록 초기화
+    if (files.length === 0) return;
+
+    const room = MAX_PHOTOS - photoFiles.length;
+    if (room <= 0) {
+      setError(`사진은 최대 ${MAX_PHOTOS}장까지 첨부할 수 있습니다.`);
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      setError("사진 용량은 5MB 이하만 가능합니다.");
-      return;
+    const toAdd = files.slice(0, room);
+    for (const file of toAdd) {
+      if (!file.type.startsWith("image/")) {
+        setError("이미지 파일만 첨부할 수 있습니다.");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        setError("사진 용량은 5MB 이하만 가능합니다.");
+        return;
+      }
     }
 
     setError("");
-    setPhotoFile(file);
-    setPhotoPreviewUrl(URL.createObjectURL(file));
+    setPhotoFiles((prev) => [...prev, ...toAdd]);
+    setPhotoPreviewUrls((prev) => [...prev, ...toAdd.map((f) => URL.createObjectURL(f))]);
   };
 
-  const handleRemovePhoto = () => {
-    setPhotoFile(null);
-    setPhotoPreviewUrl(null);
+  const handleRemovePhoto = (index) => {
+    setPhotoFiles((prev) => prev.filter((_, i) => i !== index));
+    setPhotoPreviewUrls((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e) => {
@@ -145,13 +156,20 @@ export default function ReportForm({ onClose, onSuccess }) {
     setSubmitting(true);
     try {
       let photoUrl = null;
+      let additionalPhotoUrls = [];
 
-      // 사진을 첨부했으면 먼저 업로드해서 URL부터 받아옴
-      if (photoFile) {
-        const formData = new FormData();
-        formData.append("file", photoFile);
-        const uploadResult = await authUpload("/api/uploads", formData);
-        photoUrl = uploadResult.url;
+      // 사진을 첨부했으면 먼저 전부 업로드해서 URL부터 받아옴 - 첫 장이 대표사진, 나머지가 추가사진
+      if (photoFiles.length > 0) {
+        const uploadedUrls = await Promise.all(
+          photoFiles.map(async (file) => {
+            const formData = new FormData();
+            formData.append("file", file);
+            const uploadResult = await authUpload("/api/uploads", formData);
+            return uploadResult.url;
+          })
+        );
+        photoUrl = uploadedUrls[0];
+        additionalPhotoUrls = uploadedUrls.slice(1);
       }
 
       await authFetch("/api/reports", {
@@ -163,6 +181,7 @@ export default function ReportForm({ onClose, onSuccess }) {
           longitude: coords.lng,
           address: addressResult || null,
           photoUrl,
+          additionalPhotoUrls,
           reporterPhone: phoneMid && phoneLast ? `${phonePrefix}-${phoneMid}-${phoneLast}` : null,
         }),
       });
@@ -246,26 +265,32 @@ export default function ReportForm({ onClose, onSuccess }) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1">사진 (선택)</label>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">사진 (선택, 최대 {MAX_PHOTOS}장)</label>
 
-            {!photoPreviewUrl ? (
-              <label className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-[#0F2540] border border-dashed border-slate-300 rounded-lg py-4 hover:bg-slate-50 cursor-pointer">
-                <Camera className="w-4 h-4" />
-                사진 첨부하기
-                <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
-              </label>
-            ) : (
-              <div className="relative">
-                <img src={photoPreviewUrl} alt="첨부 사진 미리보기" className="w-full h-40 object-cover rounded-lg" />
-                <button
-                  type="button"
-                  onClick={handleRemovePhoto}
-                  className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1 hover:bg-black/80 cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
+            <div className="grid grid-cols-3 gap-2">
+              {photoPreviewUrls.map((url, index) => (
+                <div key={url} className="relative">
+                  <img src={url} alt={`첨부 사진 미리보기 ${index + 1}`} className="w-full h-20 object-cover rounded-lg" />
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePhoto(index)}
+                    className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-0.5 hover:bg-black/80 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                  {index === 0 && (
+                    <span className="absolute bottom-1 left-1 text-[9px] font-bold text-white bg-black/50 rounded px-1">대표</span>
+                  )}
+                </div>
+              ))}
+              {photoFiles.length < MAX_PHOTOS && (
+                <label className="w-full h-20 flex flex-col items-center justify-center gap-1 text-[11px] font-semibold text-[#0F2540] border border-dashed border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer">
+                  <Camera className="w-4 h-4" />
+                  사진 추가
+                  <input type="file" accept="image/*" multiple onChange={handlePhotoChange} className="hidden" />
+                </label>
+              )}
+            </div>
           </div>
 
           <div>

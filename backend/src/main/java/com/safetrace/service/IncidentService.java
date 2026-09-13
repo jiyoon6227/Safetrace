@@ -25,6 +25,9 @@ public class IncidentService {
     private static final double DUPLICATE_RADIUS_METERS = 500.0;
     private static final int DUPLICATE_TIME_WINDOW_MINUTES = 30;
 
+    // 대표(0번째) 포함 현장 사진은 최대 5장 - 전부 SF_INCIDENT_PHOTO 한 테이블에서만 관리
+    private static final int MAX_PHOTOS = 5;
+
     /**
      * 새 Incident 생성.
      * 생성과 동시에 STAFF 상황판에 WebSocket으로 실시간 전파하고,
@@ -33,6 +36,11 @@ public class IncidentService {
     @Transactional
     public Incident createIncident(Incident incident) {
         incidentMapper.insertIncident(incident);
+
+        // 사진은 컬럼이 아니라 SF_INCIDENT_PHOTO에만 저장 - 생성 시 첨부했으면 0번째(대표)로 넣음
+        if (incident.getPhotoUrl() != null && !incident.getPhotoUrl().isBlank()) {
+            incidentMapper.insertPhoto(incident.getIncidentId(), incident.getPhotoUrl(), 0);
+        }
 
         IncidentLog log = new IncidentLog();
         log.setIncidentId(incident.getIncidentId());
@@ -108,6 +116,27 @@ public class IncidentService {
         return updated;
     }
 
+    /**
+     * 사건 상세정보 수정 (제목/유형/위험도/위치/현장사진).
+     * STATUS와 담당자는 각자 전용 워크플로우(changeStatus/assignStaff)가 있으므로 여기서 건드리지 않음.
+     * photoUrl을 새로 첨부하지 않는 수정이면, 프론트가 기존 photoUrl을 그대로 실어보내야
+     * 기존 사진이 유지됨 (안 보내면 NULL로 덮어써짐).
+     */
+    @Transactional
+    public Incident updateIncidentDetails(Long incidentId, Incident incident) {
+        Incident existing = incidentMapper.findById(incidentId);
+        if (existing == null) {
+            throw new IllegalArgumentException("존재하지 않는 Incident 입니다: " + incidentId);
+        }
+
+        incident.setIncidentId(incidentId);
+        incidentMapper.updateDetails(incident);
+
+        Incident updated = incidentMapper.findById(incidentId);
+        webSocketHandler.broadcastIncidentUpdated(updated);
+        return updated;
+    }
+
     @Transactional
     public Incident assignStaff(Long incidentId, Long staffId) {
         incidentMapper.assignStaff(incidentId, staffId);
@@ -145,6 +174,33 @@ public class IncidentService {
     // STAFF 대시보드 - 전체 Incident 목록
     public List<Incident> getAllIncidents() {
         return incidentMapper.findAll();
+    }
+
+    /**
+     * 사건 상세패널의 "현장 사진 추가" - 순서대로 SF_INCIDENT_PHOTO에 쌓기만 하면 됨
+     * (대표/추가 구분 없이 0번째가 곧 대표). 최대 5장 제한.
+     */
+    @Transactional
+    public Incident addIncidentPhoto(Long incidentId, String photoUrl) {
+        Incident incident = incidentMapper.findById(incidentId);
+        if (incident == null) {
+            throw new IllegalArgumentException("존재하지 않는 Incident 입니다: " + incidentId);
+        }
+
+        List<String> existing = incidentMapper.findPhotoUrlsByIncidentId(incidentId);
+        if (existing.size() >= MAX_PHOTOS) {
+            throw new IllegalStateException("현장 사진은 최대 " + MAX_PHOTOS + "장까지 첨부할 수 있습니다.");
+        }
+        incidentMapper.insertPhoto(incidentId, photoUrl, existing.size());
+
+        Incident updated = incidentMapper.findById(incidentId);
+        webSocketHandler.broadcastIncidentUpdated(updated);
+        return updated;
+    }
+
+    // 사건 상세패널 - 등록된 현장 사진 전체 목록 (0번째 = 대표)
+    public List<String> getPhotoUrls(Long incidentId) {
+        return incidentMapper.findPhotoUrlsByIncidentId(incidentId);
     }
 
     /**

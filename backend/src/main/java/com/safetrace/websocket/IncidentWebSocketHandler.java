@@ -62,6 +62,13 @@ public class IncidentWebSocketHandler extends TextWebSocketHandler {
         ));
     }
 
+    public void broadcastIncidentUpdated(Incident incident) {
+        broadcast(Map.of(
+                "eventType", "INCIDENT_UPDATED",
+                "incident", incident
+        ));
+    }
+
     private void broadcast(Object payload) {
         try {
             String json = objectMapper.writeValueAsString(payload);

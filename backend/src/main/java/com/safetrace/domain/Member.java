@@ -15,6 +15,8 @@ public class Member {
     private String address;
     private String addressDetail;
     private String role;
+    private Long departmentId;
+    private String departmentName; // SF_DEPARTMENT 조인 결과 (조회 전용, insert/update 시 안 씀)
     private String emailNotifyEnabled;
     private String disasterNotifyEnabled;
     private String reportNotifyEnabled;

@@ -34,4 +34,10 @@ public interface ReportMapper {
 
     // STAFF 화면 - 특정 Incident에 묶인 제보 목록 ("연결된 제보" 표시용)
     List<Report> findByIncidentId(@Param("incidentId") Long incidentId);
+
+    // 대표(photoUrl) 제외 2~5번째 첨부사진 저장 - sortOrder는 0부터
+    int insertPhoto(@Param("reportId") Long reportId, @Param("photoUrl") String photoUrl, @Param("sortOrder") int sortOrder);
+
+    // 대표 제외 추가 첨부사진 목록 조회 (표시 순서대로)
+    List<String> findPhotoUrlsByReportId(@Param("reportId") Long reportId);
 }
