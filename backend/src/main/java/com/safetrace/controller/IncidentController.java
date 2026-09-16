@@ -65,6 +65,15 @@ public class IncidentController {
         return incidentService.getTimeline(incidentId);
     }
 
+    // 대시보드 "오늘 해결 완료" 카드용 - date 생략하면 오늘. 어제 값도 같이 조회해 전날 대비 추이(trend)에 씀
+    // 예: /api/incidents/stats/closed-count?date=2026-09-13
+    @GetMapping("/stats/closed-count")
+    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    public int getClosedCount(@RequestParam(required = false) String date) {
+        java.time.LocalDate target = (date != null) ? java.time.LocalDate.parse(date) : java.time.LocalDate.now();
+        return incidentService.countClosedOn(target);
+    }
+
     // 시민 화면 - 내 제보가 연결된 사건의 현재 진행 상태 확인 (뱃지/모달용)
     @GetMapping("/{incidentId}")
     public Incident getOne(@PathVariable Long incidentId) {

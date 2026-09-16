@@ -92,6 +92,30 @@ public class DisasterMessageService {
      * 마이페이지용.
      * 현재 시각 기준 최근 48시간 이내 문자만 반환한다.
      */
+    /**
+     * 공공정보 대시보드용.
+     * 지역 조건을 주지 않고 전국 최근 48시간 재난문자를 최신순으로 반환한다.
+     */
+    public List<Map<String, Object>> getRecentMessagesNationwide(int limit) {
+        int safeLimit = Math.max(1, limit);
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(48);
+
+        List<Map<String, Object>> messages =
+                getMessagesFromDate("", cutoff.toLocalDate());
+
+        List<Map<String, Object>> recent = messages.stream()
+                .filter(message -> {
+                    LocalDateTime createdAt =
+                            parseCrtDt((String) message.get("createdAt"));
+                    return !createdAt.equals(LocalDateTime.MIN)
+                            && !createdAt.isBefore(cutoff);
+                })
+                .limit(safeLimit)
+                .toList();
+
+        return new ArrayList<>(recent);
+    }
+
     public List<Map<String, Object>> getRecentMessages(
             String rgnNm,
             int limit
@@ -177,11 +201,11 @@ public class DisasterMessageService {
     ) {
         String normalizedRegion = rgnNm == null ? "" : rgnNm.trim();
 
-        if (normalizedRegion.isBlank() || startDate == null) {
+        if (startDate == null) {
             return List.of();
         }
 
-        String cacheKey = normalizedRegion
+        String cacheKey = (normalizedRegion.isBlank() ? "__NATIONWIDE__" : normalizedRegion)
                 + "|"
                 + startDate.format(API_DATE_FORMAT);
 
@@ -278,15 +302,21 @@ public class DisasterMessageService {
             int pageNo,
             int numOfRows
     ) {
-        String url = String.format(
-                "%s?serviceKey=%s&pageNo=%d&numOfRows=%d&returnType=json&crtDt=%s&rgnNm=%s",
+        StringBuilder urlBuilder = new StringBuilder(String.format(
+                "%s?serviceKey=%s&pageNo=%d&numOfRows=%d&returnType=json&crtDt=%s",
                 BASE_URL,
                 URLEncoder.encode(serviceKey, StandardCharsets.UTF_8),
                 pageNo,
                 numOfRows,
-                startDate.format(API_DATE_FORMAT),
-                URLEncoder.encode(rgnNm, StandardCharsets.UTF_8)
-        );
+                startDate.format(API_DATE_FORMAT)
+        ));
+
+        if (rgnNm != null && !rgnNm.isBlank()) {
+            urlBuilder.append("&rgnNm=")
+                    .append(URLEncoder.encode(rgnNm, StandardCharsets.UTF_8));
+        }
+
+        String url = urlBuilder.toString();
 
         try {
             HttpRequest request = HttpRequest.newBuilder()

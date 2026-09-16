@@ -96,6 +96,13 @@
         ORDER BY CHANGED_AT ASC
     </select>
 
+    <!-- 특정 날짜에 CLOSED로 상태가 바뀐 건수 - 이력 기준이라 종료 후 다른 필드를 수정해도 영향 없음 -->
+    <select id="countClosedOn" resultType="int">
+        SELECT COUNT(*) FROM SF_INCIDENT_LOG
+        WHERE NEW_STATUS = 'CLOSED'
+          AND TRUNC(CHANGED_AT) = #{date}
+    </select>
+
     <!-- 중복탐지 1단계: 유형+시간으로 후보군을 좁힘. 거리 계산은 자바에서 처리 -->
     <select id="findRecentByType" resultType="com.safetrace.domain.Incident">
         SELECT i.*, <include refid="coverPhoto"/>

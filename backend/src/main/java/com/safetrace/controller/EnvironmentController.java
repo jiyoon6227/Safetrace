@@ -4,6 +4,7 @@ import com.safetrace.external.AirQualityService;
 import com.safetrace.external.DisasterMessageService;
 import com.safetrace.external.ShelterService;
 import com.safetrace.external.UvIndexService;
+import com.safetrace.external.WeatherAlertService;
 import com.safetrace.external.WeatherService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -27,6 +28,13 @@ public class EnvironmentController {
     private final UvIndexService uvIndexService;
     private final ShelterService shelterService;
     private final DisasterMessageService disasterMessageService;
+    private final WeatherAlertService weatherAlertService;
+
+    // 최근 며칠 이내 기상특보 발표/해제 목록 (기본 3일)
+    @GetMapping("/weather-alerts")
+    public Map<String, Object> getWeatherAlerts(@RequestParam(defaultValue = "3") int lookbackDays) {
+        return weatherAlertService.getWeatherAlerts(lookbackDays);
+    }
 
     // 좌표 기준 현재 날씨 (기상청 초단기실황)
     @GetMapping("/weather")
@@ -46,6 +54,12 @@ public class EnvironmentController {
         return uvIndexService.getUvIndex(sido);
     }
 
+    // 전국 등록 민방위대피시설 총 건수
+    @GetMapping("/shelters/summary")
+    public Map<String, Object> getShelterSummary() {
+        return shelterService.getNationwideSummary();
+    }
+
     // 시/군/구명 + 좌표 기준 근처 민방위대피시설 (거리순 정렬, 기본 5개)
     @GetMapping("/shelters")
     public List<Map<String, Object>> getShelters(
@@ -55,6 +69,28 @@ public class EnvironmentController {
             @RequestParam(defaultValue = "5") int limit
     ) {
         return shelterService.getNearbyShelters(guName, lat, lng, limit);
+    }
+
+    // 공공정보 '대피시설 전체보기' 모달용 - 전국/시도별 검색 + 페이지네이션
+    @GetMapping("/shelters/search")
+    public Map<String, Object> searchShelters(
+            @RequestParam(defaultValue = "") String region,
+            @RequestParam(defaultValue = "") String keyword,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        return shelterService.searchShelters(region, keyword, page, size);
+    }
+
+    /**
+     * 공공정보 대시보드용.
+     * 지역 필터 없이 전국에서 최근 48시간 이내 발송된 재난문자를 최신순으로 반환한다.
+     */
+    @GetMapping("/disaster-messages/nationwide")
+    public List<Map<String, Object>> getNationwideDisasterMessages(
+            @RequestParam(defaultValue = "100") int limit
+    ) {
+        return disasterMessageService.getRecentMessagesNationwide(limit);
     }
 
     /**

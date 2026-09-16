@@ -158,6 +158,11 @@ public class IncidentService {
         return incidentMapper.findLogsByIncidentId(incidentId);
     }
 
+    // 대시보드 "오늘 해결 완료" 카드용
+    public int countClosedOn(java.time.LocalDate date) {
+        return incidentMapper.countClosedOn(date);
+    }
+
     public List<Incident> getActiveIncidentsByRegion(String region) {
         return incidentMapper.findActiveByRegion(region);
     }

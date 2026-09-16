@@ -45,6 +45,11 @@ public interface IncidentMapper {
     // 특정 Incident의 전체 Timeline 조회 (시민 화면 "내 제보 추적"에 사용)
     List<IncidentLog> findLogsByIncidentId(@Param("incidentId") Long incidentId);
 
+    // 대시보드 "오늘 해결 완료" 카드용 - 특정 날짜에 CLOSED로 바뀐 건수.
+    // UPDATED_AT을 직접 세면 종료 후 다른 항목(제목 등)을 고쳤을 때도 갱신되어 잘못 잡히므로,
+    // 상태변경 이력(언제 CLOSED가 됐는지만 기록되고 이후 수정에 영향 안 받음)을 기준으로 셈
+    int countClosedOn(@Param("date") java.time.LocalDate date);
+
     // 중복탐지용: 같은 재난유형 + 최근 N분 이내 발생한 Incident 후보 조회
     // 실제 거리 계산(하버사인 공식)은 서비스 로직에서 위경도로 계산
     List<Incident> findRecentByType(@Param("disasterType") String disasterType,
