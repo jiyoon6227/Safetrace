@@ -86,7 +86,7 @@ export default function ReportsTab({
         <div>
           <h2 className="text-2xl sm:text-[28px] leading-none font-extrabold text-[#0F2540]">제보 관리</h2>
           <p className="text-[13px] text-slate-500 mt-2">
-            시민이 접수한 제보를 확인하고 검토하여 사건으로 전환할 수 있습니다.
+            시민이 등록한 제보를 확인하고 검토하여 사건으로 연결할 수 있습니다.
           </p>
         </div>
         <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 pt-1">
@@ -98,16 +98,16 @@ export default function ReportsTab({
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
         {[
           { key: "all", label: "전체 제보", value: totalReports, sub: "전체 제보 건수", icon: ClipboardList, box: "bg-blue-100 text-blue-700" },
-          { key: "RECEIVED", label: "접수", value: receivedReports, sub: totalReports ? `전체의 ${Math.round((receivedReports / totalReports) * 1000) / 10}%` : "전체의 0%", icon: FileText, box: "bg-blue-100 text-blue-700" },
+          { key: "RECEIVED", label: "등록", value: receivedReports, sub: totalReports ? `전체의 ${Math.round((receivedReports / totalReports) * 1000) / 10}%` : "전체의 0%", icon: FileText, box: "bg-blue-100 text-blue-700" },
           { key: "REVIEWING", label: "검토중", value: reviewingReports, sub: totalReports ? `전체의 ${Math.round((reviewingReports / totalReports) * 1000) / 10}%` : "전체의 0%", icon: Clock, box: "bg-amber-100 text-amber-700" },
-          { key: "LINKED", label: "사건전환", value: linkedReportsCount, sub: totalReports ? `전체의 ${Math.round((linkedReportsCount / totalReports) * 1000) / 10}%` : "전체의 0%", icon: Link2, box: "bg-emerald-100 text-emerald-700" },
+          { key: "LINKED", label: "사건연결", value: linkedReportsCount, sub: totalReports ? `전체의 ${Math.round((linkedReportsCount / totalReports) * 1000) / 10}%` : "전체의 0%", icon: Link2, box: "bg-emerald-100 text-emerald-700" },
           { key: "REJECTED", label: "반려", value: rejectedReports, sub: totalReports ? `전체의 ${Math.round((rejectedReports / totalReports) * 1000) / 10}%` : "전체의 0%", icon: X, box: "bg-rose-100 text-rose-700" },
         ].map((card) => (
           <button
             key={card.key}
             type="button"
             onClick={() => { setReportStatusFilter(card.key); setReportTypeFilter(null); }}
-            className={`h-[92px] bg-white rounded-xl border px-4 py-3 text-left transition cursor-pointer ${
+            className={`h-[92px] bg-white rounded-xl border px-4 py-3 text-left transition-all duration-200 cursor-pointer hover:-translate-y-0.5 hover:shadow-md ${
               reportStatusFilter === card.key ? "border-[#0F2540] shadow-sm" : "border-slate-200 hover:border-slate-300"
             }`}
           >
@@ -134,9 +134,9 @@ export default function ReportsTab({
           <div className="flex items-center gap-2 flex-wrap">
             {[
               { key: "all", label: `전체 (${totalReports})` },
-              { key: "RECEIVED", label: `접수 (${receivedReports})` },
+              { key: "RECEIVED", label: `등록 (${receivedReports})` },
               { key: "REVIEWING", label: `검토중 (${reviewingReports})` },
-              { key: "LINKED", label: `사건전환 (${linkedReportsCount})` },
+              { key: "LINKED", label: `사건연결 (${linkedReportsCount})` },
               { key: "REJECTED", label: `반려 (${rejectedReports})` },
             ].map((tab) => (
               <button
@@ -241,7 +241,7 @@ export default function ReportsTab({
                 type="button"
                 onClick={() => openRejectModal("bulk")}
                 disabled={reports.some((r) => selectedReportIds.has(r.reportId) && r.status === "LINKED")}
-                title="이미 사건으로 전환된 제보가 포함돼 있으면 반려할 수 없습니다."
+                title="이미 사건으로 연결된 제보가 포함돼 있으면 반려할 수 없습니다."
                 className="h-8 flex items-center gap-1.5 px-3 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <XCircle className="w-3.5 h-3.5" /> 선택 반려
@@ -266,19 +266,19 @@ export default function ReportsTab({
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1180px] table-fixed text-[13px]">
                 <colgroup>
-                  <col className="w-[38px]" />
-                  <col className="w-[86px]" />
-                  <col className="w-[90px]" />
-                  <col className="w-[220px]" />
-                  <col className="w-[110px]" />
-                  <col className="w-[150px]" />
-                  <col className="w-[250px]" />
-                  <col className="w-[125px]" />
-                  <col className="w-[150px]" />
-                  <col className="w-[95px]" />
+                  <col className="w-[42px]" />
+                  <col className="w-[92px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[230px]" />
+                  <col className="w-[120px]" />
+                  <col className="w-[160px]" />
+                  <col className="w-[270px]" />
+                  <col className="w-[130px]" />
+                  <col className="w-[160px]" />
+                  <col className="w-[100px]" />
                 </colgroup>
                 <thead>
-                  <tr className="h-10 bg-[#E9ECEF] text-left text-[12px] font-bold text-[#556070] border-y border-[#CBD5E1]">
+                  <tr className="h-11 bg-[#E9ECEF] text-[12px] font-bold text-[#556070] border-y border-[#CBD5E1]">
                     <th className="px-3">
                       <input
                         type="checkbox"
@@ -297,10 +297,10 @@ export default function ReportsTab({
                     </th>
                     <th className="px-2 font-semibold text-center">제보번호</th>
                     <th className="px-2 font-semibold text-center">재난유형</th>
-                    <th className="px-2 font-semibold">내용</th>
-                    <th className="px-2 font-semibold">신고자</th>
-                    <th className="px-2 font-semibold text-center">접수일시</th>
-                    <th className="px-2 font-semibold">주소</th>
+                    <th className="px-2 font-semibold text-center">내용</th>
+                    <th className="px-2 font-semibold text-center">신고자</th>
+                    <th className="px-2 font-semibold text-center">등록일시</th>
+                    <th className="px-2 font-semibold text-center">주소</th>
                     <th className="px-2 font-semibold text-center">상태</th>
                     <th className="px-2 font-semibold text-center">연결 사건</th>
                     <th className="px-2 font-semibold text-center">작업</th>
@@ -318,9 +318,9 @@ export default function ReportsTab({
                           if (linked) { setCandidates([]); setReportError(""); }
                           else openReportCandidates(r.reportId);
                         }}
-                        className={`h-[41px] border-b border-[#E1E5EB] cursor-pointer transition-colors ${selected ? "bg-blue-50" : "bg-white hover:bg-slate-50/90"}`}
+                        className={`h-[44px] border-b border-[#E1E5EB] cursor-pointer transition-colors ${selected ? "bg-blue-50" : "bg-white hover:bg-slate-50/90"}`}
                       >
-                        <td className="px-3" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-3 text-center align-middle" onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             checked={selectedReportIds.has(r.reportId)}
@@ -329,28 +329,28 @@ export default function ReportsTab({
                             className="w-4 h-4 rounded border-slate-300 cursor-pointer disabled:opacity-30"
                           />
                         </td>
-                        <td className="px-2 text-center font-bold text-[#0F2540] whitespace-nowrap">#R-{r.reportId}</td>
-                        <td className="px-2 text-center">
+                        <td className="px-2 text-center align-middle font-bold text-[#0F2540] whitespace-nowrap">#R-{r.reportId}</td>
+                        <td className="px-2 text-center align-middle">
                           <span className="inline-flex rounded-md px-2 py-0.5 text-[11px] font-bold bg-slate-100 text-slate-600">
                             {r.disasterType}
                           </span>
                         </td>
-                        <td className="px-2 text-slate-700 truncate" title={r.content}>{r.content || "-"}</td>
-                        <td className="px-2 text-slate-600 truncate">{r.reporterName || `#${r.memberId}`}</td>
-                        <td className="px-2 text-center text-slate-600 whitespace-nowrap">{formatDateTime(r.createdAt)}</td>
-                        <td className="px-2 text-slate-600 truncate" title={reportAddresses[r.reportId]}>{reportAddresses[r.reportId] || "주소 확인 중..."}</td>
-                        <td className="px-2 text-center">
+                        <td className="px-2 text-center align-middle text-slate-700" title={r.content}><span className="mx-auto block max-w-[205px] truncate">{r.content || "-"}</span></td>
+                        <td className="px-2 text-center align-middle text-slate-600"><span className="mx-auto block max-w-[95px] truncate">{r.reporterName || `#${r.memberId}`}</span></td>
+                        <td className="px-2 text-center align-middle text-slate-600 whitespace-nowrap">{formatDateTime(r.createdAt)}</td>
+                        <td className="px-2 text-center align-middle text-slate-600" title={reportAddresses[r.reportId]}><span className="mx-auto block max-w-[245px] truncate">{reportAddresses[r.reportId] || "주소 확인 중..."}</span></td>
+                        <td className="px-2 text-center align-middle">
                           {linked ? (
-                            <span className="inline-flex rounded-md bg-emerald-50 text-emerald-600 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap">사건전환 완료</span>
+                            <span className="inline-flex rounded-md bg-emerald-50 text-emerald-600 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap">사건연결</span>
                           ) : r.status === "REVIEWING" ? (
                             <span className="inline-flex rounded-md bg-amber-50 text-amber-600 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap">검토중</span>
                           ) : r.status === "REJECTED" ? (
                             <span className="inline-flex rounded-md bg-rose-50 text-rose-600 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap">반려</span>
                           ) : (
-                            <span className="inline-flex rounded-md bg-blue-50 text-blue-600 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap">접수</span>
+                            <span className="inline-flex rounded-md bg-blue-50 text-blue-600 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap">등록</span>
                           )}
                         </td>
-                        <td className="px-2 text-center">
+                        <td className="px-2 text-center align-middle">
                           {linked ? (
                             <button
                               type="button"
@@ -359,7 +359,7 @@ export default function ReportsTab({
                             >사건 #{incidentRank.get(r.incidentId) ?? r.incidentId} 보기 ↗</button>
                           ) : <span className="text-slate-300">-</span>}
                         </td>
-                        <td className="px-2 text-center">
+                        <td className="px-2 text-center align-middle">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -443,7 +443,7 @@ export default function ReportsTab({
                     )}
                   </dd>
                 </div>
-                <div className="grid grid-cols-[92px_1fr] py-2"><dt className="text-slate-400">접수일시</dt><dd className="text-slate-700">{formatDateTime(selectedReport.createdAt)}</dd></div>
+                <div className="grid grid-cols-[92px_1fr] py-2"><dt className="text-slate-400">등록일시</dt><dd className="text-slate-700">{formatDateTime(selectedReport.createdAt)}</dd></div>
                 <div className="grid grid-cols-[92px_1fr] py-2"><dt className="text-slate-400">주소</dt><dd className="text-slate-700 truncate">{reportAddresses[selectedReport.reportId] || "주소 확인 중..."}</dd></div>
               </dl>
             </div>
@@ -457,7 +457,7 @@ export default function ReportsTab({
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 mb-3 flex items-start gap-3">
                 <Link2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-[13px] font-bold text-emerald-700">이 제보는 사건으로 전환되었습니다.</p>
+                  <p className="text-[13px] font-bold text-emerald-700">이 제보는 사건으로 연결되었습니다.</p>
                   <p className="text-[11px] text-emerald-600 leading-5 mt-0.5">원본 제보는 삭제되지 않고 사건과 연결되어 계속 보관됩니다.<br />제보와 사건의 처리 과정을 함께 추적할 수 있습니다.</p>
                 </div>
               </div>
@@ -487,7 +487,7 @@ export default function ReportsTab({
                 >사건 상세 보기 ↗</button>
               </div>
               <div className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-[11px] text-blue-600 flex items-center gap-2">
-                <Bell className="w-4 h-4 shrink-0" /> 제보에서 사건으로 전환되어도, 원본 제보 데이터는 그대로 보존되며 목록에서 확인할 수 있습니다.
+                <Bell className="w-4 h-4 shrink-0" /> 제보가 사건으로 연결되어도, 원본 제보 데이터는 그대로 보존되며 목록에서 확인할 수 있습니다.
               </div>
             </>
           ) : selectedReport?.status === "REJECTED" ? (

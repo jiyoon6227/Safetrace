@@ -3,7 +3,7 @@ import {
   Home, MapPin, ShieldAlert, Camera, GraduationCap, Users,
   Search, Menu, Bell, ChevronRight, ChevronLeft, ChevronDown, CloudRain, Wind, Waves,
   Thermometer, Mountain, CloudFog, Fish, Snowflake, Flame, Droplets,
-  CheckCircle2, Clock, Truck, Construction, ArrowRight, Navigation, X, Hash
+  CheckCircle2, Clock, Truck, Construction, ArrowRight, Navigation, X, Hash, Bot, MessageCircle
 } from "lucide-react";
 import LoginPage from "./pages/LoginPage";
 import ControlBoard from "./pages/ControlBoard";
@@ -12,31 +12,25 @@ import MyPage from "./pages/MyPage";
 import SafetyCheckResponsePage from "./pages/SafetyCheckResponsePage";
 import ShelterPage from "./pages/ShelterPage";
 import DisasterNewsPage from "./pages/DisasterNewsPage";
+import PublicDisasterPage from "./pages/PublicDisasterPage";
+import SafetyMapPage from "./pages/SafetyMapPage";
+import NearbySafetyMap from "./components/NearbySafetyMap";
 import { getCurrentUser, authFetch, getNotifications } from "./api/client";
-import { connectIncidentSocket, connectSafetyCheckSocket } from "./api/socket";
+import { connectIncidentSocket, connectSafetyCheckSocket, connectReportSocket } from "./api/socket";
 import { buildNotificationItems } from "./pages/MyPage/constants";
 import { useEscapeKey } from "./hooks/useEscapeKey";
 import mainBg from "./assets/main.png";
+import { MAIN_DISASTER_FILTERS, disasterBadgeClass, disasterFilterOf, disasterSummary, disasterTitle, formatDisasterTime } from "./utils/disasterMessages";
 
 // ---- 색상/토큰 -----------------------------------------------------------
 // 신뢰감 있는 네이비(공공/안전) + 경보용 레드 + 대응중 앰버 + 완료 그린
 // 정보 제공형 사이트가 아니라 "추적형" 서비스라는 걸 타임라인 컴포넌트로 강조
 
 const quickMenu = [
-  { icon: Home, label: "대피시설" },
-  { icon: ShieldAlert, label: "위험지역" },
-  { icon: Camera, label: "현장제보", highlight: true },
-  { icon: GraduationCap, label: "행동요령" },
-  { icon: Users, label: "가족확인" },
-  { icon: Navigation, label: "안전지도" },
-];
-
-const disasterMessages = [
-  { type: "호우", level: "red", region: "주요 도로 침수 발생", time: "10:24", text: "도로 일부 구간 통제 중" },
-  { type: "산사태", level: "red", region: "산사태 주의보 발효", time: "09:50", text: "주변 지역 접근을 자제해주세요." },
-  { type: "강풍", level: "blue", region: "강풍주의보 발효", time: "08:15", text: "시설물 낙하에 주의하세요." },
-  { type: "지진", level: "red", region: "지진 발생", time: "07:30", text: "현재 피해 상황 확인 중" },
-  { type: "기타", level: "amber", region: "도로 결빙 주의", time: "07:30", text: "출근길 안전운전하세요." },
+  { icon: Home, label: "대피시설", title: "대피시설 찾기", sub: "가까운 대피시설을 확인하세요" },
+  { icon: Camera, label: "현장제보", title: "현장 제보하기", sub: "지금, 바로 제보해주세요" },
+  { icon: GraduationCap, label: "행동요령", title: "행동요령", sub: "재난별 행동요령을 확인하세요" },
+  { icon: Users, label: "가족확인", title: "가족 안전확인", sub: "가족의 안전 상태를 확인하세요" },
 ];
 
 const actionGuides = [
@@ -65,6 +59,22 @@ const STATUS_STYLE = {
   RESPONDING: "bg-rose-200 text-rose-800",
   RECOVERING: "bg-yellow-200 text-yellow-800",
   CLOSED: "bg-emerald-200 text-emerald-800",
+};
+
+// 제보 상태는 사건 상태와 분리해서 표시
+// 제보: 등록 -> 검토중 -> 사건연결 / 반려
+const REPORT_STATE_LABEL = {
+  RECEIVED: "등록",
+  REVIEWING: "검토중",
+  LINKED: "사건연결",
+  REJECTED: "반려",
+};
+
+const REPORT_STATE_STYLE = {
+  RECEIVED: "bg-blue-50 text-blue-700",
+  REVIEWING: "bg-amber-50 text-amber-700",
+  LINKED: "bg-emerald-50 text-emerald-700",
+  REJECTED: "bg-rose-50 text-rose-700",
 };
 
 // 사건 카드 왼쪽 상태 색 막대 (뱃지 배경보다 진한 톤으로, 목록에서 한눈에 구분되게)
@@ -222,7 +232,7 @@ export default function MainPage() {
   // (history.state는 새로고침해도 그대로 남아있음 - 지금까지는 이걸 안 읽어서 새로고침할 때마다 무조건 "home"으로 튕겼었음)
   const [page, setPage] = useState(
     safetyCheckTokenFromUrl ? "safety-check-response" : window.history.state?.page || "home"
-  ); // "home" | "login" | "mypage" | "shelters" | "safety-news" | "safety-check-response"
+  ); // "home" | "login" | "mypage" | "shelters" | "disaster-info" | "safety-map" | "safety-news" | "safety-check-response"
   const [selectedShelterRegionId, setSelectedShelterRegionId] = useState(
     window.history.state?.shelterRegionId ?? null
   );
@@ -248,6 +258,37 @@ export default function MainPage() {
   const [headerSearchQuery, setHeaderSearchQuery] = useState("");
   const headerSearchInputRef = useRef(null);
   const disasterListRef = useRef(null);
+  const safetyMapRef = useRef(null);
+
+  // 메인 "실시간 재난 · 안전 정보" - 행안부 긴급재난문자 최근 48시간 데이터를 사용
+  const [mainDisasterMessages, setMainDisasterMessages] = useState([]);
+  const [mainDisasterLoading, setMainDisasterLoading] = useState(true);
+  const [mainDisasterError, setMainDisasterError] = useState("");
+  const [mainDisasterFilter, setMainDisasterFilter] = useState("전체");
+
+  useEffect(() => {
+    if (page !== "home") return undefined;
+
+    let active = true;
+    setMainDisasterLoading(true);
+    setMainDisasterError("");
+
+    authFetch("/api/environment/disaster-messages/nationwide?limit=30")
+      .then((data) => {
+        if (!active) return;
+        setMainDisasterMessages(Array.isArray(data) ? data : []);
+      })
+      .catch((e) => {
+        if (!active) return;
+        setMainDisasterMessages([]);
+        setMainDisasterError(e?.message || "재난문자를 불러오지 못했습니다.");
+      })
+      .finally(() => {
+        if (active) setMainDisasterLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [page]);
 
   // 브라우저 뒤로가기/앞으로가기가 앱 내 페이지 전환도 따라가게 함.
   // 지금까지는 setPage만 써서 화면은 바뀌어도 URL 히스토리엔 기록이 안 남았고,
@@ -309,7 +350,9 @@ export default function MainPage() {
   }, [page]);
 
   // 연결된 사건들의 현재 상태 (incidentId -> Incident 객체)
+  const incidentInfoRef = useRef({});
   const [incidentInfo, setIncidentInfo] = useState({});
+  incidentInfoRef.current = incidentInfo;
   // 연결된 사건들의 처리 타임라인 (incidentId -> IncidentLog[]) - 사이드바 카드에 바로 보여주기 위함
   const [incidentTimelines, setIncidentTimelines] = useState({});
 
@@ -403,16 +446,31 @@ export default function MainPage() {
   const [pendingReportAddresses, setPendingReportAddresses] = useState({});
   useEffect(() => {
     const targets = myReports.filter((r) => !r.incidentId && !pendingReportAddresses[r.reportId]);
-    if (targets.length === 0 || !window.kakao?.maps?.services) return;
-    const geocoder = new window.kakao.maps.services.Geocoder();
-    targets.forEach((report) => {
-      if (report.latitude == null || report.longitude == null) return;
-      geocoder.coord2Address(report.longitude, report.latitude, (result, status) => {
-        const addr =
-          status === window.kakao.maps.services.Status.OK && result[0]
-            ? result[0].road_address?.address_name || result[0].address?.address_name || "주소 확인 불가"
-            : "주소 확인 불가";
-        setPendingReportAddresses((prev) => ({ ...prev, [report.reportId]: addr }));
+    if (targets.length === 0 || !window.kakao?.maps) return;
+
+    // Kakao SDK가 autoload=false라 services를 바로 쓰면 아직 준비되지 않은 경우가 있음.
+    // maps.load 안에서 Geocoder를 생성해야 신규 제보 주소도 정상 표시된다.
+    window.kakao.maps.load(() => {
+      if (!window.kakao?.maps?.services) return;
+
+      const geocoder = new window.kakao.maps.services.Geocoder();
+      targets.forEach((report) => {
+        if (report.latitude == null || report.longitude == null) {
+          setPendingReportAddresses((prev) => ({
+            ...prev,
+            [report.reportId]: "위치정보 없음",
+          }));
+          return;
+        }
+
+        geocoder.coord2Address(report.longitude, report.latitude, (result, status) => {
+          const addr =
+            status === window.kakao.maps.services.Status.OK && result[0]
+              ? result[0].road_address?.address_name || result[0].address?.address_name || "주소 확인 불가"
+              : "주소 확인 불가";
+
+          setPendingReportAddresses((prev) => ({ ...prev, [report.reportId]: addr }));
+        });
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -424,35 +482,94 @@ export default function MainPage() {
     if (!token) return;
 
     const socket = connectIncidentSocket((data) => {
-      const changedId = data.incident?.incidentId;
+      // 백엔드 재시작 등으로 소켓이 끊겼다가 다시 붙은 경우, 끊겨 있던 동안의 상태 변경까지
+      // 현재 DB 값으로 다시 맞춘다.
+      if (data?.eventType === "SOCKET_CONNECTED") {
+        Object.keys(incidentInfoRef.current).forEach((id) => {
+          authFetch(`/api/incidents/${id}`)
+            .then((freshIncident) => {
+              setIncidentInfo((prev) => ({ ...prev, [id]: freshIncident }));
+            })
+            .catch(() => {});
+
+          authFetch(`/api/incidents/${id}/timeline`)
+            .then((timeline) => {
+              setIncidentTimelines((prev) => ({ ...prev, [id]: timeline }));
+              if (String(detailIncidentIdRef.current) === String(id)) {
+                setDetailTimeline(timeline);
+              }
+            })
+            .catch(() => {});
+        });
+
+        getNotifications().then(setDbNotifications).catch(() => {});
+        return;
+      }
+
+      const changedId = data?.incident?.incidentId;
       if (!changedId) return;
 
-      // 이 broadcast는 STAFF 상황판 + 시민 화면 전체한테 다 가는 신호라, 이 사건이 "내 관심지역
-      // 반경 안"이었는지 "내 제보가 연결돼있었는지"는 클라이언트가 알 방법이 없음(서버만 앎).
-      // 그래서 매번 무조건 다시 조회 - 어차피 서버가 로그인한 나(memberId) 기준으로만 내려주는
-      // API라, 나랑 무관한 사건이었으면 그냥 새 항목 없이 그대로 돌아올 뿐 손해가 없음.
+      console.log("WS 수신:", changedId, "추적중인 사건:", Object.keys(incidentInfoRef.current));
+
       getNotifications().then(setDbNotifications).catch(() => {});
 
-      // 내가 추적 중인(=이미 incidentInfo에 있는) 사건일 때만 반응 - 남의 사건까지 다 받아서 처리할 필요 없음
+      // WebSocket payload를 먼저 즉시 반영하고, DB 확정값을 다시 조회해서 한 번 더 동기화한다.
+      // 이렇게 해야 다른 담당자 화면에서 상태를 바꿨을 때 시민 화면의 뱃지/진행바가 즉시 바뀌고,
+      // 재연결 직후에도 오래된 상태가 남지 않는다.
       setIncidentInfo((prev) => {
         if (!prev[changedId]) return prev;
-        return { ...prev, [changedId]: data.incident };
+        return { ...prev, [changedId]: { ...prev[changedId], ...data.incident } };
       });
 
-      setIncidentTimelines((prev) => {
-        if (!(changedId in prev)) return prev; // 추적 중인 사건이 아니면 굳이 새로 안 가져옴
-        authFetch(`/api/incidents/${changedId}/timeline`)
-          .then((timeline) => setIncidentTimelines((p) => ({ ...p, [changedId]: timeline })))
+      if (incidentInfoRef.current?.[changedId]) {
+        authFetch(`/api/incidents/${changedId}`)
+          .then((freshIncident) => {
+            setIncidentInfo((prev) => ({ ...prev, [changedId]: freshIncident }));
+          })
           .catch(() => {});
-        return prev;
-      });
 
-      // 지금 이 사건의 상세 모달이 열려있으면 그 타임라인도 같이 갱신
-      if (detailIncidentIdRef.current === changedId) {
         authFetch(`/api/incidents/${changedId}/timeline`)
-          .then(setDetailTimeline)
+          .then((timeline) => {
+            setIncidentTimelines((prev) => ({ ...prev, [changedId]: timeline }));
+
+            if (detailIncidentIdRef.current === changedId) {
+              setDetailTimeline(timeline);
+            }
+          })
           .catch(() => {});
       }
+    });
+
+    return () => socket.close();
+  }, [token]);
+
+  // 제보 WebSocket - 담당자가 제보를 검토중/사건연결/반려로 바꾸면
+  // /api/reports/my를 다시 조회해서 메인 "내 현장제보" 목록/배지가 즉시 바뀐다.
+  useEffect(() => {
+    if (!token) return;
+
+    const socket = connectReportSocket((data) => {
+      const changedReport = data?.report;
+
+      // 현재 목록에 있는 내 제보라면 이벤트 데이터로 먼저 즉시 반영
+      if (changedReport?.reportId) {
+        setMyReports((prev) =>
+          prev.map((report) =>
+            report.reportId === changedReport.reportId
+              ? { ...report, ...changedReport }
+              : report
+          )
+        );
+      }
+
+      // DB 확정값으로 한 번 더 동기화. 사건연결 시 incidentId도 여기서 최신화된다.
+      authFetch("/api/reports/my")
+        .then(setMyReports)
+        .catch(() => {});
+
+      getNotifications()
+        .then(setDbNotifications)
+        .catch(() => {});
     });
 
     return () => socket.close();
@@ -675,10 +792,18 @@ export default function MainPage() {
   const trackingProgressCount = groupedIncidents.filter((g) => g.incident?.status !== "CLOSED").length;
   const trackingClosedCount = groupedIncidents.filter((g) => g.incident?.status === "CLOSED").length;
 
-  // 아직 담당자가 검토해서 사건에 연결하지 않은 제보들("접수됨" 상태). 이런 제보는 연결된
-  // Incident가 없어서 groupedIncidents에 안 잡히는데, 그렇다고 목록에서 아예 빠지면
-  // 홈 화면 위젯의 "접수된 제보 N건" 카운트와 이 모달의 실제 표시 개수가 안 맞아 혼란스러움.
-  // 그래서 별도로 "검토 대기중" 항목으로 같이 보여줌.
+  // 사건에 아직 연결되지 않은 제보의 현재 제보 상태를 그대로 표시한다.
+  // RECEIVED=등록, REVIEWING=검토중, REJECTED=반려
+  const reportStateOf = (report) => {
+    const code = report.status || (report.incidentId ? "LINKED" : "RECEIVED");
+    return {
+      code,
+      label: REPORT_STATE_LABEL[code] || code,
+      style: REPORT_STATE_STYLE[code] || REPORT_STATE_STYLE.RECEIVED,
+    };
+  };
+
+  // 아직 사건에 연결되지 않은 제보도 목록에서 빠지지 않도록 별도로 함께 보여준다.
   const pendingReports = myReports.filter((r) => !r.incidentId);
   const filteredPendingReports = pendingReports
     .filter((r) => {
@@ -743,6 +868,28 @@ export default function MainPage() {
     );
   }
 
+  if (page === "safety-map") {
+    return (
+      <SafetyMapPage
+        onBackToHome={() => goTo("home")}
+      />
+    );
+  }
+
+  if (page === "disaster-info") {
+    return (
+      <PublicDisasterPage
+        initialMessageSn={window.history.state?.disasterSn ?? null}
+        onBackToHome={() => goTo("home")}
+        onOpenShelters={() => requireLogin(() => goTo("shelters", { shelterRegionId: null }))}
+        onOpenReport={() => requireLogin(() => {
+          goTo("home");
+          setShowReportForm(true);
+        })}
+      />
+    );
+  }
+
   if (page === "safety-news") {
     return (
       <DisasterNewsPage
@@ -775,12 +922,11 @@ export default function MainPage() {
           </button>
 
           <nav className="hidden lg:flex items-center gap-10 text-[15px] font-semibold text-[#0B2A52]">
-            <button className="hover:text-blue-600 cursor-pointer transition">서비스 소개</button>
-            <button className="hover:text-blue-600 cursor-pointer transition">내 주변 재난</button>
+            <button onClick={() => goTo("disaster-info")} className="hover:text-blue-600 cursor-pointer transition">재난정보</button>
+            <button onClick={() => safetyMapRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })} className="hover:text-blue-600 cursor-pointer transition">안전지도</button>
             <button onClick={handleReportClick} className="hover:text-blue-600 cursor-pointer transition">현장 제보</button>
-            <button className="hover:text-blue-600 cursor-pointer transition">안전지도</button>
             <button className="hover:text-blue-600 cursor-pointer transition">행동요령</button>
-            <button className="hover:text-blue-600 cursor-pointer transition">소식 · 알림</button>
+            <button className="hover:text-blue-600 cursor-pointer transition">공지사항</button>
           </nav>
 
           <div className="flex items-center gap-4 text-[#0B2A52]">
@@ -914,7 +1060,7 @@ export default function MainPage() {
                 <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0"><ShieldAlert className="w-5 h-5 text-red-500" /></div>
                 지금, 내 주변에 발생한 재난
               </div>
-              <button className="text-xs sm:text-sm text-slate-500 flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer shrink-0">더보기 <ChevronRight className="w-4 h-4" /></button>
+              <button onClick={() => goTo("disaster-info")} className="text-xs sm:text-sm text-slate-500 flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer shrink-0">더보기 <ChevronRight className="w-4 h-4" /></button>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <h2 className="text-[26px] sm:text-[31px] font-extrabold tracking-tight text-[#0B2A52]">내 주변 침수 위험</h2>
@@ -927,7 +1073,7 @@ export default function MainPage() {
               현재 도로 일부 구간이 침수되어 통제되고 있습니다.<br className="hidden sm:block" /> 가까운 대피시설을 확인하고, 안전에 유의하세요.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5">
-              <button className="h-12 rounded-xl bg-[#0B2A52] hover:bg-[#173b65] transition text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer">
+              <button onClick={() => safetyMapRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })} className="h-12 rounded-xl bg-[#0B2A52] hover:bg-[#173b65] transition text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer">
                 <Navigation className="w-4 h-4" /> 주변 재난지도 보기 <ArrowRight className="w-4 h-4" />
               </button>
               <button onClick={handleReportClick} className="h-12 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 transition text-[#0B2A52] text-sm font-bold flex items-center justify-center gap-2 cursor-pointer">
@@ -938,44 +1084,45 @@ export default function MainPage() {
         </div>
       </section>
 
-      {/* 퀵 메뉴 */}
+      {/* 퀵 메뉴 - 자주 쓰는 기능만 4개로 축소 */}
       <section className="relative z-20 -mt-7 max-w-[1450px] mx-auto px-6">
-        <div className="bg-white rounded-[22px] shadow-lg shadow-slate-900/8 border border-slate-100 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 overflow-hidden">
-          {quickMenu.map(({ icon: Icon, label }, index) => {
+        <div className="bg-white rounded-[22px] shadow-lg shadow-slate-900/8 border border-slate-100 grid grid-cols-2 lg:grid-cols-4 overflow-hidden">
+          {quickMenu.map(({ icon: Icon, label, title, sub }, index) => {
             const iconStyles = [
               "bg-blue-50 text-blue-600",
+              "bg-emerald-50 text-emerald-600",
               "bg-orange-50 text-orange-500",
-              "bg-blue-50 text-blue-600",
-              "bg-blue-50 text-blue-600",
-              "bg-blue-50 text-blue-600",
-              "bg-emerald-50 text-emerald-500",
+              "bg-violet-50 text-violet-600",
             ];
-            const sub = {
-              대피시설: "가까운 대피소를 확인하세요",
-              위험지역: "재난 위험지역을 확인하세요",
-              현장제보: "지금, 바로 제보해주세요",
-              행동요령: "상황별 행동요령을 확인하세요",
-              가족확인: "사랑하는 가족의 안전을 확인하세요",
-              안전지도: "지도에서 한눈에 확인하세요",
-            }[label];
+
+            const handleClick = () => {
+              if (label === "대피시설") {
+                goTo("shelters", { shelterRegionId: null });
+                return;
+              }
+              if (label === "현장제보") {
+                handleReportClick();
+                return;
+              }
+              if (label === "가족확인") {
+                requireLogin(() => goTo("mypage", { mypageTab: "family" }));
+                return;
+              }
+              // 행동요령 상세 페이지 연결 전까지는 메인에서 안내용 메뉴로 유지
+            };
+
             return (
               <button
                 key={label}
-                onClick={
-                  label === "현장제보"
-                    ? handleReportClick
-                    : label === "가족확인"
-                    ? () => requireLogin(() => goTo("mypage", { mypageTab: "family" }))
-                    : label === "대피시설"
-                    ? () => requireLogin(() => goTo("shelters", { shelterRegionId: null }))
-                    : undefined
-                }
-                className={`group px-5 py-6 flex items-center gap-4 text-left hover:bg-slate-50 transition-colors cursor-pointer ${index !== 5 ? "lg:border-r border-slate-100" : ""}`}
+                onClick={handleClick}
+                className={`group px-5 py-4 sm:py-5 flex items-center gap-4 text-left hover:bg-slate-50 transition-colors cursor-pointer ${index !== 3 ? "lg:border-r border-slate-100" : ""}`}
               >
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${iconStyles[index]}`}><Icon className="w-6 h-6" /></div>
-                <div>
-                  <div className="font-bold text-[#0B2A52] text-sm group-hover:text-blue-600 transition-colors">{label === "가족확인" ? "가족 안전확인" : label === "대피시설" ? "대피시설 찾기" : label === "현장제보" ? "현장 제보하기" : label === "안전지도" ? "안전지도" : label}</div>
-                  <div className="text-[11px] text-slate-400 mt-1 whitespace-nowrap">{sub}</div>
+                <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${iconStyles[index]}`}>
+                  <Icon className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-bold text-[#0B2A52] text-sm group-hover:text-blue-600 transition-colors">{title}</div>
+                  <div className="text-[11px] text-slate-400 mt-1 truncate">{sub}</div>
                 </div>
               </button>
             );
@@ -983,202 +1130,227 @@ export default function MainPage() {
         </div>
       </section>
 
-      {/* 하단 대시보드 */}
-      <main className="max-w-[1450px] mx-auto px-6 py-5 pb-12">
-        <div className="grid grid-cols-1 lg:grid-cols-[0.95fr_1.05fr_0.95fr] gap-4 items-start">
-          {/* 실시간 재난 정보 */}
-          <section ref={disasterListRef} className="bg-white rounded-[18px] border border-slate-200 shadow-sm overflow-hidden min-h-[470px]">
+      {/* 하단 대시보드 - 정보/지도/개인화 3열 구조 */}
+      <main className="max-w-[1450px] mx-auto px-6 py-5 pb-10">
+        <div className="grid grid-cols-1 lg:grid-cols-[0.95fr_1.08fr_0.97fr] gap-4 items-start">
+
+          {/* 실시간 재난 · 안전 정보 */}
+          <section ref={disasterListRef} className="bg-white rounded-[18px] border border-slate-200 shadow-sm overflow-hidden min-h-[430px]">
             <div className="px-5 pt-5 pb-3 flex items-center justify-between">
-              <h2 className="text-[18px] font-extrabold text-[#0B2A52] flex items-center gap-2"><span className="text-red-500">◉</span> 실시간 재난 · 안전 정보</h2>
-              <button className="text-sm text-[#0B2A52] flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer">더보기 <ChevronRight className="w-4 h-4" /></button>
+              <h2 className="text-[18px] font-extrabold text-[#0B2A52] flex items-center gap-2">
+                <span className="text-red-500">◉</span> 실시간 재난 · 안전 정보
+              </h2>
+              <button onClick={() => goTo("disaster-info")} className="text-sm text-[#0B2A52] flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer">
+                더보기 <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
-            <div className="px-5 flex gap-2 pb-3">
-              {["전체", "호우", "태풍", "지진", "화재", "기타"].map((x, i) => <button key={x} className={`px-4 py-2 rounded-lg text-xs font-bold cursor-pointer transition ${i === 0 ? "bg-[#0B2A52] text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>{x}</button>)}
-            </div>
-            <ul className="px-5">
-              {disasterMessages
-                .filter((m) => {
-                  const q = headerSearchQuery.trim();
-                  if (!q) return true;
-                  return (m.region + m.type + m.text).includes(q);
-                })
-                .map((m, i) => (
-                <li key={i} className="py-4 border-t border-slate-100 flex gap-4 items-start cursor-pointer hover:bg-slate-50 transition -mx-5 px-5">
-                  <span className={`min-w-[56px] text-center rounded-lg px-2 py-1.5 text-xs font-bold ${m.level === "red" ? "bg-red-50 text-red-500" : m.level === "blue" ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-600"}`}>{m.type}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold text-[15px] text-[#0B2A52] truncate">{m.region}</div>
-                    <div className="text-[13px] text-slate-400 mt-1">{m.text}</div>
-                  </div>
-                  <span className="text-xs text-slate-400">{m.time}</span>
-                </li>
+
+            <div className="px-5 flex gap-2 pb-3 overflow-x-auto">
+              {MAIN_DISASTER_FILTERS.map((x) => (
+                <button
+                  key={x}
+                  onClick={() => setMainDisasterFilter(x)}
+                  className={`px-3.5 py-2 rounded-lg text-xs font-bold cursor-pointer transition whitespace-nowrap ${mainDisasterFilter === x ? "bg-[#0B2A52] text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
+                >
+                  {x}
+                </button>
               ))}
-              {headerSearchQuery.trim() && disasterMessages.filter((m) => (m.region + m.type + m.text).includes(headerSearchQuery.trim())).length === 0 && (
-                <li className="py-8 text-center text-sm text-slate-400">'{headerSearchQuery}'에 대한 검색 결과가 없습니다.</li>
+            </div>
+
+            <ul className="px-5">
+              {mainDisasterLoading && (
+                <li className="py-14 text-center text-sm text-slate-400 border-t border-slate-100">재난문자를 불러오는 중입니다.</li>
               )}
+
+              {!mainDisasterLoading && mainDisasterError && (
+                <li className="py-12 text-center border-t border-slate-100">
+                  <div className="text-sm text-slate-500">{mainDisasterError}</div>
+                  <button onClick={() => goTo("disaster-info")} className="mt-2 text-xs font-bold text-blue-600 cursor-pointer">전체 페이지에서 다시 확인하기</button>
+                </li>
+              )}
+
+              {!mainDisasterLoading && !mainDisasterError && mainDisasterMessages
+                .filter((m) => mainDisasterFilter === "전체" || disasterFilterOf(m) === mainDisasterFilter)
+                .filter((m) => {
+                  const q = headerSearchQuery.trim().toLowerCase();
+                  if (!q) return true;
+                  return `${m.message || ""} ${m.region || ""} ${disasterFilterOf(m)} ${m.emergencyLevel || ""}`.toLowerCase().includes(q);
+                })
+                .slice(0, 4)
+                .map((m, i) => (
+                  <li
+                    key={m.sn || `${m.createdAt || "time"}-${i}`}
+                    onClick={() => goTo("disaster-info", { disasterSn: m.sn || null })}
+                    className="py-4 border-t border-slate-100 flex gap-3 items-start cursor-pointer hover:bg-slate-50 transition -mx-5 px-5"
+                  >
+                    <span className={`min-w-[52px] text-center rounded-lg border px-2 py-1.5 text-xs font-bold ${disasterBadgeClass(m)}`}>
+                      {disasterFilterOf(m)}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-[14px] text-[#0B2A52] truncate">{disasterTitle(m)}</div>
+                      <div className="text-[12px] text-slate-400 mt-1 truncate">{disasterSummary(m)}</div>
+                    </div>
+                    <span className="text-[11px] text-slate-400 shrink-0">{formatDisasterTime(m.createdAt)}</span>
+                  </li>
+                ))}
+
+              {!mainDisasterLoading && !mainDisasterError && mainDisasterMessages
+                .filter((m) => mainDisasterFilter === "전체" || disasterFilterOf(m) === mainDisasterFilter)
+                .filter((m) => {
+                  const q = headerSearchQuery.trim().toLowerCase();
+                  if (!q) return true;
+                  return `${m.message || ""} ${m.region || ""} ${disasterFilterOf(m)} ${m.emergencyLevel || ""}`.toLowerCase().includes(q);
+                }).length === 0 && (
+                  <li className="py-10 text-center text-sm text-slate-400 border-t border-slate-100">조건에 맞는 재난문자가 없습니다.</li>
+                )}
             </ul>
           </section>
 
-          {/* 안전지도 */}
-          <section className="bg-white rounded-[18px] border border-slate-200 shadow-sm overflow-hidden min-h-[470px]">
-            <div className="px-5 py-5 flex items-center justify-between">
-              <h2 className="text-[18px] font-extrabold text-[#0B2A52] flex items-center gap-2"><MapPin className="w-5 h-5 text-blue-600" /> 내 주변 안전지도</h2>
-              <button className="text-sm text-[#0B2A52] flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer">더보기 <ChevronRight className="w-4 h-4" /></button>
-            </div>
-            <div className="mx-3 mb-3 h-[390px] rounded-[14px] overflow-hidden relative border border-slate-100 bg-[#E9F0E7]">
-              <div className="absolute inset-0 opacity-90" style={{ backgroundImage: 'linear-gradient(25deg, transparent 44%, rgba(255,255,255,.95) 45%, rgba(255,255,255,.95) 49%, transparent 50%), linear-gradient(-32deg, transparent 46%, rgba(255,255,255,.95) 47%, rgba(255,255,255,.95) 51%, transparent 52%), linear-gradient(90deg, transparent 31%, rgba(88,174,226,.45) 32%, rgba(88,174,226,.45) 47%, transparent 48%)', backgroundSize: '180px 160px, 210px 180px, 100% 100%' }} />
-              <div className="absolute top-3 right-3 bg-white rounded-full px-4 py-2 text-xs font-bold text-[#0B2A52] shadow">내 위치 반경 3km</div>
-              <div className="absolute left-[50%] top-[43%] -translate-x-1/2 -translate-y-1/2 w-7 h-7 bg-blue-600 rounded-full border-4 border-white shadow-lg" />
-              <div className="absolute left-[50%] top-[50%] -translate-x-1/2 bg-white px-3 py-1.5 rounded-full text-[11px] font-bold text-[#0B2A52] shadow">현재 위치</div>
-              {[['26%','22%'],['72%','30%'],['21%','55%'],['70%','57%']].map(([l,t],i)=><div key={i} className="absolute" style={{left:l,top:t}}><div className="w-9 h-9 rounded-full bg-red-500 border-4 border-white shadow flex items-center justify-center text-white font-black">!</div></div>)}
-              {[['61%','18%'],['28%','78%']].map(([l,t],i)=><div key={i} className="absolute" style={{left:l,top:t}}><div className="w-9 h-9 rounded-full bg-blue-600 border-4 border-white shadow flex items-center justify-center"><Home className="w-4 h-4 text-white" /></div></div>)}
-              
-            </div>
+          {/* 내 주변 안전지도 - 실제 Kakao Map + 현재 위치 + 진행중 사건 + 대피시설 */}
+          <section ref={safetyMapRef}>
+            <NearbySafetyMap
+              mode="compact"
+              onOpenFullMap={() => goTo("safety-map")}
+            />
           </section>
 
-          {/* 오른쪽 카드들 */}
-          <div className="space-y-4">
-            <section className="bg-white rounded-[18px] border border-slate-200 shadow-sm p-5">
-              <div className="flex items-center justify-between mb-2"><h2 className="text-[18px] font-extrabold text-[#0B2A52]">현재 날씨</h2><button className="text-sm text-[#0B2A52] flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer">더보기 <ChevronRight className="w-4 h-4" /></button></div>
-              <div className="text-xs text-slate-400 mb-2">내 위치 기준</div>
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3"><div className="text-5xl">🌤️</div><div><div className="text-[38px] leading-none font-black text-[#0B2A52]">28°C</div><div className="text-xs text-slate-500 mt-2">구름 조금 · 체감온도 30°C</div></div></div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500"><span>미세먼지</span><b className="text-blue-600">좋음</b><span>강수확률</span><b>30%</b><span>습도</span><b>65%</b></div>
+          {/* 오른쪽: 날씨 / AI 브리핑 / 내 제보 */}
+          <div className="space-y-3">
+
+            {/* 현재 날씨 */}
+            <section className="bg-white rounded-[18px] border border-slate-200 shadow-sm p-4">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-[17px] font-extrabold text-[#0B2A52]">현재 날씨</h2>
+                <button className="text-xs text-[#0B2A52] flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer">
+                  더보기 <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="text-[11px] text-slate-400 mb-2">내 위치 기준</div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="text-[38px]">🌤️</div>
+                  <div>
+                    <div className="text-[31px] leading-none font-black text-[#0B2A52]">28°C</div>
+                    <div className="text-[11px] text-slate-500 mt-1.5">구름 조금 · 체감 30°C</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                  <span>미세먼지</span><b className="text-blue-600">좋음</b>
+                  <span>강수확률</span><b>30%</b>
+                  <span>습도</span><b>65%</b>
+                </div>
               </div>
             </section>
 
-            <section className="bg-white rounded-[18px] border border-slate-200 shadow-sm p-5">
-              <div className="flex items-center justify-between mb-4"><h2 className="text-[18px] font-extrabold text-[#0B2A52] flex items-center gap-2"><Camera className="w-5 h-5 text-blue-600" /> 내 현장제보 추적</h2><button onClick={openTrackingOverview} className="text-sm text-[#0B2A52] flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer">더보기 <ChevronRight className="w-4 h-4" /></button></div>
-              {!token ? <p className="text-sm text-slate-400 py-6 text-center">로그인하면 내가 등록한 제보를 확인할 수 있습니다.</p> : myReportsLoading ? <p className="text-sm text-slate-400 py-6 text-center">불러오는 중...</p> : myReports.length === 0 ? <p className="text-sm text-slate-400 py-6 text-center">아직 등록한 제보가 없습니다.</p> : (
-                <div className="space-y-4">
-                  {visibleGroups.slice(0,1).map(({ incidentId, incident, reports }) => {
-                    const photoUrl = reports.find((r) => r.photoUrl)?.photoUrl;
-                    const DisasterIcon = DISASTER_ICON[reports[0]?.disasterType] || Droplets;
-                    // 4단계 진행바(접수/담당자배정/현장확인/처리완료)를 실제 사건 상태에 맞춰 계산
-                    const STEP_BY_STATUS = { RECEIVED: 1, CONFIRMING: 2, RESPONDING: 3, RECOVERING: 3, CLOSED: 4 };
-                    const activeStep = STEP_BY_STATUS[incident?.status] || 1;
-                    return (
+            {/* LLM API가 들어갈 AI 상황 브리핑 영역 */}
+            <section className="bg-white rounded-[18px] border border-slate-200 shadow-sm p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-[17px] font-extrabold text-[#0B2A52] flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center">
+                    <Bot className="w-4 h-4" />
+                  </span>
+                  AI 상황 브리핑
+                  <span className="rounded-full bg-rose-50 text-rose-500 px-2 py-0.5 text-[9px] font-extrabold">Beta</span>
+                </h2>
+              </div>
+
+              <p className="mt-3 text-[12px] leading-5 text-slate-600">
+                현재 재난·안전 정보와 주변 사건을 바탕으로 핵심 상황을 짧게 요약해 보여주는 영역입니다.
+                LLM API 연결 시 실시간 데이터 기준으로 자동 브리핑합니다.
+              </p>
+
+              <button
+                type="button"
+                className="mt-3 w-full h-9 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold flex items-center justify-center gap-2 hover:bg-blue-100 transition cursor-pointer"
+                onClick={() => window.alert("AI 안전 도우미는 LLM API 연결 후 활성화됩니다.")}
+              >
+                <MessageCircle className="w-4 h-4" /> AI 안전 도우미에게 질문하기 <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </section>
+
+            {/* 내 현장제보 추적 - 최근 1건만 요약 */}
+            <section className="bg-white rounded-[18px] border border-slate-200 shadow-sm p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-[17px] font-extrabold text-[#0B2A52] flex items-center gap-2">
+                  <Camera className="w-4.5 h-4.5 text-blue-600" /> 내 현장제보 추적
+                </h2>
+                <button onClick={openTrackingOverview} className="text-xs text-[#0B2A52] flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer">
+                  전체보기 <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {!token ? (
+                <div className="rounded-xl bg-slate-50 px-4 py-4 text-center">
+                  <p className="text-sm font-bold text-[#0B2A52]">내 제보 처리과정을 확인하세요</p>
+                  <p className="text-[11px] text-slate-400 mt-1">등록한 제보와 연결 사건의 진행상태를 볼 수 있습니다.</p>
+                  <button onClick={() => goTo("login")} className="mt-3 h-8 px-4 rounded-lg bg-[#0B2A52] text-white text-xs font-bold cursor-pointer">로그인</button>
+                </div>
+              ) : myReportsLoading ? (
+                <p className="text-sm text-slate-400 py-5 text-center">불러오는 중...</p>
+              ) : groupedIncidents.length > 0 ? (
+                (() => {
+                  const { incidentId, incident, reports } = groupedIncidents[0];
+                  const photoUrl = reports.find((r) => r.photoUrl)?.photoUrl;
+                  const DisasterIcon = DISASTER_ICON[reports[0]?.disasterType] || Droplets;
+                  const STEP_BY_STATUS = { RECEIVED: 1, CONFIRMING: 2, RESPONDING: 3, RECOVERING: 4, CLOSED: 5 };
+                  const activeStep = STEP_BY_STATUS[incident?.status] || 1;
+                  const steps = ["접수", "확인중", "대응중", "복구중", "종료"];
+
+                  return (
                     <button key={incidentId} onClick={() => openIncidentDetail(incidentId)} className="w-full text-left rounded-xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition cursor-pointer p-3">
                       <div className="flex gap-3 items-center">
-                        <div className="w-[74px] h-[58px] rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                        <div className="w-[58px] h-[48px] rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
                           {photoUrl ? (
                             <img src={`http://localhost:8080${photoUrl}`} alt="" className="w-full h-full object-cover" />
                           ) : (
-                            <DisasterIcon className="w-6 h-6 text-blue-500" />
+                            <DisasterIcon className="w-5 h-5 text-blue-500" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2"><b className="text-[#0B2A52] truncate">{incident?.title || '도로 침수 위험'}</b><span className={`text-[11px] px-2 py-1 rounded-full font-bold shrink-0 ${STATUS_STYLE[incident?.status] || "bg-slate-200 text-slate-700"}`}>{incident ? STATUS_LABEL[incident.status] || incident.status : '접수완료'}</span></div>
-                          <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1"><Clock className="w-3 h-3 shrink-0" />{formatDateTimeFull(incident?.updatedAt || reports[0]?.createdAt)}</div>
-                          <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5"><MapPin className="w-3 h-3 shrink-0" /><span className="truncate">{incident?.region || '내 주변 신고 위치'}</span></div>
+                          <div className="flex items-center justify-between gap-2">
+                            <b className="text-[13px] text-[#0B2A52] truncate">{incident?.title || `${reports[0]?.disasterType || "현장"} 제보`}</b>
+                            <span className={`text-[10px] px-2 py-1 rounded-full font-bold shrink-0 ${STATUS_STYLE[incident?.status] || "bg-slate-200 text-slate-700"}`}>
+                              {incident ? STATUS_LABEL[incident.status] || incident.status : "확인중"}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-1 truncate">
+                            {formatDateTimeFull(incident?.updatedAt || reports[0]?.createdAt)} · {incident?.region || "내 주변 신고 위치"}
+                          </div>
                         </div>
                       </div>
-                      <div className="mt-4 flex items-center">
-                        {[1, 2, 3, 4].map((step) => (
+
+                      <div className="mt-3 flex items-center">
+                        {[1, 2, 3, 4, 5].map((step) => (
                           <React.Fragment key={step}>
-                            <div className={`w-3 h-3 rounded-full shrink-0 ${step <= activeStep ? "bg-blue-600" : "bg-slate-300"}`} />
-                            {step < 4 && <div className={`h-[3px] flex-1 ${step < activeStep ? "bg-blue-600" : "bg-slate-200"}`} />}
+                            <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${step <= activeStep ? "bg-blue-600" : "bg-slate-300"}`} />
+                            {step < 5 && <div className={`h-[2px] flex-1 ${step < activeStep ? "bg-blue-600" : "bg-slate-200"}`} />}
                           </React.Fragment>
                         ))}
                       </div>
-                      <div className="grid grid-cols-4 text-[10px] text-slate-400 mt-1 text-center"><span>접수</span><span>담당자 배정</span><span>현장 확인</span><span>처리 완료</span></div>
+                      <div className="grid grid-cols-5 text-[9px] text-slate-400 mt-1 text-center">
+                        {steps.map((step) => <span key={step}>{step}</span>)}
+                      </div>
                     </button>
-                    );
-                  })}
-
-                  {/* 다른 제보 현황 - 내 사건이 2건 이상 연결돼있으면 나머지를 요약 목록으로 */}
-                  {groupedIncidents.length > 1 && (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-xs font-bold text-slate-500">다른 제보 현황</h3>
-                        <span className="text-[11px] text-slate-400">
-                          진행 중 <b className="text-blue-600">{groupedIncidents.filter((g) => g.incident?.status !== "CLOSED").length}건</b>
-                          {" · "}완료 <b className="text-emerald-600">{groupedIncidents.filter((g) => g.incident?.status === "CLOSED").length}건</b>
-                        </span>
+                  );
+                })()
+              ) : unlinkedReports.length > 0 ? (
+                (() => {
+                  const report = [...unlinkedReports].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+                  const reportLabel = { RECEIVED: "등록", REVIEWING: "검토중", LINKED: "사건연결", REJECTED: "반려" }[report.status] || "등록";
+                  return (
+                    <button onClick={openTrackingOverview} className="w-full text-left rounded-xl border border-slate-100 p-3 hover:border-slate-200 cursor-pointer">
+                      <div className="flex items-center justify-between gap-2">
+                        <b className="text-[13px] text-[#0B2A52] truncate">{report.disasterType || "현장"} · 제보 #{report.reportId}</b>
+                        <span className="text-[10px] px-2 py-1 rounded-full bg-blue-50 text-blue-600 font-bold shrink-0">{reportLabel}</span>
                       </div>
-                      <div className="space-y-2">
-                        {groupedIncidents.slice(1, 4).map(({ incidentId, incident, reports }) => {
-                          const photoUrl = reports.find((r) => r.photoUrl)?.photoUrl;
-                          const DisasterIcon = DISASTER_ICON[reports[0]?.disasterType] || Droplets;
-                          return (
-                            <button key={incidentId} onClick={() => openIncidentDetail(incidentId)} className="w-full text-left flex items-center gap-3 rounded-lg border border-slate-100 p-2 hover:border-slate-200 cursor-pointer">
-                              <div className="w-11 h-11 rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
-                                {photoUrl ? (
-                                  <img src={`http://localhost:8080${photoUrl}`} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                  <DisasterIcon className="w-4 h-4 text-blue-500" />
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <b className="text-xs text-[#0B2A52] truncate">{incident?.title || `사건 #${incidentId}`}</b>
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold shrink-0 ${STATUS_STYLE[incident?.status] || "bg-slate-200 text-slate-700"}`}>{incident ? STATUS_LABEL[incident.status] || incident.status : "확인 중"}</span>
-                                </div>
-                                <div className="text-[10px] text-slate-400 mt-0.5 truncate">{formatDateTimeFull(incident?.updatedAt || reports[0]?.createdAt)} · {incident?.region}</div>
-                              </div>
-                              <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {groupedIncidents.length === 0 && (
-                    unlinkedReports.length > 0 ? (
-                      <div className="flex gap-3 items-center rounded-xl border border-slate-100 p-3">
-                        <div className="w-[74px] h-[58px] rounded-lg bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">
-                          <Camera className="w-6 h-6 text-slate-400" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <b className="text-[#0B2A52] text-sm">접수된 제보 {unlinkedReports.length}건</b>
-                            <span className="text-[11px] px-2 py-1 rounded-full bg-slate-100 text-slate-500 font-bold shrink-0">확인 대기중</span>
-                          </div>
-                          <div className="text-xs text-slate-400 mt-1">담당자가 검토 후 사건으로 연결하면 여기서 진행 상황을 볼 수 있어요.</div>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-slate-400 py-4 text-center">연결된 사건이 아직 없습니다.</p>
-                    )
-                  )}
-                </div>
-              )}
-            </section>
-
-            <section className="bg-white rounded-[18px] border border-slate-200 shadow-sm p-5">
-              <div className="flex items-center justify-between mb-4"><h2 className="text-[18px] font-extrabold text-[#0B2A52] flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /> 가족 안전확인</h2><button onClick={() => requireLogin(() => goTo("mypage", { mypageTab: "family" }))} className="text-sm text-[#0B2A52] flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer">더보기 <ChevronRight className="w-4 h-4" /></button></div>
-              {!token ? <p className="text-sm text-slate-400 py-3">로그인하면 가족 안전확인을 이용할 수 있습니다.</p> : families.length === 0 ? <p className="text-sm text-slate-400 py-3">등록된 가족이 없습니다. 마이페이지에서 가족을 등록해보세요.</p> : (
-                <div className="space-y-3">
-                  {families.slice(0,2).map((f) => {
-                    // 나와 이 가족 사이의 가장 최근 안전확인 기록(방향 무관) 하나로 배지 결정.
-                    // 단, 그 기록이 "PENDING + 그 가족이 나한테 보낸 것"이면 내가 응답할 차례라는 뜻이라
-                    // 같은 PENDING이라도 "응답 대기"(내가 기다리는 중)와 구분해서 "응답 필요"로 표시
-                    const entry = latestCheckByMember[f.familyMemberId];
-                    const needsMyResponse = entry?.check.status === "PENDING" && entry.direction === "received";
-                    const meta = needsMyResponse ? NEEDS_MY_RESPONSE_META : entry ? SAFETY_STATUS_META[entry.check.status] : null;
-                    const timestamp = entry?.check.confirmedAt || entry?.check.requestedAt;
-                    return (
-                      <div key={f.relationId} className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
-                          {f.familyMemberProfileImageUrl ? (
-                            <img src={`http://localhost:8080${f.familyMemberProfileImageUrl}`} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <Users className="w-4 h-4 text-slate-500" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <b className="text-sm text-[#0B2A52] truncate">{f.relationType} {f.familyMemberName}</b>
-                            {meta && <span className={`text-[11px] px-2.5 py-1 rounded-full font-bold shrink-0 ${meta.badgeStyle}`}>{meta.badge}</span>}
-                          </div>
-                          <div className="text-[11px] text-slate-400 mt-0.5">
-                            {meta ? `${formatTimeOnly(timestamp)} · ${meta.message}` : "아직 요청한 적 없어요"}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <button onClick={() => setShowSafetyCheckModal(true)} className="w-full h-11 rounded-xl bg-[#0B2A52] hover:bg-[#173b65] transition text-white text-sm font-bold flex items-center justify-center gap-2 mt-3 cursor-pointer">가족에게 안전확인 요청하기 <ArrowRight className="w-4 h-4" /></button>
+                      <div className="text-[11px] text-slate-400 mt-1 truncate">{report.content || "담당자 검토를 기다리고 있습니다."}</div>
+                    </button>
+                  );
+                })()
+              ) : (
+                <div className="rounded-xl bg-slate-50 px-4 py-4 text-center">
+                  <p className="text-sm font-bold text-[#0B2A52]">아직 등록한 제보가 없습니다.</p>
+                  <button onClick={handleReportClick} className="mt-2 text-xs font-bold text-blue-600 hover:underline cursor-pointer">현장 제보하기</button>
                 </div>
               )}
             </section>
@@ -1186,7 +1358,12 @@ export default function MainPage() {
         </div>
       </main>
 
-      <footer className="border-t border-slate-200 py-6 text-center text-xs text-slate-400 bg-white">세이프트레이스 · 재난 상황관리·대응 플랫폼 (개인 프로젝트 데모)</footer>
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="max-w-[1450px] mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+          <div><b className="text-[#0B2A52]">세이프트레이스</b> · 재난 상황관리·대응 플랫폼</div>
+          <div className="flex items-center gap-5"><span>이용약관</span><span>개인정보처리방침</span><span>서비스 소개</span></div>
+        </div>
+      </footer>
 
       {showReportForm && (
         <ReportForm onClose={() => setShowReportForm(false)} onSuccess={handleReportSuccess} />
@@ -1194,7 +1371,7 @@ export default function MainPage() {
 
       {reportSuccess && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#0F2540] text-white text-sm font-semibold rounded-lg px-4 py-3 shadow-lg z-50">
-          제보가 접수되었습니다. 담당자가 확인 후 처리할 예정입니다.
+          제보가 등록되었습니다. 담당자가 확인 후 처리할 예정입니다.
         </div>
       )}
 
@@ -1284,6 +1461,7 @@ export default function MainPage() {
                   <ul className="space-y-3">
                     {filteredPendingReports.map((report) => {
                       const DisasterIcon = DISASTER_ICON[report.disasterType] || ShieldAlert;
+                      const reportState = reportStateOf(report);
                       return (
                         <li
                           key={`pending-${report.reportId}`}
@@ -1300,8 +1478,8 @@ export default function MainPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <b className="text-sm text-[#0B2A52] truncate">{report.content || `${report.disasterType} 제보`}</b>
-                              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 bg-slate-200 text-slate-600">
-                                접수됨 · 검토 대기중
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${reportState.style}`}>
+                                {reportState.label}
                               </span>
                             </div>
                             <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1">
@@ -1320,7 +1498,7 @@ export default function MainPage() {
                     {filteredTrackingIncidents.map(({ incidentId, incident, reports }) => {
                       const photoUrl = reports.find((r) => r.photoUrl)?.photoUrl;
                       const DisasterIcon = DISASTER_ICON[reports[0]?.disasterType] || ShieldAlert;
-                      const STEP_BY_STATUS = { RECEIVED: 1, CONFIRMING: 2, RESPONDING: 3, RECOVERING: 3, CLOSED: 4 };
+                      const STEP_BY_STATUS = { RECEIVED: 1, CONFIRMING: 2, RESPONDING: 3, RECOVERING: 4, CLOSED: 5 };
                       const activeStep = STEP_BY_STATUS[incident?.status] || 1;
                       return (
                         <li
@@ -1353,15 +1531,15 @@ export default function MainPage() {
                           </div>
                           <div className="hidden md:block w-[200px] shrink-0">
                             <div className="flex items-center">
-                              {[1, 2, 3, 4].map((step) => (
+                              {[1, 2, 3, 4, 5].map((step) => (
                                 <React.Fragment key={step}>
                                   <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${step <= activeStep ? "bg-blue-600" : "bg-slate-300"}`} />
-                                  {step < 4 && <div className={`h-[2px] flex-1 ${step < activeStep ? "bg-blue-600" : "bg-slate-200"}`} />}
+                                  {step < 5 && <div className={`h-[2px] flex-1 ${step < activeStep ? "bg-blue-600" : "bg-slate-200"}`} />}
                                 </React.Fragment>
                               ))}
                             </div>
-                            <div className="grid grid-cols-4 text-[9px] text-slate-400 mt-1 text-center leading-tight">
-                              <span>접수</span><span>담당자 배정</span><span>현장 확인</span><span>처리 완료</span>
+                            <div className="grid grid-cols-5 text-[9px] text-slate-400 mt-1 text-center leading-tight">
+                              <span>접수</span><span>확인중</span><span>대응중</span><span>복구중</span><span>종료</span>
                             </div>
                           </div>
                           <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
@@ -1383,6 +1561,7 @@ export default function MainPage() {
               {/* 검토 대기중 제보 상세 - 아직 Incident가 없어서 타임라인/진행바 없이 제보 원본만 보여줌 */}
               {detailPendingReportId && detailPendingReport && (() => {
                 const DetailDisasterIcon = DISASTER_ICON[detailPendingReport.disasterType] || ShieldAlert;
+                const detailReportState = reportStateOf(detailPendingReport);
                 return (
                   <div>
                     <div className="rounded-xl overflow-hidden mb-5 bg-slate-50 border border-slate-200">
@@ -1396,8 +1575,8 @@ export default function MainPage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 mb-1.5">
-                            <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-600">
-                              접수됨 · 검토 대기중
+                            <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${detailReportState.style}`}>
+                              {detailReportState.label}
                             </span>
                             <span className="text-[11px] text-slate-500">#{detailPendingReport.reportId}</span>
                           </div>
@@ -1407,7 +1586,7 @@ export default function MainPage() {
                             <span className="truncate">{pendingReportAddresses[detailPendingReport.reportId] || "주소 확인 중..."}</span>
                           </p>
                           <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
-                            <Clock className="w-3 h-3 shrink-0" /> {formatDateTimeFull(detailPendingReport.createdAt)} 접수
+                            <Clock className="w-3 h-3 shrink-0" /> {formatDateTimeFull(detailPendingReport.createdAt)} 등록
                           </p>
                         </div>
                       </div>
@@ -1420,7 +1599,11 @@ export default function MainPage() {
 
                     <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-blue-50 text-[12px] text-blue-700">
                       <Bell className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      아직 담당자가 검토 전이에요. 검토 후 사건으로 연결되면 여기서 처리 진행상황을 확인할 수 있어요.
+                      {detailReportState.code === "REVIEWING"
+                        ? "담당자가 제보 내용을 검토하고 있어요. 사건으로 연결되면 여기서 사건 처리 진행상황을 확인할 수 있어요."
+                        : detailReportState.code === "REJECTED"
+                          ? "이 제보는 반려된 상태입니다. 자세한 사유는 내 제보 내역에서 확인할 수 있어요."
+                          : "제보가 등록되었습니다. 담당자 검토 후 사건으로 연결되면 여기서 처리 진행상황을 확인할 수 있어요."}
                     </div>
                   </div>
                 );

@@ -125,7 +125,7 @@ export default function DashboardTab({
             type="button"
             key={label}
             onClick={onClick}
-            className="text-left bg-white rounded-2xl border border-slate-200 px-4 py-3.5 min-h-[108px] flex flex-col justify-between shadow-[0_1px_2px_rgba(15,37,64,0.02)] hover:border-slate-300 hover:shadow-md transition cursor-pointer"
+            className="text-left bg-white rounded-2xl border border-slate-200 px-4 py-3.5 min-h-[108px] flex flex-col justify-between shadow-[0_1px_2px_rgba(15,37,64,0.02)] hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
           >
             <div className="flex items-center gap-3">
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
@@ -134,7 +134,11 @@ export default function DashboardTab({
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-1 leading-none">
-                  <span className="text-[25px] font-extrabold tracking-[-0.03em] text-[#0F2540]">{value}</span>
+                  {loading ? (
+                    <span className="inline-block h-6 w-10 rounded bg-slate-200 animate-pulse" />
+                  ) : (
+                    <span className="text-[25px] font-extrabold tracking-[-0.03em] text-[#0F2540]">{value}</span>
+                  )}
                   <span className="text-[11px] font-bold text-slate-500">건</span>
                 </div>
                 <div className="mt-2 text-[16px] leading-none font-semibold text-slate-800 whitespace-nowrap">
@@ -173,7 +177,7 @@ export default function DashboardTab({
                     mapTypeFilter === chip.key ? "bg-[#0F2540] text-white" : "bg-white border border-slate-200 text-slate-500 hover:border-slate-300"
                   }`}
                 >
-                  {chip.label} ({chip.count})
+                  {chip.label} ({loading ? "…" : chip.count})
                 </button>
               ))}
               {/* 긴급은 상태가 아니라 심각도라 위 상태 칩들과 다른 디자인(점선 테두리, 토글형)으로 분리 -
@@ -185,7 +189,7 @@ export default function DashboardTab({
                   mapUrgentOnly ? "bg-red-600 border-red-600 text-white" : "bg-white border-red-300 text-red-500 hover:bg-red-50 hover:border-red-400"
                 }`}
               >
-                <AlertTriangle className="w-3.5 h-3.5" /> 긴급만 보기 ({urgentCount})
+                <AlertTriangle className="w-3.5 h-3.5" /> 긴급만 보기 ({loading ? "…" : urgentCount})
               </button>
             </div>
           </div>
@@ -284,7 +288,13 @@ export default function DashboardTab({
                   <div className={`w-7 h-7 rounded-lg flex items-center justify-center mb-2 ${tone}`}>
                     <Icon className="w-3.5 h-3.5" />
                   </div>
-                  <div className="text-lg font-extrabold text-[#0F2540]">{value}건</div>
+                  <div className="text-lg font-extrabold text-[#0F2540]">
+                    {loading ? (
+                      <span className="inline-block h-4 w-6 rounded bg-slate-200 animate-pulse align-middle" />
+                    ) : (
+                      <>{value}건</>
+                    )}
+                  </div>
                   <p className="text-[10px] font-semibold text-slate-500 mt-0.5">{label}</p>
                   <p className="text-[9px] text-slate-400 mt-0.5 leading-snug">{sub}</p>
                 </button>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   Building2,
   Cloud,
   CloudRain,
@@ -19,7 +20,7 @@ import {
 import { authFetch } from "../../api/client";
 import { SIDO_CENTER } from "./constants";
 
-const CACHE_KEY = "safetrace:public-info:nationwide:v6";
+const CACHE_KEY = "safetrace:public-info:nationwide:v9";
 const CACHE_TTL = 10 * 60 * 1000;
 
 // 에어코리아 17개 시도 요청을 한꺼번에 몰아치지 않도록 배치 조회한다.
@@ -136,11 +137,13 @@ async function fetchAirQualityStable(previousRows = []) {
 
 const SHELTER_REGIONS = [
   { sido: "서울특별시", label: "서울" },
+  { sido: "인천광역시", label: "인천" },
   { sido: "대전광역시", label: "대전" },
   { sido: "부산광역시", label: "부산" },
   { sido: "광주광역시", label: "광주" },
   { sido: "대구광역시", label: "대구" },
   { sido: "제주특별자치도", label: "제주" },
+  { sido: "세종특별자치시", label: "세종" },
 ];
 
 // 카카오맵 자체 마커 대신 대시보드용 날씨 카드 위치를 고정해서
@@ -184,11 +187,13 @@ export default function PublicInfoTab() {
   const [shelterRows, setShelterRows] = useState([]);
   const [shelterTotal, setShelterTotal] = useState(null);
   const [airRows, setAirRows] = useState([]);
+  const [weatherAlerts, setWeatherAlerts] = useState({ available: false, active: [], recentlyCleared: [] });
   const [temperatureDelta, setTemperatureDelta] = useState(null);
   const [loadingWeather, setLoadingWeather] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [loadingShelters, setLoadingShelters] = useState(true);
   const [loadingAir, setLoadingAir] = useState(true);
+  const [loadingWeatherAlerts, setLoadingWeatherAlerts] = useState(true);
   const [updatedAt, setUpdatedAt] = useState(null);
   const [messageModalOpen, setMessageModalOpen] = useState(false);
   const [shelterModalOpen, setShelterModalOpen] = useState(false);
@@ -204,12 +209,14 @@ export default function PublicInfoTab() {
         setShelterRows(cached.shelterRows || []);
         setShelterTotal(cached.shelterTotal ?? null);
         setAirRows(cached.airRows || []);
+        setWeatherAlerts(normalizeWeatherAlerts(cached.weatherAlerts));
         setTemperatureDelta(cached.temperatureDelta ?? null);
         setUpdatedAt(new Date(cached.savedAt));
         setLoadingWeather(false);
         setLoadingMessages(false);
         setLoadingShelters(false);
         setLoadingAir(false);
+        setLoadingWeatherAlerts(false);
         return;
       }
     }
@@ -218,12 +225,14 @@ export default function PublicInfoTab() {
     setLoadingMessages(true);
     setLoadingShelters(true);
     setLoadingAir(true);
+    setLoadingWeatherAlerts(true);
 
     let nextWeather = [];
     let nextMessages = [];
     let nextShelters = [];
     let nextShelterTotal = null;
     let nextAir = [];
+    let nextWeatherAlerts = { available: false, active: [], recentlyCleared: [] };
 
     const weatherJob = Promise.allSettled(
       DISPLAY_REGIONS.map(async (region) => {
@@ -285,6 +294,19 @@ export default function PublicInfoTab() {
       setLoadingShelters(false);
     });
 
+    // 기상특보는 전국 기준 최근 3일 발표/해제 이력을 받아 현재 발효 상태를 요약한다.
+    const weatherAlertJob = authFetch("/api/environment/weather-alerts?lookbackDays=3")
+      .then((data) => {
+        nextWeatherAlerts = normalizeWeatherAlerts(data);
+        setWeatherAlerts(nextWeatherAlerts);
+        setLoadingWeatherAlerts(false);
+      })
+      .catch(() => {
+        nextWeatherAlerts = { available: false, active: [], recentlyCleared: [] };
+        setWeatherAlerts(nextWeatherAlerts);
+        setLoadingWeatherAlerts(false);
+      });
+
     const airJob = fetchAirQualityStable(previousCache?.airRows || [])
       .then((rows) => {
         nextAir = rows;
@@ -303,6 +325,7 @@ export default function PublicInfoTab() {
       messageJob,
       shelterSummaryJob,
       shelterListJob,
+      weatherAlertJob,
       airJob,
     ]);
 
@@ -321,6 +344,7 @@ export default function PublicInfoTab() {
       shelterRows: nextShelters,
       shelterTotal: nextShelterTotal,
       airRows: nextAir,
+      weatherAlerts: nextWeatherAlerts,
       temperatureDelta: nextDelta,
       savedAt: now,
     });
@@ -351,19 +375,24 @@ export default function PublicInfoTab() {
   );
 
   const weatherTrend = getTemperatureTrend(temperatureDelta);
-  const refreshing = loadingWeather || loadingMessages || loadingShelters || loadingAir;
+  const activeWeatherAlerts = Array.isArray(weatherAlerts?.active) ? weatherAlerts.active : [];
+  const activeWeatherAlertRegionCount = new Set(
+    activeWeatherAlerts.flatMap((alert) => splitWeatherAlertRegions(alert?.regionId || alert?.region))
+  ).size;
+  const weatherAlertAvailable = weatherAlerts?.available === true;
+  const refreshing = loadingWeather || loadingMessages || loadingShelters || loadingAir || loadingWeatherAlerts;
 
   return (
-    <div className="min-h-full bg-[#F6F9FC] px-4 py-4 md:px-5">
-      <div className="w-full max-w-[1360px] mx-auto space-y-3.5">
+    <div className="min-h-[calc(100vh-57px)] bg-[#F6F9FC]">
+      <div className="mx-auto w-full max-w-[1600px] px-4 py-4 lg:px-5 space-y-3.5">
         <section className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <p className="text-[11px] font-bold text-blue-600 mb-0.5">공공 정보</p>
-            <h2 className="text-[22px] leading-tight font-extrabold tracking-tight text-[#0F2540]">
+            <h2 className="text-[24px] leading-tight font-extrabold tracking-tight text-[#0F2540]">
               전국 공공안전 정보
             </h2>
-            <p className="text-[12px] text-slate-500 mt-1">
-              기상·재난문자·대피시설·대기질 정보를 한 화면에서 확인합니다.
+            <p className="text-[11px] text-slate-500 mt-1">
+              기상·기상특보·재난문자·대피시설·대기질 정보를 한 화면에서 확인합니다.
             </p>
           </div>
 
@@ -375,7 +404,7 @@ export default function PublicInfoTab() {
               type="button"
               onClick={() => loadDashboard({ force: true })}
               disabled={refreshing}
-              className="h-9 inline-flex items-center gap-2 px-3 rounded-xl border border-slate-200 bg-white text-[12px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
               새로고침
@@ -383,7 +412,7 @@ export default function PublicInfoTab() {
           </div>
         </section>
 
-        <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
           <SummaryCard
             icon={Cloud}
             tone="bg-sky-100 text-sky-600"
@@ -393,6 +422,20 @@ export default function PublicInfoTab() {
             badgeTone={weatherTrend.tone}
             sub={weatherTrend.text}
             loading={loadingWeather}
+          />
+          <SummaryCard
+            icon={AlertTriangle}
+            tone={activeWeatherAlerts.length > 0 ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600"}
+            label="발효 중 기상특보"
+            value={weatherAlertAvailable ? `${activeWeatherAlertRegionCount}개 구역` : "확인불가"}
+            sub={
+              weatherAlertAvailable
+                ? activeWeatherAlerts.length > 0
+                  ? summarizeWeatherAlert(activeWeatherAlerts[0]?.title)
+                  : "현재 발효 중인 특보 없음"
+                : "기상특보 조회 상태를 확인해주세요"
+            }
+            loading={loadingWeatherAlerts}
           />
           <SummaryCard
             icon={Megaphone}
@@ -416,10 +459,10 @@ export default function PublicInfoTab() {
             icon={Wind}
             tone="bg-violet-100 text-violet-600"
             label="대기질"
-            value={overallAirGrade}
-            sub={averagePm25 == null ? "PM2.5 확인 중" : `주요지역 평균 PM2.5 ${averagePm25}㎍/㎥`}
+            value={averagePm25 == null ? "확인불가" : overallAirGrade}
+            sub={averagePm25 == null ? "대기질 정보를 불러오지 못했습니다" : `주요지역 평균 PM2.5 ${averagePm25}㎍/㎥`}
             loading={loadingAir}
-            extra={!loadingAir ? <AirFace grade={overallAirGrade} size="sm" /> : null}
+            extra={!loadingAir && averagePm25 != null ? <AirFace grade={overallAirGrade} size="sm" /> : null}
           />
         </section>
 
@@ -460,10 +503,43 @@ export default function PublicInfoTab() {
           </Panel>
         </section>
 
-        <section className="grid grid-cols-1 xl:grid-cols-[1.16fr_0.84fr] gap-3.5 items-stretch">
+        <section className="grid grid-cols-1 xl:grid-cols-[0.88fr_1.32fr_0.92fr] gap-3.5 items-stretch">
+          <Panel
+            title="기상특보 현황"
+            subtitle="현재 전국에 발효 중인 기상특보를 구역별로 확인합니다."
+            action={
+              weatherAlertAvailable ? (
+                <span className={`inline-flex items-center rounded-lg px-2.5 py-1.5 text-[10px] font-extrabold ${
+                  activeWeatherAlertRegionCount > 0
+                    ? "bg-rose-50 text-rose-600"
+                    : "bg-emerald-50 text-emerald-600"
+                }`}>
+                  전국 {activeWeatherAlertRegionCount}개 구역
+                </span>
+              ) : null
+            }
+          >
+            {loadingWeatherAlerts ? (
+              <LoadingBlock compact />
+            ) : (
+              <WeatherAlertPanel available={weatherAlertAvailable} alerts={activeWeatherAlerts} />
+            )}
+          </Panel>
+
+          <Panel
+            title="대기질 현황"
+            subtitle="전국 17개 시도의 실시간 대기질을 한눈에 확인합니다."
+          >
+            {loadingAir ? (
+              <LoadingBlock compact />
+            ) : (
+              <AirQualityPanel rows={completeAirRows} />
+            )}
+          </Panel>
+
           <Panel
             title="대피시설"
-            subtitle="전국 등록 시설 중 주요 권역의 운영 중 대피시설을 표시합니다."
+            subtitle="주요 권역의 대표 대피시설을 간단히 표시합니다."
             action={
               <button
                 type="button"
@@ -479,20 +555,7 @@ export default function PublicInfoTab() {
             ) : shelterRows.length === 0 ? (
               <EmptyBlock icon={Building2} title="조회된 대피시설이 없습니다" compact />
             ) : (
-              <ShelterTable rows={shelterRows} />
-            )}
-          </Panel>
-
-          <Panel
-            title="대기질 현황"
-            subtitle="전국 주요 지역의 실시간 시도 평균입니다."
-          >
-            {loadingAir ? (
-              <LoadingBlock compact />
-            ) : airRows.length === 0 ? (
-              <EmptyBlock icon={Wind} title="대기질 정보를 불러오지 못했습니다" compact />
-            ) : (
-              <AirQualityPanel rows={completeAirRows} />
+              <ShelterCompactList rows={shelterRows} />
             )}
           </Panel>
         </section>
@@ -700,7 +763,7 @@ function NationwideWeatherMap({ weatherRows }) {
   }, [mapReady, weatherRows, selected?.sido]);
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[1.38fr_0.62fr] gap-3 md:h-[318px]">
+    <div className="grid grid-cols-1 md:grid-cols-[1.38fr_0.62fr] gap-3 md:h-[340px]">
       <div className="relative min-h-[300px] md:min-h-0 overflow-hidden rounded-xl border border-slate-100 bg-[#dcebfa]">
         <div ref={mapRef} className="absolute inset-0" />
 
@@ -736,12 +799,56 @@ function NationwideWeatherMap({ weatherRows }) {
           <WeatherMetric label="관측" value="초단기실황" />
         </div>
 
-        <div className="mt-auto pt-3 border-t border-slate-200/70">
-          <p className="text-[9px] leading-4 text-slate-400">
-            지도 위 날씨 마커를 선택하면 오른쪽 상세 정보가 해당 지역으로 바뀝니다.
-          </p>
-        </div>
       </div>
+    </div>
+  );
+}
+
+function WeatherAlertPanel({ available, alerts }) {
+  if (!available) {
+    return (
+      <div className="min-h-[330px] rounded-xl border border-slate-100 bg-slate-50 flex flex-col items-center justify-center text-center px-5">
+        <AlertTriangle className="w-6 h-6 text-slate-400 mb-2" />
+        <p className="text-[12px] font-bold text-slate-600">기상특보 정보를 확인하지 못했습니다.</p>
+        <p className="text-[10px] text-slate-400 mt-1">새로고침 후 다시 확인해주세요.</p>
+      </div>
+    );
+  }
+
+  const regionRows = flattenWeatherAlertRegions(alerts);
+
+  if (regionRows.length === 0) {
+    return (
+      <div className="min-h-[330px] rounded-xl border border-emerald-100 bg-emerald-50/60 flex flex-col items-center justify-center text-center px-5">
+        <span className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[16px] font-black">✓</span>
+        <p className="text-[12px] font-extrabold text-slate-700 mt-2">현재 발효 중인 기상특보가 없습니다.</p>
+        <p className="text-[10px] text-slate-400 mt-1">전국 기준 현재 발효 상태입니다.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-[330px] max-h-[390px] overflow-y-auto pr-1 divide-y divide-slate-100">
+      {regionRows.map((item, index) => (
+        <div key={item.key || `${item.region}-${index}`} className="py-3 first:pt-1.5 last:pb-1.5">
+          <div className="flex items-start gap-2.5">
+            <span className="mt-0.5 w-7 h-7 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-4 h-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex rounded-md bg-rose-50 px-2 py-0.5 text-[9px] font-extrabold text-rose-600">
+                  {item.types?.join(" · ") || weatherAlertTypeLabel(item)}
+                </span>
+                <span className="shrink-0 text-[9px] text-slate-400">{formatWeatherAlertTime(item?.announcedAt)}</span>
+              </div>
+              <p className="mt-1.5 text-[11px] font-bold leading-[16px] text-slate-700 break-words">
+                {item.region || "발효 구역 확인 중"}
+              </p>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -760,7 +867,7 @@ function DisasterMessageList({ rows }) {
 
   return (
     <div
-      className="h-[318px] divide-y divide-slate-100 overflow-hidden grid"
+      className="h-[340px] divide-y divide-slate-100 overflow-hidden grid"
       style={{ gridTemplateRows: `repeat(${visibleRows.length}, minmax(0, 1fr))` }}
     >
       {visibleRows.map((message, index) => (
@@ -776,9 +883,39 @@ function DisasterMessageList({ rows }) {
             </div>
             <span className="shrink-0 text-[9px] text-slate-400">{formatExternalDate(message.createdAt)}</span>
           </div>
-          <p className="text-[11px] leading-[16px] text-slate-600 line-clamp-2">
+          <p
+            className="text-[11px] leading-[16px] text-slate-600 truncate"
+            title={message.message || "내용 없음"}
+          >
             {message.message || "내용 없음"}
           </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ShelterCompactList({ rows }) {
+  return (
+    <div className="h-[376px] divide-y divide-slate-100 overflow-hidden">
+      {rows.slice(0, 8).map((item, index) => (
+        <div key={`${item.region}-${item.name}-${index}`} className="h-[47px] py-1.5 flex items-center">
+          <div className="flex items-center gap-2.5 w-full min-w-0">
+            <span className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <Home className="w-4 h-4" strokeWidth={2.3} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] font-extrabold leading-[15px] text-[#0F2540] truncate" title={item.name || ""}>
+                  {item.name || "-"}
+                </p>
+                <span className="shrink-0 text-[10px] font-bold text-slate-600">{formatCapacity(item.capacity)}</span>
+              </div>
+              <p className="mt-0.5 text-[9.5px] leading-[13px] text-slate-400 truncate" title={item.address || ""}>
+                {item.region ? `${item.region} · ` : ""}{item.address || "주소 정보 없음"}
+              </p>
+            </div>
+          </div>
         </div>
       ))}
     </div>
@@ -800,10 +937,10 @@ function ShelterTable({ rows }) {
         <tbody>
           {rows.slice(0, 6).map((item, index) => (
             <tr key={`${item.region}-${item.name}-${index}`} className="border-b border-slate-50 last:border-0">
-              <td className="py-3 pr-4">
+              <td className="py-2 pr-4">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                    <Home className="w-4 h-4" strokeWidth={2.3} />
+                  <span className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                    <Home className="w-3.5 h-3.5" strokeWidth={2.3} />
                   </span>
                   <div className="min-w-0">
                     <p className="text-[13px] font-bold text-[#0F2540] truncate">{item.name || "-"}</p>
@@ -811,9 +948,9 @@ function ShelterTable({ rows }) {
                   </div>
                 </div>
               </td>
-              <td className="py-3 pr-4 text-[12px] leading-5 text-slate-500 max-w-[360px] truncate">{item.address || "-"}</td>
-              <td className="py-3 pr-4 text-[12px] font-semibold text-slate-600 text-right whitespace-nowrap">{formatCapacity(item.capacity)}</td>
-              <td className="py-3 text-[12px] font-medium text-slate-500 text-right whitespace-nowrap">{formatDistance(item.distanceM)}</td>
+              <td className="py-2 pr-4 text-[12px] leading-5 text-slate-500 max-w-[360px] truncate">{item.address || "-"}</td>
+              <td className="py-2 pr-4 text-[12px] font-semibold text-slate-600 text-right whitespace-nowrap">{formatCapacity(item.capacity)}</td>
+              <td className="py-2 text-[12px] font-medium text-slate-500 text-right whitespace-nowrap">{formatDistance(item.distanceM)}</td>
             </tr>
           ))}
         </tbody>
@@ -1127,15 +1264,20 @@ function getMessageCategory(type) {
 
 function AirQualityPanel({ rows }) {
   const [metric, setMetric] = useState("pm25");
-  const values = rows.map((item) => Number(item?.[metric])).filter(Number.isFinite);
+  const values = rows
+    .map((item) => item?.[metric])
+    .filter((value) => value != null && value !== "")
+    .map(Number)
+    .filter(Number.isFinite);
   const average = values.length
     ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
     : null;
   const summaryGrade = gradeForValue(average, metric);
+  const availableCount = values.length;
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-2.5">
+      <div className="flex items-center gap-2 mb-2">
         <button
           type="button"
           onClick={() => setMetric("pm10")}
@@ -1157,18 +1299,20 @@ function AirQualityPanel({ rows }) {
         <div className="ml-auto flex items-center gap-2">
           <AirFace grade={summaryGrade} size="sm" />
           <div className="text-right">
-            <p className="text-[10px] font-medium text-slate-400">전국 17개 시도 평균</p>
-            <p className="text-[12px] font-extrabold text-[#0F2540]">{summaryGrade} · {average ?? "-"}㎍/㎥</p>
+            <p className="text-[10px] font-medium text-slate-400">{availableCount === 17 ? "전국 17개 시도 평균" : `조회 가능 ${availableCount}개 시도 평균`}</p>
+            <p className="text-[12px] font-extrabold text-[#0F2540]">
+              {average == null ? "대기질 정보 확인불가" : `${summaryGrade} · ${average}㎍/㎥`}
+            </p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-1.5">
         {rows.map((item) => {
           const value = item?.[metric];
           const grade = gradeForValue(value, metric);
           return (
-            <div key={item.sido} className="rounded-xl border border-slate-100 bg-white px-2.5 py-[7px] min-h-[66px]">
+            <div key={item.sido} className="rounded-xl border border-slate-100 bg-white px-2.5 py-[5px] min-h-[58px]">
               <div className="flex items-center gap-2">
                 <AirFace grade={grade} size="sm" />
                 <div className="min-w-0 flex-1">
@@ -1215,7 +1359,7 @@ function AirLegend({ metric }) {
   };
 
   return (
-    <div className="mt-2.5 pt-2.5 border-t border-slate-100">
+    <div className="mt-2 pt-2 border-t border-slate-100">
       <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5">
         <span className="text-[11px] sm:text-[12px] font-extrabold text-slate-700 whitespace-nowrap">등급 기준</span>
         {ranges.map(([grade, range]) => (
@@ -1263,7 +1407,7 @@ function AirFace({ grade, size = "md" }) {
 
 function LoadingBlock({ compact = false }) {
   return (
-    <div className={`flex items-center justify-center text-slate-400 ${compact ? "min-h-[150px]" : "min-h-[318px]"}`}>
+    <div className={`flex items-center justify-center text-slate-400 ${compact ? "min-h-[150px]" : "min-h-[340px]"}`}>
       <Loader2 className="w-5 h-5 animate-spin mr-2" />
       <span className="text-[11px] font-medium">공공데이터를 불러오는 중입니다.</span>
     </div>
@@ -1272,7 +1416,7 @@ function LoadingBlock({ compact = false }) {
 
 function EmptyBlock({ icon: Icon, title, compact = false }) {
   return (
-    <div className={`rounded-xl border border-slate-100 bg-slate-50 flex flex-col items-center justify-center text-center ${compact ? "min-h-[150px]" : "min-h-[318px]"}`}>
+    <div className={`rounded-xl border border-slate-100 bg-slate-50 flex flex-col items-center justify-center text-center ${compact ? "min-h-[150px]" : "min-h-[340px]"}`}>
       <Icon className="w-5 h-5 text-slate-400 mb-2" />
       <p className="text-[11px] font-bold text-slate-600">{title}</p>
       <p className="text-[9px] text-slate-400 mt-1">새로고침 후 다시 확인해주세요.</p>
@@ -1300,7 +1444,7 @@ function pickRepresentativeShelters(results) {
     if (result.status !== "fulfilled" || !Array.isArray(result.value) || result.value.length === 0) return;
     rows.push(result.value[0]);
   });
-  return rows.slice(0, 6);
+  return rows.slice(0, 8);
 }
 
 function getTemperatureTrend(delta) {
@@ -1337,6 +1481,8 @@ function averageTemperature(rows) {
 }
 
 function gradeForValue(value, metric) {
+  // null/빈값은 Number(null) === 0 이라서 잘못 "좋음"으로 판정될 수 있으므로 먼저 차단한다.
+  if (value == null || value === "") return "-";
   const number = Number(value);
   if (!Number.isFinite(number)) return "-";
 
@@ -1435,6 +1581,80 @@ function formatCapacity(value) {
   const number = Number(String(value).replace(/,/g, ""));
   if (Number.isNaN(number)) return String(value);
   return `${number.toLocaleString()}명`;
+}
+
+function normalizeWeatherAlerts(data) {
+  return {
+    available: data?.available === true,
+    active: Array.isArray(data?.active) ? data.active : [],
+    recentlyCleared: Array.isArray(data?.recentlyCleared) ? data.recentlyCleared : [],
+  };
+}
+
+function splitWeatherAlertRegions(value) {
+  return String(value || "")
+    .split(/[,;/\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function flattenWeatherAlertRegions(alerts) {
+  if (!Array.isArray(alerts)) return [];
+
+  const regionMap = new Map();
+
+  alerts.forEach((alert, alertIndex) => {
+    const regions = splitWeatherAlertRegions(alert?.regionId || alert?.region);
+    const normalizedRegions = regions.length > 0 ? regions : [alert?.region || ""];
+    const typeLabel = weatherAlertTypeLabel(alert);
+
+    normalizedRegions.forEach((region, regionIndex) => {
+      const key = region || `unknown-${alertIndex}-${regionIndex}`;
+      const previous = regionMap.get(key);
+
+      if (previous) {
+        const types = new Set([...(previous.types || []), typeLabel]);
+        regionMap.set(key, { ...previous, types: [...types] });
+        return;
+      }
+
+      regionMap.set(key, {
+        ...alert,
+        region,
+        types: [typeLabel],
+        key: `${alert?.announcedAt || alertIndex}-${regionIndex}-${region}`,
+      });
+    });
+  });
+
+  return [...regionMap.values()];
+}
+
+function weatherAlertTypeLabel(alert) {
+  const text = [alert?.type, alert?.warningType, alert?.level, alert?.title]
+    .filter(Boolean)
+    .join(" ");
+  const match = text.match(/(지진해일|풍랑|호우|강풍|폭염|한파|대설|건조|태풍|해일)\s*(주의보|경보)?/);
+  if (match) return `${match[1]}${match[2] || ""}`;
+
+  const title = String(alert?.title || "기상특보").trim();
+  return title.split(/[:·]/)[0].trim() || "기상특보";
+}
+
+function summarizeWeatherAlert(title) {
+  const text = String(title || "").replace(/\s+/g, " ").trim();
+  if (!text) return "발효 중인 기상특보가 있습니다";
+  return text.length > 30 ? `${text.slice(0, 30)}…` : text;
+}
+
+function formatWeatherAlertTime(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length < 8) return "발표 시각 확인 중";
+  const month = digits.slice(4, 6);
+  const day = digits.slice(6, 8);
+  const hour = digits.length >= 10 ? digits.slice(8, 10) : "";
+  const minute = digits.length >= 12 ? digits.slice(10, 12) : "";
+  return hour ? `${month}.${day} ${hour}:${minute || "00"} 발표` : `${month}.${day} 발표`;
 }
 
 function readCache(allowExpired = false) {

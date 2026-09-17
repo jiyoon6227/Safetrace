@@ -3,7 +3,7 @@ import { MapPin, Camera, ChevronRight, X, Clock, Search, FileText } from "lucide
 import { authFetch } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import {
-  STATUS_LABEL_KO, DISASTER_ICON, REPORT_STATUS_FILTERS, DISASTER_TYPE_STYLE,
+  STATUS_LABEL_KO, DISASTER_ICON, REPORT_STATUS_FILTERS, REPORT_STATE_LABEL, REPORT_STATE_STYLE, DISASTER_TYPE_STYLE,
   DISASTER_TYPE_TEXT_COLOR, REPORT_STATUS_STYLE, REPORT_STATUS_DOT,
   formatDateTime, formatDateTimeFull,
 } from "./constants";
@@ -57,22 +57,31 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reports]);
 
-  const statusOf = (report) => {
-    if (!report.incidentId) return { code: "RECEIVED", label: "접수 대기", style: REPORT_STATUS_STYLE.RECEIVED, group: "pending" };
-    const incident = incidentInfo[report.incidentId];
-    if (!incident) return { code: "RECEIVED", label: "확인 중...", style: "bg-slate-100 text-slate-400", group: "progress" };
-    if (incident.status === "CLOSED") return { code: "CLOSED", label: "종료", style: REPORT_STATUS_STYLE.CLOSED, group: "closed" };
+  // 제보 상태와 사건 상태를 분리한다.
+  // 제보: 등록 -> 검토중 -> 사건연결 / 반려
+  // 사건: 접수 -> 확인중 -> 대응중 -> 복구중 -> 종료
+  const reportStateOf = (report) => {
+    const code = report.status || (report.incidentId ? "LINKED" : "RECEIVED");
     return {
-      code: incident.status,
-      label: STATUS_LABEL_KO[incident.status] || incident.status,
+      code,
+      label: REPORT_STATE_LABEL[code] || code,
+      style: REPORT_STATE_STYLE[code] || REPORT_STATE_STYLE.RECEIVED,
+    };
+  };
+
+  const incidentStateOf = (report) => {
+    if (!report.incidentId) return null;
+    const incident = incidentInfo[report.incidentId];
+    if (!incident) return { label: "사건 확인 중...", style: "bg-slate-100 text-slate-500" };
+    return {
+      label: `사건 ${STATUS_LABEL_KO[incident.status] || incident.status}`,
       style: REPORT_STATUS_STYLE[incident.status] || REPORT_STATUS_STYLE.RECEIVED,
-      group: "progress",
     };
   };
 
   const q = searchQuery.trim();
   const filtered = reports
-    .filter((r) => filter === "all" || statusOf(r).group === filter)
+    .filter((r) => filter === "all" || reportStateOf(r).code === filter)
     .filter((r) => {
       if (!q) return true;
       const incident = r.incidentId ? incidentInfo[r.incidentId] : null;
@@ -98,7 +107,7 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
     if (reportPage > reportTotalPages) setReportPage(reportTotalPages);
   }, [reportPage, reportTotalPages]);
 
-  const countOf = (group) => reports.filter((r) => group === "all" || statusOf(r).group === group).length;
+  const countOf = (group) => reports.filter((r) => group === "all" || reportStateOf(r).code === group).length;
 
   const openDetail = async (report) => {
     setDetailReportId(report.reportId);
@@ -119,7 +128,8 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
 
   const detailReport = sorted.find((r) => r.reportId === detailReportId) || reports.find((r) => r.reportId === detailReportId);
   const detailIncident = detailReport?.incidentId ? incidentInfo[detailReport.incidentId] : null;
-  const detailStatus = detailReport ? statusOf(detailReport) : null;
+  const detailReportState = detailReport ? reportStateOf(detailReport) : null;
+  const detailIncidentState = detailReport ? incidentStateOf(detailReport) : null;
 
   return (
     <div className="space-y-6">
@@ -187,7 +197,8 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
               </thead>
               <tbody>
                 {pagedReports.map((r) => {
-                  const status = statusOf(r);
+                  const reportState = reportStateOf(r);
+                  const incidentState = incidentStateOf(r);
                   const incident = r.incidentId ? incidentInfo[r.incidentId] : null;
                   const DisasterIcon = DISASTER_ICON[r.disasterType] || Camera;
                   const d = new Date(r.createdAt);
@@ -239,7 +250,12 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
                         </span>
                       </td>
                       <td className="px-4 py-4 align-middle whitespace-nowrap text-center">
-                        <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${status.style}`}>{status.label}</span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${reportState.style}`}>{reportState.label}</span>
+                          {incidentState && (
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${incidentState.style}`}>{incidentState.label}</span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-5 py-4 align-middle text-center whitespace-nowrap">
                         <button
@@ -340,7 +356,10 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
             </div>
             <div className="overflow-y-auto px-5 py-4 space-y-4">
               <div className="flex items-center gap-2">
-                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${detailStatus.style}`}>{detailStatus.label}</span>
+                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${detailReportState.style}`}>{detailReportState.label}</span>
+                {detailIncidentState && (
+                  <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${detailIncidentState.style}`}>{detailIncidentState.label}</span>
+                )}
                 <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${DISASTER_TYPE_STYLE[detailReport.disasterType] || "bg-slate-100 text-slate-600"}`}>
                   {detailReport.disasterType}
                 </span>

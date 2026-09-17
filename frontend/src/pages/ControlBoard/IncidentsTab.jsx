@@ -255,12 +255,23 @@ export default function IncidentsTab({
             <>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1050px] table-fixed text-[13px]">
+                  <colgroup>
+                    <col className="w-[105px]" />
+                    <col className="w-[240px]" />
+                    <col className="w-[120px]" />
+                    <col className="w-[250px]" />
+                    <col className="w-[110px]" />
+                    <col className="w-[120px]" />
+                    <col className="w-[110px]" />
+                    <col className="w-[150px]" />
+                    <col className="w-[130px]" />
+                  </colgroup>
                   <thead>
-                    <tr className="h-10 bg-[#E9ECEF] text-[12px] font-bold text-[#556070] border-y border-[#CBD5E1]">
+                    <tr className="h-11 bg-[#E9ECEF] text-[12px] font-bold text-[#556070] border-y border-[#CBD5E1]">
                       <th className="px-4 py-3 text-center">사건번호</th>
-                      <th className="px-4 py-3 text-left">사건명</th>
+                      <th className="px-4 py-3 text-center">사건명</th>
                       <th className="px-4 py-3 text-center">재난유형</th>
-                      <th className="px-4 py-3 text-left">지역</th>
+                      <th className="px-4 py-3 text-center">지역</th>
                       <th className="px-4 py-3 text-center">위험도</th>
                       <th className="px-4 py-3 text-center">담당자</th>
                       <th className="px-4 py-3 text-center">상태</th>
@@ -273,15 +284,15 @@ export default function IncidentsTab({
                       <tr
                         key={inc.incidentId}
                         onClick={() => toggleIncidentDetail(inc.incidentId)}
-                        className={`h-[42px] border-b border-slate-200 last:border-0 transition-colors duration-150 cursor-pointer ${
+                        className={`h-[44px] border-b border-slate-200 last:border-0 transition-colors duration-150 cursor-pointer ${
                           selectedIncidentId === inc.incidentId ? "bg-blue-50" : "bg-white hover:bg-slate-50/90"
                         }`}
                       >
-                        <td className="px-3 py-2 text-center font-bold text-[#0F2540]">#I-{incidentRank.get(inc.incidentId)}</td>
-                        <td className="px-3 py-2 font-semibold text-slate-700 max-w-[220px] truncate" title={inc.title}>{inc.title}</td>
-                        <td className="px-3 py-2 text-center text-slate-500">{inc.disasterType}</td>
-                        <td className="px-3 py-2 text-slate-600 max-w-[280px] truncate" title={inc.region}>{inc.region}</td>
-                        <td className="px-3 py-2 text-center">
+                        <td className="px-3 py-2 text-center align-middle font-bold text-[#0F2540] whitespace-nowrap">#I-{incidentRank.get(inc.incidentId)}</td>
+                        <td className="px-3 py-2 text-center align-middle font-semibold text-slate-700" title={inc.title}><span className="mx-auto block max-w-[220px] truncate">{inc.title}</span></td>
+                        <td className="px-3 py-2 text-center align-middle text-slate-500">{inc.disasterType}</td>
+                        <td className="px-3 py-2 text-center align-middle text-slate-600" title={inc.region}><span className="mx-auto block max-w-[235px] truncate">{inc.region}</span></td>
+                        <td className="px-3 py-2 text-center align-middle">
                           <span className={`px-2 py-1 rounded-md text-[10px] font-extrabold ${
                             inc.severity === "HIGH"
                               ? "bg-red-100 text-red-600"
@@ -292,16 +303,16 @@ export default function IncidentsTab({
                             {inc.severity}
                           </span>
                         </td>
-                        <td className="px-3 py-2 text-center text-slate-500 whitespace-nowrap">
+                        <td className="px-3 py-2 text-center align-middle text-slate-500 whitespace-nowrap">
                           {inc.assignedStaffName || (inc.assignedStaffId ? `#${inc.assignedStaffId}` : "미배정")}
                         </td>
-                        <td className="px-3 py-2 text-center">
+                        <td className="px-3 py-2 text-center align-middle">
                           <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${STATUS_STYLE[inc.status] || "bg-slate-100 text-slate-600"}`}>
                             {STATUS_LABEL[inc.status] || inc.status}
                           </span>
                         </td>
-                        <td className="px-3 py-2 text-center text-[11px] text-slate-500 whitespace-nowrap">{formatDateTime(inc.createdAt)}</td>
-                        <td className="px-3 py-2">
+                        <td className="px-3 py-2 text-center align-middle text-[11px] text-slate-500 whitespace-nowrap">{formatDateTime(inc.createdAt)}</td>
+                        <td className="px-3 py-2 text-center align-middle">
                           <div className="flex justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"

@@ -2,6 +2,7 @@ package com.safetrace.config;
 
 import com.safetrace.websocket.IncidentWebSocketHandler;
 import com.safetrace.websocket.SafetyCheckWebSocketHandler;
+import com.safetrace.websocket.ReportWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -15,6 +16,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     private final IncidentWebSocketHandler incidentWebSocketHandler;
     private final SafetyCheckWebSocketHandler safetyCheckWebSocketHandler;
+    private final ReportWebSocketHandler reportWebSocketHandler;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
@@ -22,6 +24,9 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 .setAllowedOrigins("*");
 
         registry.addHandler(safetyCheckWebSocketHandler, "/ws/safety-check")
+                .setAllowedOrigins("*");
+
+        registry.addHandler(reportWebSocketHandler, "/ws/reports")
                 .setAllowedOrigins("*");
     }
 }

@@ -2,9 +2,12 @@ package com.safetrace.service;
 
 import com.safetrace.domain.Report;
 import com.safetrace.mapper.ReportMapper;
+import com.safetrace.websocket.ReportWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 
@@ -13,6 +16,7 @@ import java.util.List;
 public class ReportService {
 
     private final ReportMapper reportMapper;
+    private final ReportWebSocketHandler reportWebSocketHandler;
 
     // 제보 사진은 최대 5장까지 - 전부 SF_REPORT_PHOTO 한 테이블에서만 관리
     private static final int MAX_PHOTOS = 5;
@@ -38,7 +42,9 @@ public class ReportService {
             reportMapper.insertPhoto(report.getReportId(), photos.get(i), i);
         }
 
-        return reportMapper.findById(report.getReportId());
+        Report created = reportMapper.findById(report.getReportId());
+        broadcastAfterCommit(() -> reportWebSocketHandler.broadcastReportCreated(created));
+        return created;
     }
 
     public Report getById(Long reportId) {
@@ -68,14 +74,18 @@ public class ReportService {
     @Transactional
     public Report linkToIncident(Long reportId, Long incidentId) {
         reportMapper.linkIncident(reportId, incidentId);
-        return reportMapper.findById(reportId);
+        Report updated = reportMapper.findById(reportId);
+        broadcastAfterCommit(() -> reportWebSocketHandler.broadcastReportLinked(updated));
+        return updated;
     }
 
     // 담당자가 제보를 검토 중으로 표시
     @Transactional
     public Report markReviewing(Long reportId) {
         reportMapper.markReviewing(reportId);
-        return reportMapper.findById(reportId);
+        Report updated = reportMapper.findById(reportId);
+        broadcastAfterCommit(() -> reportWebSocketHandler.broadcastReportReviewing(updated));
+        return updated;
     }
 
     // 담당자가 제보를 반려 - 원본 제보는 삭제하지 않고 상태와 사유만 남김
@@ -85,7 +95,22 @@ public class ReportService {
             throw new IllegalArgumentException("반려 사유를 입력해주세요.");
         }
         reportMapper.reject(reportId, reason);
-        return reportMapper.findById(reportId);
+        Report updated = reportMapper.findById(reportId);
+        broadcastAfterCommit(() -> reportWebSocketHandler.broadcastReportRejected(updated));
+        return updated;
+    }
+
+    private void broadcastAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
     }
 
     // STAFF 사건 상세 화면 - 이 Incident에 묶인 제보들

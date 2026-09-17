@@ -27,6 +27,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 행정안전부_긴급재난문자(재난안전데이터공유플랫폼, safetydata.go.kr) 호출.
@@ -55,6 +57,8 @@ public class DisasterMessageService {
 
     private static final DateTimeFormatter MESSAGE_DATE_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    private static final Pattern BRACKET_ORG_PATTERN = Pattern.compile("\\[([^\\]]{1,40})\\]");
 
     private final String serviceKey;
 
@@ -364,11 +368,17 @@ public class DisasterMessageService {
 
                 // SN도 저장해 중복 제거에 활용한다.
                 message.put("sn", item.path("SN").asText(""));
-                message.put("message", item.path("MSG_CN").asText(""));
+                String messageText = item.path("MSG_CN").asText("");
+
+                message.put("message", messageText);
                 message.put("region", item.path("RCPTN_RGN_NM").asText(""));
                 message.put("disasterType", item.path("DST_SE_NM").asText(""));
                 message.put("emergencyLevel", item.path("EMRG_STEP_NM").asText(""));
                 message.put("createdAt", item.path("CRT_DT").asText(""));
+
+                // DSSP-IF-00247 응답에는 발송기관 전용 필드가 없어서,
+                // 문자 원문에 [기관명] 표기가 있는 경우에만 보조 정보로 추출한다.
+                message.put("senderOrg", extractSenderOrg(messageText));
 
                 messages.add(message);
             }
@@ -421,6 +431,29 @@ public class DisasterMessageService {
         }
 
         return objectMapper.createArrayNode();
+    }
+
+
+    private String extractSenderOrg(String messageText) {
+        if (messageText == null || messageText.isBlank()) {
+            return "";
+        }
+
+        Matcher matcher = BRACKET_ORG_PATTERN.matcher(messageText);
+
+        while (matcher.find()) {
+            String candidate = matcher.group(1).trim();
+            if (candidate.isBlank()
+                    || candidate.matches("안전안내문자|긴급재난문자|위급재난문자|재난문자|주의|경보")) {
+                continue;
+            }
+
+            if (candidate.matches(".*(시청|군청|구청|도청|광역시|특별시|특별자치시|특별자치도|기상청|행정안전부|소방|경찰|환경부|산림청|홍수통제소|공사|공단|본부|센터|청|부|처|시|군|구)$")) {
+                return candidate;
+            }
+        }
+
+        return "";
     }
 
     /**

@@ -9,6 +9,8 @@ import com.safetrace.websocket.IncidentWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -55,7 +57,7 @@ public class IncidentService {
         // /api/notifications를 조회해도 이미 저장이 끝나있어서 확실하게 받아짐
         // (반대 순서면 아주 드물게 "신호는 왔는데 아직 저장 전"인 타이밍이 생길 수 있음)
         notificationService.notifyNearbyMembersOfNewIncident(created);
-        webSocketHandler.broadcastIncidentCreated(created);
+        broadcastAfterCommit(() -> webSocketHandler.broadcastIncidentCreated(created));
 
         return created;
     }
@@ -111,7 +113,7 @@ public class IncidentService {
         // 여기도 마찬가지로 알림 DB 저장을 broadcast보다 먼저 실행
         notificationService.notifyReportersOfStatusChange(updated, current.getLabel(), target.getLabel());
         // 담당자 상황판 + 관심지역 시민 화면 양쪽에 실시간 반영
-        webSocketHandler.broadcastStatusChanged(updated, memo);
+        broadcastAfterCommit(() -> webSocketHandler.broadcastStatusChanged(updated, memo));
 
         return updated;
     }
@@ -133,7 +135,7 @@ public class IncidentService {
         incidentMapper.updateDetails(incident);
 
         Incident updated = incidentMapper.findById(incidentId);
-        webSocketHandler.broadcastIncidentUpdated(updated);
+        broadcastAfterCommit(() -> webSocketHandler.broadcastIncidentUpdated(updated));
         return updated;
     }
 
@@ -141,8 +143,21 @@ public class IncidentService {
     public Incident assignStaff(Long incidentId, Long staffId) {
         incidentMapper.assignStaff(incidentId, staffId);
         Incident updated = incidentMapper.findById(incidentId);
-        webSocketHandler.broadcastStaffAssigned(updated);
+        broadcastAfterCommit(() -> webSocketHandler.broadcastStaffAssigned(updated));
         return updated;
+    }
+
+    private void broadcastAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
     }
 
     // 시민 화면 - 내 제보가 연결된 사건의 현재 상태 확인용 (타임라인처럼 공개 API로 열어둠)
@@ -199,7 +214,7 @@ public class IncidentService {
         incidentMapper.insertPhoto(incidentId, photoUrl, existing.size());
 
         Incident updated = incidentMapper.findById(incidentId);
-        webSocketHandler.broadcastIncidentUpdated(updated);
+        broadcastAfterCommit(() -> webSocketHandler.broadcastIncidentUpdated(updated));
         return updated;
     }
 

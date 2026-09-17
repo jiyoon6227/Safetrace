@@ -162,7 +162,7 @@ const NAV_ITEMS = [
   { key: "reports", icon: ClipboardList, label: "제보 관리" },
   { key: "incidents", icon: FileText, label: "사건 관리" },
   { key: "publicInfo", icon: Activity, label: "공공 정보" },
-  { icon: FileBarChart, label: "통계 보고서" },
+  { key: "statistics", icon: FileBarChart, label: "통계 보고서" },
 ];
 
 // 공공 정보 페이지의 지역 콤보박스에서 쓰는 17개 시도 목록 + 각 시도의 대표 좌표/구 이름.

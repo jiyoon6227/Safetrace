@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ShieldAlert, LogOut, Loader2, ChevronDown, User, Menu, X,
   Clock, AlertTriangle, CheckCircle2, Activity, ClipboardList, Search,
@@ -17,21 +17,83 @@ import DashboardTab from "./DashboardTab";
 import ReportsTab from "./ReportsTab";
 import IncidentsTab from "./IncidentsTab";
 import PublicInfoTab from "./PublicInfoTab";
+import StatisticsReportTab from "./StatisticsReportTab";
 import CreateIncidentModal from "./CreateIncidentModal";
 import EditIncidentModal from "./EditIncidentModal";
 import RejectModal from "./RejectModal";
 import LinkedReportsModal from "./LinkedReportsModal";
 import PhotoViewerModal from "./PhotoViewerModal";
 
+const CONTROL_BOARD_TABS = new Set(["dashboard", "reports", "incidents", "publicInfo", "statistics"]);
+
+function getInitialControlBoardTab() {
+  try {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    return CONTROL_BOARD_TABS.has(tab) ? tab : "dashboard";
+  } catch {
+    return "dashboard";
+  }
+}
+
 export default function ControlBoard({ onBackToHome, onLogout }) {
-  const mapRef = useRef(null);
+  // 지도 DOM이 다시 마운트되는 경우(HMR/탭 재진입 등)도 감지할 수 있도록 callback ref 사용
+  const mapContainerRef = useRef(null);
+  const mapElementRef = useRef(null);
+  const [mapMountVersion, setMapMountVersion] = useState(0);
+  const mapRef = useCallback((node) => {
+    mapContainerRef.current = node;
+    setMapMountVersion((v) => v + 1);
+  }, []);
+
   const mapInstanceRef = useRef(null);
   const markersRef = useRef([]);
   const clustererRef = useRef(null); // 사건 마커 클러스터링용 - 가까운 마커는 숫자 배지로 뭉쳐서 표시
 
   const currentUser = getCurrentUser();
 
-  const [activeNav, setActiveNav] = useState("dashboard");
+  // 현재 탭을 URL의 ?tab=... 과 동기화해서 브라우저 새로고침 후에도 같은 탭을 유지한다.
+  // 단, 홈으로 나갈 때는 handleBackToHome에서 tab을 지우므로 다시 STAFF로 들어오면 대시보드부터 시작한다.
+  const [activeNav, setActiveNav] = useState(getInitialControlBoardTab);
+
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+
+      if (activeNav === "dashboard") {
+        url.searchParams.delete("tab");
+      } else {
+        url.searchParams.set("tab", activeNav);
+      }
+
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${url.pathname}${url.search}${url.hash}`
+      );
+    } catch {
+      // URL 동기화 실패 시에도 탭 전환 자체는 정상 동작하게 둔다.
+    }
+  }, [activeNav]);
+
+  // 관제화면에서 홈으로 나갈 때 현재 탭 상태와 ?tab=... 쿼리를 함께 초기화한다.
+  // 다시 STAFF 관리화면으로 들어오면 항상 대시보드부터 시작하도록 보장한다.
+  const handleBackToHome = useCallback(() => {
+    setActiveNav("dashboard");
+
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("tab");
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${url.pathname}${url.search}${url.hash}`
+      );
+    } catch {
+      // URL 정리에 실패해도 홈 이동 자체는 진행한다.
+    }
+
+    onBackToHome?.();
+  }, [onBackToHome]);
 
   // 헤더 - 프로필/미확인 제보 드롭다운, 내 정보(부서 표시용)
   const [member, setMember] = useState(null);
@@ -400,14 +462,43 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
 
   useEffect(() => {
     if (activeNav !== "dashboard") return; // 대시보드 탭이 아닐 땐 지도 그릴 필요 없음
+
+    const container = mapContainerRef.current;
+    if (!container) return;
+
     if (!window.kakao || !window.kakao.maps) {
       setError("카카오맵 SDK를 불러오지 못했습니다.");
       return;
     }
+
+    let cancelled = false;
+
     window.kakao.maps.load(() => {
+      if (cancelled || !mapContainerRef.current) return;
+
+      const currentContainer = mapContainerRef.current;
+
+      // 같은 지도 DOM이면 새 지도를 만들지 않고 크기만 다시 계산한다.
+      if (mapInstanceRef.current && mapElementRef.current === currentContainer) {
+        requestAnimationFrame(() => {
+          if (cancelled || !mapInstanceRef.current) return;
+          window.kakao.maps.event.trigger(mapInstanceRef.current, "resize");
+          drawMarkers(incidents, dashboardReports, mapTypeFilter, mapLayers, mapUrgentOnly);
+        });
+        return;
+      }
+
+      // DashboardTab이 HMR 등으로 다시 마운트되어 지도 div가 바뀐 경우에만 새 DOM에 지도 재연결
+      clustererRef.current?.clear();
+      markersRef.current.forEach((marker) => marker.setMap(null));
+      markersRef.current = [];
+
       const center = new window.kakao.maps.LatLng(36.3504, 127.3845);
-      const map = new window.kakao.maps.Map(mapRef.current, { center, level: 8 });
+      const map = new window.kakao.maps.Map(currentContainer, { center, level: 8 });
+
       mapInstanceRef.current = map;
+      mapElementRef.current = currentContainer;
+
       // 가까운 마커 여러 개가 겹칠 때 숫자 배지 하나로 묶어 보여주고, 확대하면 자동으로 풀림
       clustererRef.current = new window.kakao.maps.MarkerClusterer({
         map,
@@ -415,26 +506,55 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
         minLevel: 6, // 이 레벨보다 확대하면 클러스터 안 묶고 마커 그대로 표시
         disableClickZoom: false, // 클러스터 클릭 시 카카오 기본 동작(자동 확대)
       });
-      loadIncidents();
+
+      // 현재 지도 유형 유지
+      map.setMapTypeId(
+        mapType === "skyview"
+          ? window.kakao.maps.MapTypeId.HYBRID
+          : window.kakao.maps.MapTypeId.ROADMAP
+      );
+
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        window.kakao.maps.event.trigger(map, "resize");
+        // 지도 초기화는 지도만 담당한다. 사건 데이터 조회는 아래 별도 effect에서 즉시 실행한다.
+        // (메인페이지 -> 담당자 대시보드 재진입 때 map ref 재마운트와 effect cleanup이 겹치면
+        // 여기의 rAF가 취소되어 loadIncidents()가 영원히 실행되지 않던 race condition 방지)
+        drawMarkers(incidents, dashboardReports, mapTypeFilter, mapLayers, mapUrgentOnly);
+      });
     });
-  }, [activeNav]); // activeNav가 "dashboard"로 바뀔 때마다(=탭 재진입할 때마다) 다시 실행
+
+    return () => {
+      cancelled = true;
+    };
+    // 지도 DOM이 실제로 다시 마운트될 때만 재초기화한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeNav, mapMountVersion]);
 
   const loadIncidents = async () => {
     setLoading(true);
     setError("");
     try {
-      const [data] = await Promise.all([
-        authFetch("/api/incidents"),
-        authFetch("/api/reports").then(setDashboardReports).catch(() => {}),
-      ]);
-      setIncidents(data);
-      drawMarkers(data);
+      // 사건 데이터는 지도 로딩과 분리해서 독립적으로 조회한다.
+      // /api/reports는 위 dashboardReports effect가 따로 담당하므로 여기서 중복 호출하지 않는다.
+      const data = await authFetch("/api/incidents");
+      const nextIncidents = Array.isArray(data) ? data : [];
+      setIncidents(nextIncidents);
+      drawMarkers(nextIncidents, dashboardReports, mapTypeFilter, mapLayers, mapUrgentOnly);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
+
+  // ControlBoard가 새로 마운트될 때(로그인 직후뿐 아니라 메인페이지에 갔다가 다시 들어올 때도)
+  // 카카오맵 초기화 여부와 상관없이 사건 목록을 즉시 가져온다.
+  useEffect(() => {
+    loadIncidents();
+    // 최초 마운트 시 1회만 실행. 이후 수동 새로고침/소켓 갱신은 기존 loadIncidents를 그대로 사용한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const drawMarkers = (
     incidentsData = incidents,
@@ -1505,7 +1625,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
         <div className="w-56 flex flex-col h-full">
           <button
             type="button"
-            onClick={onBackToHome}
+            onClick={handleBackToHome}
             className="flex items-center gap-2 px-5 py-5 hover:opacity-80 transition text-left cursor-pointer"
           >
             <ShieldAlert className="w-5 h-5 text-amber-400" />
@@ -1655,7 +1775,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
                     <p className="text-sm font-bold text-[#0F2540]">{currentUser?.name || member?.name}</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">{member?.email || "-"}</p>
                   </div>
-                  <button onClick={onBackToHome} className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer">
+                  <button onClick={handleBackToHome} className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer">
                     홈으로
                   </button>
                   <button onClick={onLogout} className="w-full text-left px-4 py-2.5 text-xs font-semibold text-red-500 hover:bg-red-50 transition-colors cursor-pointer">
@@ -1824,6 +1944,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
         )}
 
         {activeNav === "publicInfo" && <PublicInfoTab />}
+        {activeNav === "statistics" && <StatisticsReportTab />}
 
       </div>
 
