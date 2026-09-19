@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { ShieldAlert, CheckCircle2, AlertTriangle } from "lucide-react";
 
-const BASE_URL = "http://localhost:8080";
+const BASE_URL = "";
 
 // 이메일 안전확인 링크(?safetyCheckToken=xxx)로 들어왔을 때 뜨는 화면.
 // 로그인 없이 토큰만으로 응답하므로 authFetch가 아니라 순수 fetch를 직접 씀.
