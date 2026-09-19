@@ -1223,15 +1223,12 @@ export default function MainPage() {
     }
   };
 
-  // "담당기관 대응상황 전체보기" - 연결된 사건이 하나뿐이면 바로 상세로, 여러 개면 목록으로
+  // "전체보기"는 제보가 1건뿐이어도 항상 목록부터 연다.
+  // 목록에서 항목을 클릭했을 때만 해당 제보/사건의 대응상황 상세로 들어간다.
   const openTrackingOverview = () => requireLogin(() => {
-    const uniqueIds = [...new Set(myReports.filter((r) => r.incidentId).map((r) => r.incidentId))];
-    if (uniqueIds.length === 1) {
-      openIncidentDetail(uniqueIds[0]);
-    } else {
-      setTrackingOpen(true);
-      setDetailIncidentId(null);
-    }
+    setTrackingOpen(true);
+    setDetailIncidentId(null);
+    setDetailPendingReportId(null);
   });
 
   const closeTracking = () => {
@@ -1308,10 +1305,6 @@ export default function MainPage() {
       return tb - ta;
     });
 
-  const [showAllIncidents, setShowAllIncidents] = useState(false);
-  const visibleGroups = showAllIncidents ? groupedIncidents : groupedIncidents.slice(0, 3);
-  const hiddenCount = groupedIncidents.length - visibleGroups.length;
-
   // "대응상황 상세" 모달용 - 이 사건에 연결된 내 제보(사진/제보내용)와, 타임라인상 가장 최근 로그
   const detailReports = groupedIncidents.find((g) => g.incidentId === detailIncidentId)?.reports || [];
   const detailPhotoUrl = detailReports.find((r) => r.photoUrl)?.photoUrl;
@@ -1358,41 +1351,87 @@ export default function MainPage() {
   const rejectedReports = pendingReports.filter((r) => reportStateOf(r).code === "REJECTED");
   const activePendingReports = pendingReports.filter((r) => reportStateOf(r).code !== "REJECTED");
 
+  // 메인 "내 현장제보 추적" 미리보기는 연결 사건뿐 아니라
+  // 아직 사건에 연결되지 않은 등록/검토중/반려 제보까지 모두 합쳐 최근 3건을 보여준다.
+  // 연결된 제보 여러 개가 같은 Incident에 묶인 경우에는 사건 카드 1개로 유지한다.
+  const trackingPreviewItems = [
+    ...pendingReports.map((report) => ({
+      kind: "report",
+      key: `report-${report.reportId}`,
+      sortTime: new Date(report.createdAt || 0).getTime(),
+      report,
+    })),
+    ...groupedIncidents.map((group) => ({
+      kind: "incident",
+      key: `incident-${group.incidentId}`,
+      sortTime: new Date(group.incident?.updatedAt || group.reports[0]?.createdAt || 0).getTime(),
+      ...group,
+    })),
+  ]
+    .sort((a, b) => b.sortTime - a.sortTime)
+    .slice(0, 3);
+
+  // 메인 카드 레이아웃은 기존 디자인대로
+  // "대표 제보 1건 + 다른 제보 2건" 구조를 유지한다.
+  // 연결된 사건이 있으면 가장 최근 사건을 대표로 보여주고,
+  // 연결 사건이 없을 때만 가장 최근 미연결 제보를 대표로 사용한다.
+  const primaryTrackingItem =
+    groupedIncidents.length > 0
+      ? {
+          kind: "incident",
+          key: `incident-${groupedIncidents[0].incidentId}`,
+          ...groupedIncidents[0],
+        }
+      : trackingPreviewItems[0] || null;
+
+  const otherTrackingItems = trackingPreviewItems
+    .filter((item) => item.key !== primaryTrackingItem?.key)
+    .slice(0, 2);
+
   const trackingProgressCount =
     groupedIncidents.filter((g) => g.incident?.status !== "CLOSED").length + activePendingReports.length;
   const trackingClosedCount = groupedIncidents.filter((g) => g.incident?.status === "CLOSED").length;
   const trackingRejectedCount = rejectedReports.length;
 
-  const filteredPendingReports = pendingReports
-    .filter((r) => {
-      const reportCode = reportStateOf(r).code;
+  const filteredPendingReports = pendingReports.filter((r) => {
+    const reportCode = reportStateOf(r).code;
 
-      if (trackingStatusFilter === "closed") return false;
-      if (trackingStatusFilter === "rejected" && reportCode !== "REJECTED") return false;
-      if (trackingStatusFilter === "progress" && reportCode === "REJECTED") return false;
+    if (trackingStatusFilter === "closed") return false;
+    if (trackingStatusFilter === "rejected" && reportCode !== "REJECTED") return false;
+    if (trackingStatusFilter === "progress" && reportCode === "REJECTED") return false;
 
-      if (trackingTypeFilter && r.disasterType !== trackingTypeFilter) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      const ta = new Date(a.createdAt).getTime();
-      const tb = new Date(b.createdAt).getTime();
-      return trackingSort === "newest" ? tb - ta : ta - tb;
-    });
+    if (trackingTypeFilter && r.disasterType !== trackingTypeFilter) return false;
+    return true;
+  });
 
-  const filteredTrackingIncidents = groupedIncidents
-    .filter((g) => {
-      if (trackingStatusFilter === "rejected") return false;
-      if (trackingStatusFilter === "progress" && g.incident?.status === "CLOSED") return false;
-      if (trackingStatusFilter === "closed" && g.incident?.status !== "CLOSED") return false;
-      if (trackingTypeFilter && g.reports[0]?.disasterType !== trackingTypeFilter) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      const ta = a.incident?.updatedAt ? new Date(a.incident.updatedAt).getTime() : 0;
-      const tb = b.incident?.updatedAt ? new Date(b.incident.updatedAt).getTime() : 0;
-      return trackingSort === "newest" ? tb - ta : ta - tb;
-    });
+  const filteredTrackingIncidents = groupedIncidents.filter((g) => {
+    if (trackingStatusFilter === "rejected") return false;
+    if (trackingStatusFilter === "progress" && g.incident?.status === "CLOSED") return false;
+    if (trackingStatusFilter === "closed" && g.incident?.status !== "CLOSED") return false;
+    if (trackingTypeFilter && g.reports[0]?.disasterType !== trackingTypeFilter) return false;
+    return true;
+  });
+
+  // 미연결/반려 제보와 연결 사건을 하나로 합친 뒤 시간 기준으로 정렬한다.
+  // 이렇게 해야 최신순/오래된순이 전체 목록 기준으로 정상 동작한다.
+  const filteredTrackingItems = [
+    ...filteredPendingReports.map((report) => ({
+      kind: "report",
+      key: `pending-${report.reportId}`,
+      sortTime: new Date(report.createdAt || 0).getTime(),
+      report,
+    })),
+    ...filteredTrackingIncidents.map((group) => ({
+      kind: "incident",
+      key: `incident-${group.incidentId}`,
+      sortTime: new Date(group.incident?.updatedAt || group.reports[0]?.createdAt || 0).getTime(),
+      ...group,
+    })),
+  ].sort((a, b) =>
+    trackingSort === "newest"
+      ? b.sortTime - a.sortTime
+      : a.sortTime - b.sortTime
+  );
 
   const renderWithFooter = (content, footerProps = {}) => (
     <div className="min-h-screen flex flex-col">
@@ -2243,13 +2282,21 @@ export default function MainPage() {
               </button>
             </section>
 
-            {/* 내 현장제보 추적 - 최근 1건만 요약 */}
+            {/* 내 현장제보 추적 - 기존 디자인: 대표 1건 + 다른 제보 2건 */}
             <section className="bg-white rounded-[18px] border border-slate-200 shadow-sm p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-[17px] font-extrabold text-[#0B2A52] flex items-center gap-2">
-                  <Camera className="w-4.5 h-4.5 text-blue-600" /> 내 현장제보 추적
-                </h2>
-                <button onClick={openTrackingOverview} className="text-xs text-[#0B2A52] flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h2 className="text-[17px] font-extrabold text-[#0B2A52] flex items-center gap-2">
+                    <Camera className="w-4.5 h-4.5 text-blue-600" /> 내 현장제보 추적
+                  </h2>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    내가 제보한 현장의 처리 상황을 실시간으로 확인할 수 있습니다.
+                  </p>
+                </div>
+                <button
+                  onClick={openTrackingOverview}
+                  className="text-xs text-[#0B2A52] flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer shrink-0 mt-0.5"
+                >
                   전체보기 <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -2258,74 +2305,323 @@ export default function MainPage() {
                 <div className="rounded-xl bg-slate-50 px-4 py-4 text-center">
                   <p className="text-sm font-bold text-[#0B2A52]">내 제보 처리과정을 확인하세요</p>
                   <p className="text-[11px] text-slate-400 mt-1">등록한 제보와 연결 사건의 진행상태를 볼 수 있습니다.</p>
-                  <button onClick={() => goTo("login")} className="mt-3 h-8 px-4 rounded-lg bg-[#0B2A52] text-white text-xs font-bold cursor-pointer">로그인</button>
+                  <button
+                    onClick={() => goTo("login")}
+                    className="mt-3 h-8 px-4 rounded-lg bg-[#0B2A52] text-white text-xs font-bold cursor-pointer"
+                  >
+                    로그인
+                  </button>
                 </div>
               ) : myReportsLoading ? (
                 <p className="text-sm text-slate-400 py-5 text-center">불러오는 중...</p>
-              ) : groupedIncidents.length > 0 ? (
-                (() => {
-                  const { incidentId, incident, reports } = groupedIncidents[0];
-                  const photoUrl = reports.find((r) => r.photoUrl)?.photoUrl;
-                  const DisasterIcon = DISASTER_ICON[reports[0]?.disasterType] || Droplets;
-                  const STEP_BY_STATUS = { RECEIVED: 1, CONFIRMING: 2, RESPONDING: 3, RECOVERING: 4, CLOSED: 5 };
-                  const activeStep = STEP_BY_STATUS[incident?.status] || 1;
-                  const steps = ["접수", "확인중", "대응중", "복구중", "종료"];
+              ) : primaryTrackingItem ? (
+                <div>
+                  {/* 대표 제보/사건 */}
+                  {primaryTrackingItem.kind === "incident" ? (() => {
+                    const { incidentId, incident, reports } = primaryTrackingItem;
+                    const photoUrl = reports.find((r) => r.photoUrl)?.photoUrl;
+                    const DisasterIcon = DISASTER_ICON[reports[0]?.disasterType] || Droplets;
+                    const PRIMARY_STEP_BY_STATUS = {
+                      RECEIVED: 1,
+                      CONFIRMING: 2,
+                      RESPONDING: 3,
+                      RECOVERING: 3,
+                      CLOSED: 4,
+                    };
+                    const activeStep = PRIMARY_STEP_BY_STATUS[incident?.status] || 1;
+                    const steps = ["접수", "담당자 배정", "현장 확인", "처리 완료"];
 
-                  return (
-                    <button key={incidentId} onClick={() => openIncidentDetail(incidentId)} className="w-full text-left rounded-xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition cursor-pointer p-3">
-                      <div className="flex gap-3 items-center">
-                        <div className="w-[58px] h-[48px] rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
-                          {photoUrl ? (
-                            <img src={photoUrl} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <DisasterIcon className="w-5 h-5 text-blue-500" />
+                    return (
+                      <button
+                        onClick={() => openIncidentDetail(incidentId)}
+                        className="w-full text-left rounded-xl border border-blue-100 bg-blue-50/40 hover:border-blue-200 hover:shadow-sm transition cursor-pointer p-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-[68px] h-[64px] rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                            {photoUrl ? (
+                              <img src={photoUrl} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <DisasterIcon className="w-6 h-6 text-blue-500" />
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <b className="text-[14px] text-[#0B2A52] truncate">
+                                {incident?.title || `${reports[0]?.disasterType || "현장"} 제보`}
+                              </b>
+                              <span
+                                className={`text-[10px] px-2 py-1 rounded-full font-bold shrink-0 ${
+                                  STATUS_STYLE[incident?.status] || "bg-slate-200 text-slate-700"
+                                }`}
+                              >
+                                {incident ? STATUS_LABEL[incident.status] || incident.status : "확인중"}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1">
+                              <Clock className="w-3 h-3 shrink-0" />
+                              <span className="truncate">
+                                {formatDateTimeFull(incident?.updatedAt || reports[0]?.createdAt)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-0.5">
+                              <MapPin className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{incident?.region || "내 주변 신고 위치"}</span>
+                            </div>
+                          </div>
+
+                          <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                        </div>
+
+                        <div className="mt-3 px-1">
+                          <div className="flex items-center">
+                            {[1, 2, 3, 4].map((step) => (
+                              <React.Fragment key={step}>
+                                <div
+                                  className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                                    step <= activeStep ? "bg-blue-600" : "bg-slate-300"
+                                  } ${step === activeStep ? "ring-2 ring-blue-100" : ""}`}
+                                />
+                                {step < 4 && (
+                                  <div
+                                    className={`h-[2px] flex-1 ${
+                                      step < activeStep ? "bg-blue-600" : "bg-slate-200"
+                                    }`}
+                                  />
+                                )}
+                              </React.Fragment>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-4 text-[9px] text-slate-400 mt-1 text-center">
+                            {steps.map((step) => (
+                              <span key={step}>{step}</span>
+                            ))}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })() : (() => {
+                    const report = primaryTrackingItem.report;
+                    const reportState = reportStateOf(report);
+                    const DisasterIcon = DISASTER_ICON[report.disasterType] || ShieldAlert;
+                    const REPORT_STEP_BY_STATUS = { RECEIVED: 1, REVIEWING: 2, LINKED: 3, REJECTED: 1 };
+                    const activeStep = REPORT_STEP_BY_STATUS[reportState.code] || 1;
+                    const steps = ["접수", "검토중", "사건 연결", "처리 완료"];
+
+                    return (
+                      <button
+                        onClick={() => {
+                          setTrackingOpen(true);
+                          setDetailIncidentId(null);
+                          setDetailPendingReportId(report.reportId);
+                        }}
+                        className="w-full text-left rounded-xl border border-blue-100 bg-blue-50/40 hover:border-blue-200 hover:shadow-sm transition cursor-pointer p-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-[68px] h-[64px] rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                            {report.photoUrl ? (
+                              <img src={report.photoUrl} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <DisasterIcon className="w-6 h-6 text-blue-500" />
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <b className="text-[14px] text-[#0B2A52] truncate">
+                                {report.content || `${report.disasterType || "현장"} · 제보 #${report.reportId}`}
+                              </b>
+                              <span className={`text-[10px] px-2 py-1 rounded-full font-bold shrink-0 ${reportState.style}`}>
+                                {reportState.label}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1">
+                              <Clock className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{formatDateTimeFull(report.createdAt)}</span>
+                            </div>
+                            <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-0.5">
+                              <MapPin className="w-3 h-3 shrink-0" />
+                              <span className="truncate">
+                                {pendingReportAddresses[report.reportId] || report.address || "주소 확인 중..."}
+                              </span>
+                            </div>
+                          </div>
+
+                          <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                        </div>
+
+                        <div className="mt-3 px-1">
+                          <div className="flex items-center">
+                            {[1, 2, 3, 4].map((step) => (
+                              <React.Fragment key={step}>
+                                <div
+                                  className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                                    step <= activeStep ? "bg-blue-600" : "bg-slate-300"
+                                  }`}
+                                />
+                                {step < 4 && (
+                                  <div
+                                    className={`h-[2px] flex-1 ${
+                                      step < activeStep ? "bg-blue-600" : "bg-slate-200"
+                                    }`}
+                                  />
+                                )}
+                              </React.Fragment>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-4 text-[9px] text-slate-400 mt-1 text-center">
+                            {steps.map((step) => (
+                              <span key={step}>{step}</span>
+                            ))}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })()}
+
+                  {/* 다른 제보 현황 - 한 줄에 1개씩, 모두 표시 */}
+                  {otherTrackingItems.length > 0 && (
+                    <div className="mt-3 rounded-xl bg-slate-50 p-3">
+                      <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+                        <div className="flex items-center gap-1.5 font-bold text-[13px] text-[#0B2A52]">
+                          <Building2 className="w-4 h-4 text-blue-600" />
+                          다른 제보 현황
+                        </div>
+
+                        <div className="text-[10px] text-slate-500">
+                          진행 중 <b className="text-blue-600">{trackingProgressCount}건</b>
+                          <span className="mx-1">·</span>
+                          완료 <b className="text-emerald-500">{trackingClosedCount}건</b>
+                          {trackingRejectedCount > 0 && (
+                            <>
+                              <span className="mx-1">·</span>
+                              반려 <b className="text-rose-500">{trackingRejectedCount}건</b>
+                            </>
                           )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <b className="text-[13px] text-[#0B2A52] truncate">{incident?.title || `${reports[0]?.disasterType || "현장"} 제보`}</b>
-                            <span className={`text-[10px] px-2 py-1 rounded-full font-bold shrink-0 ${STATUS_STYLE[incident?.status] || "bg-slate-200 text-slate-700"}`}>
-                              {incident ? STATUS_LABEL[incident.status] || incident.status : "확인중"}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-400 mt-1 truncate">
-                            {formatDateTimeFull(incident?.updatedAt || reports[0]?.createdAt)} · {incident?.region || "내 주변 신고 위치"}
-                          </div>
-                        </div>
                       </div>
 
-                      <div className="mt-3 flex items-center">
-                        {[1, 2, 3, 4, 5].map((step) => (
-                          <React.Fragment key={step}>
-                            <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${step <= activeStep ? "bg-blue-600" : "bg-slate-300"}`} />
-                            {step < 5 && <div className={`h-[2px] flex-1 ${step < activeStep ? "bg-blue-600" : "bg-slate-200"}`} />}
-                          </React.Fragment>
-                        ))}
+                      {/* 한 줄에 한 건씩, otherTrackingItems 전체 표시 */}
+                      <div className="space-y-2">
+                        {otherTrackingItems.map((item) => {
+                          if (item.kind === "report") {
+                            const report = item.report;
+                            const reportState = reportStateOf(report);
+                            const DisasterIcon = DISASTER_ICON[report.disasterType] || ShieldAlert;
+
+                            return (
+                              <button
+                                key={item.key}
+                                onClick={() => {
+                                  setTrackingOpen(true);
+                                  setDetailIncidentId(null);
+                                  setDetailPendingReportId(report.reportId);
+                                }}
+                                className="w-full min-w-0 rounded-xl border border-slate-100 bg-white p-3 text-left hover:border-slate-200 hover:shadow-sm transition cursor-pointer"
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-[58px] h-[58px] rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                                    {report.photoUrl ? (
+                                      <img src={report.photoUrl} alt="" className="w-full h-full object-cover" />
+                                    ) : (
+                                      <DisasterIcon className="w-5 h-5 text-blue-500" />
+                                    )}
+                                  </div>
+
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <b className="text-[13px] font-extrabold text-[#0B2A52] truncate">
+                                        {`${report.disasterType || "현장"} · 제보 #${report.reportId}`}
+                                      </b>
+                                      <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold shrink-0 ${reportState.style}`}>
+                                        {reportState.label}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-1 min-w-0">
+                                      <Clock className="w-3 h-3 shrink-0" />
+                                      <span className="truncate">{formatDateTimeFull(report.createdAt)}</span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-0.5 min-w-0">
+                                      <MapPin className="w-3 h-3 shrink-0" />
+                                      <span className="truncate">
+                                        {pendingReportAddresses[report.reportId] || report.address || "주소 확인 중..."}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                                </div>
+                              </button>
+                            );
+                          }
+
+                          const { incidentId, incident, reports } = item;
+                          const photoUrl = reports.find((r) => r.photoUrl)?.photoUrl;
+                          const DisasterIcon = DISASTER_ICON[reports[0]?.disasterType] || ShieldAlert;
+
+                          return (
+                            <button
+                              key={item.key}
+                              onClick={() => openIncidentDetail(incidentId)}
+                              className="w-full min-w-0 rounded-xl border border-slate-100 bg-white p-3 text-left hover:border-slate-200 hover:shadow-sm transition cursor-pointer"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-[58px] h-[58px] rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                                  {photoUrl ? (
+                                    <img src={photoUrl} alt="" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <DisasterIcon className="w-5 h-5 text-blue-500" />
+                                  )}
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <b className="text-[13px] font-extrabold text-[#0B2A52] truncate">
+                                      {incident?.title || `${reports[0]?.disasterType || "현장"} · 제보 #${reports[0]?.reportId || ""}`}
+                                    </b>
+                                    <span
+                                      className={`text-[9px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
+                                        STATUS_STYLE[incident?.status] || "bg-slate-200 text-slate-700"
+                                      }`}
+                                    >
+                                      {incident ? STATUS_LABEL[incident.status] || incident.status : "확인중"}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-1 min-w-0">
+                                    <Clock className="w-3 h-3 shrink-0" />
+                                    <span className="truncate">
+                                      {formatDateTimeFull(incident?.updatedAt || reports[0]?.createdAt)}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-0.5 min-w-0">
+                                    <MapPin className="w-3 h-3 shrink-0" />
+                                    <span className="truncate">{incident?.region || "내 주변 신고 위치"}</span>
+                                  </div>
+                                </div>
+
+                                <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
-                      <div className="grid grid-cols-5 text-[9px] text-slate-400 mt-1 text-center">
-                        {steps.map((step) => <span key={step}>{step}</span>)}
-                      </div>
-                    </button>
-                  );
-                })()
-              ) : unlinkedReports.length > 0 ? (
-                (() => {
-                  const report = [...unlinkedReports].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-                  const reportLabel = { RECEIVED: "등록", REVIEWING: "검토중", LINKED: "사건연결", REJECTED: "반려" }[report.status] || "등록";
-                  return (
-                    <button onClick={openTrackingOverview} className="w-full text-left rounded-xl border border-slate-100 p-3 hover:border-slate-200 cursor-pointer">
-                      <div className="flex items-center justify-between gap-2">
-                        <b className="text-[13px] text-[#0B2A52] truncate">{report.disasterType || "현장"} · 제보 #{report.reportId}</b>
-                        <span className="text-[10px] px-2 py-1 rounded-full bg-blue-50 text-blue-600 font-bold shrink-0">{reportLabel}</span>
-                      </div>
-                      <div className="text-[11px] text-slate-400 mt-1 truncate">{report.content || "담당자 검토를 기다리고 있습니다."}</div>
-                    </button>
-                  );
-                })()
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="rounded-xl bg-slate-50 px-4 py-4 text-center">
                   <p className="text-sm font-bold text-[#0B2A52]">아직 등록한 제보가 없습니다.</p>
-                  <button onClick={handleReportClick} className="mt-2 text-xs font-bold text-blue-600 hover:underline cursor-pointer">현장 제보하기</button>
+                  <button
+                    onClick={handleReportClick}
+                    className="mt-2 text-xs font-bold text-blue-600 hover:underline cursor-pointer"
+                  >
+                    현장 제보하기
+                  </button>
                 </div>
               )}
             </section>
@@ -2573,50 +2869,55 @@ export default function MainPage() {
                   </div>
 
                   <ul className="space-y-3">
-                    {filteredPendingReports.map((report) => {
-                      const DisasterIcon = DISASTER_ICON[report.disasterType] || ShieldAlert;
-                      const reportState = reportStateOf(report);
-                      return (
-                        <li
-                          key={`pending-${report.reportId}`}
-                          onClick={() => setDetailPendingReportId(report.reportId)}
-                          className="rounded-xl border border-slate-100 hover:border-slate-200 hover:shadow-sm cursor-pointer transition p-3 flex items-center gap-4"
-                        >
-                          <div className="w-16 h-16 rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
-                            {report.photoUrl ? (
-                              <img src={report.photoUrl} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <DisasterIcon className="w-6 h-6 text-blue-500" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <b className="text-sm text-[#0B2A52] truncate">{report.content || `${report.disasterType} 제보`}</b>
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${reportState.style}`}>
-                                {reportState.label}
-                              </span>
+                    {filteredTrackingItems.map((item) => {
+                      if (item.kind === "report") {
+                        const report = item.report;
+                        const DisasterIcon = DISASTER_ICON[report.disasterType] || ShieldAlert;
+                        const reportState = reportStateOf(report);
+
+                        return (
+                          <li
+                            key={item.key}
+                            onClick={() => setDetailPendingReportId(report.reportId)}
+                            className="rounded-xl border border-slate-100 hover:border-slate-200 hover:shadow-sm cursor-pointer transition p-3 flex items-center gap-4"
+                          >
+                            <div className="w-16 h-16 rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                              {report.photoUrl ? (
+                                <img src={report.photoUrl} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <DisasterIcon className="w-6 h-6 text-blue-500" />
+                              )}
                             </div>
-                            <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1">
-                              <Clock className="w-3 h-3 shrink-0" />
-                              {formatDateTimeFull(report.createdAt)}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <b className="text-sm text-[#0B2A52] truncate">{report.content || `${report.disasterType} 제보`}</b>
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${reportState.style}`}>
+                                  {reportState.label}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1">
+                                <Clock className="w-3 h-3 shrink-0" />
+                                {formatDateTimeFull(report.createdAt)}
+                              </div>
+                              <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
+                                <MapPin className="w-3 h-3 shrink-0" />
+                                <span className="truncate">{pendingReportAddresses[report.reportId] || "주소 확인 중..."}</span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
-                              <MapPin className="w-3 h-3 shrink-0" />
-                              <span className="truncate">{pendingReportAddresses[report.reportId] || "주소 확인 중..."}</span>
-                            </div>
-                          </div>
-                          <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
-                        </li>
-                      );
-                    })}
-                    {filteredTrackingIncidents.map(({ incidentId, incident, reports }) => {
+                            <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                          </li>
+                        );
+                      }
+
+                      const { incidentId, incident, reports } = item;
                       const photoUrl = reports.find((r) => r.photoUrl)?.photoUrl;
                       const DisasterIcon = DISASTER_ICON[reports[0]?.disasterType] || ShieldAlert;
                       const STEP_BY_STATUS = { RECEIVED: 1, CONFIRMING: 2, RESPONDING: 3, RECOVERING: 4, CLOSED: 5 };
                       const activeStep = STEP_BY_STATUS[incident?.status] || 1;
+
                       return (
                         <li
-                          key={incidentId}
+                          key={item.key}
                           onClick={() => openIncidentDetail(incidentId)}
                           className="rounded-xl border border-slate-100 hover:border-slate-200 hover:shadow-sm cursor-pointer transition p-3 flex items-center gap-4"
                         >
@@ -2660,7 +2961,8 @@ export default function MainPage() {
                         </li>
                       );
                     })}
-                    {filteredTrackingIncidents.length === 0 && filteredPendingReports.length === 0 && (
+
+                    {filteredTrackingItems.length === 0 && (
                       <p className="text-sm text-slate-400 py-8 text-center">조건에 맞는 제보가 없습니다.</p>
                     )}
                   </ul>

@@ -53,7 +53,7 @@ export default function DashboardTab({
 
     authFetch("/api/notices")
       .then((data) => {
-        if (!cancelled) setDashboardNotices(Array.isArray(data) ? data.slice(0, 4) : []);
+        if (!cancelled) setDashboardNotices(Array.isArray(data) ? data.slice(0, 5) : []);
       })
       .catch(() => {
         if (!cancelled) setDashboardNotices([]);
@@ -492,7 +492,7 @@ export default function DashboardTab({
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200 p-4">
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 self-start">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-bold text-[#0F2540] text-sm">주요 공지사항</h3>
             <button
