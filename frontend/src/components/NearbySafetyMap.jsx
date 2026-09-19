@@ -119,7 +119,7 @@ function readCachedLocation() {
   }
 }
 
-export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
+export default function NearbySafetyMap({ mode = "compact", onOpenFullMap, focusIncidentId = null }) {
   const compact = mode === "compact";
 
   const mapContainerRef = useRef(null);
@@ -587,6 +587,31 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
       );
     }
   };
+
+  /*
+   * 홈 화면 히어로 카드의 "주변 재난지도 보기"에서 특정 사건(focusIncidentId)을 들고 넘어온 경우,
+   * 지도/데이터가 준비되는 대로 그 사건 마커로 자동 이동 + 선택 상태로 만들어준다.
+   * focusIncidentId가 바뀌면(다른 사건을 다시 눌렀을 때) 재시도할 수 있도록 플래그를 리셋한다.
+   */
+  const autoFocusedIdRef = useRef(null);
+
+  useEffect(() => {
+    if (autoFocusedIdRef.current !== focusIncidentId) {
+      autoFocusedIdRef.current = null;
+    }
+  }, [focusIncidentId]);
+
+  useEffect(() => {
+    if (!focusIncidentId || !mapReady || autoFocusedIdRef.current === focusIncidentId) return;
+
+    const target = normalizedItems.find(
+      (item) => item.type === "incident" && String(item.id) === String(focusIncidentId)
+    );
+    if (!target) return; // 아직 데이터 로딩 전이거나 현재 반경 밖 - normalizedItems가 갱신되면 다시 시도됨
+
+    moveToItem(target);
+    autoFocusedIdRef.current = focusIncidentId;
+  }, [focusIncidentId, normalizedItems, mapReady]);
 
   const moveToCurrentLocation = () => {
     if (!location || !mapInstanceRef.current || !window.kakao?.maps) {

@@ -18,6 +18,7 @@ public class MemberService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final EmailVerificationService emailVerificationService;
+    private final MailService mailService;
 
     public void signup(String loginId, String rawPassword, String name, String email) {
         if (memberMapper.findByLoginId(loginId) != null) {
@@ -118,5 +119,38 @@ public class MemberService {
     // 탈퇴 - 실제 삭제 대신 IS_WITHDRAWN만 표시 (소프트 삭제). 참조 이력은 그대로 남음
     public void withdraw(Long memberId) {
         memberMapper.withdraw(memberId);
+    }
+
+    // ---- 아이디/비밀번호 찾기 -----------------------------------------------
+
+    // 아이디 찾기 - 이름+이메일이 둘 다 일치하는 회원이 있으면 그 이메일로 로그인 아이디를 보내줌
+    public void findLoginId(String name, String email) {
+        Member member = memberMapper.findByEmail(email);
+        if (member == null || name == null || !name.equals(member.getName())) {
+            throw new IllegalArgumentException("일치하는 회원 정보가 없습니다.");
+        }
+        mailService.sendLoginId(email, member.getName(), member.getLoginId());
+    }
+
+    // 비밀번호 찾기 1단계 - 아이디+이메일이 둘 다 일치하는 회원에게만 인증코드 발송
+    // (회원가입 때와 같은 EmailVerificationService를 그대로 재사용 - 이메일+코드라는 형태 자체는 동일하니까)
+    public void sendPasswordResetCode(String loginId, String email) {
+        Member member = memberMapper.findByLoginId(loginId);
+        if (member == null || email == null || !email.equals(member.getEmail())) {
+            throw new IllegalArgumentException("일치하는 회원 정보가 없습니다.");
+        }
+        emailVerificationService.sendCode(email);
+    }
+
+    // 비밀번호 찾기 2단계 - 이메일 인증(verify-code)까지 끝난 뒤에만 새 비밀번호로 교체 가능
+    public void resetPassword(String loginId, String email, String newPassword) {
+        Member member = memberMapper.findByLoginId(loginId);
+        if (member == null || email == null || !email.equals(member.getEmail())) {
+            throw new IllegalArgumentException("일치하는 회원 정보가 없습니다.");
+        }
+        if (!emailVerificationService.isVerified(email)) {
+            throw new IllegalArgumentException("이메일 인증을 먼저 완료해주세요.");
+        }
+        memberMapper.updatePassword(member.getMemberId(), passwordEncoder.encode(newPassword));
     }
 }

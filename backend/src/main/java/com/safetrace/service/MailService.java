@@ -78,6 +78,29 @@ public class MailService {
         }
     }
 
+    // 아이디 찾기 - 이름+이메일이 일치하는 회원에게 로그인 아이디를 알려줌
+    public void sendLoginId(String toEmail, String name, String loginId) {
+        String html = "<div style=\"font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;\">"
+                + "<h2 style=\"color:#0F2540;\">SafeTrace 아이디 찾기</h2>"
+                + "<p style=\"color:#334155;font-size:15px;\"><b>" + name + "</b>님의 로그인 아이디는 아래와 같습니다.</p>"
+                + "<div style=\"background:#f1f5f9;border-radius:8px;padding:20px;text-align:center;margin:20px 0;\">"
+                + "<span style=\"font-size:24px;font-weight:bold;color:#0F2540;\">" + loginId + "</span>"
+                + "</div>"
+                + "<p style=\"color:#94a3b8;font-size:12px;\">본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다.</p>"
+                + "</div>";
+
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, "UTF-8");
+            helper.setTo(toEmail);
+            helper.setSubject("[SafeTrace] 아이디 찾기 결과 안내");
+            helper.setText(html, true);
+            mailSender.send(message);
+        } catch (MessagingException e) {
+            throw new RuntimeException("아이디 안내 이메일 발송 중 오류: " + e.getMessage(), e);
+        }
+    }
+
     // 관심지역 재난 알림 - 안전확인 메일과 달리 즉각적인 위험을 알리는 거라 주황/빨강 톤으로 구분
     // (호출부인 NotificationService에서 발송 실패를 잡아서 DB 알림 저장까지는 항상 성공하게 처리함)
     public void sendDisasterAlert(String toEmail, String incidentTitle, String disasterType, String region, double distanceKm) {

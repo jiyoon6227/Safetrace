@@ -80,6 +80,9 @@
         WHERE MEMBER_ID = #{memberId}
     </update>
 
+    <!-- 탈퇴해도 행은 안 지우고(참조 이력 보존) IS_WITHDRAWN만 표시하는 소프트 삭제.
+         LOGIN_ID 재사용 문제는 DB의 함수기반 유니크 인덱스(UX_SF_MEMBER_LOGIN_ID_ACTIVE)가
+         "미탈퇴 회원끼리만" 유일성을 강제하는 방식으로 해결하므로, 여기서 LOGIN_ID를 건드릴 필요 없음. -->
     <update id="withdraw">
         UPDATE SF_MEMBER
         SET IS_WITHDRAWN = 'Y',

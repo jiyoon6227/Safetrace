@@ -1,7 +1,7 @@
 import React from "react";
 import { ShieldAlert } from "lucide-react";
 
-export default function SiteFooter({ onNavigate }) {
+export default function SiteFooter({ onNavigate, showWithdraw = false, onWithdraw }) {
   const go = (page, state = {}) => {
     if (typeof onNavigate === "function") {
       onNavigate(page, state);
@@ -10,8 +10,23 @@ export default function SiteFooter({ onNavigate }) {
   };
 
   return (
-    <footer className="mt-auto border-t border-slate-200 bg-[#F7F8FA] text-slate-600">
-      <div className="mx-auto max-w-[1450px] px-6 py-8">
+    <footer className="mt-auto border-t border-slate-200 bg-white text-slate-600">
+      {/* 얇은 상단 바 - 모든 페이지가 이 SiteFooter 하나로 통일해서 씀 (예전엔 페이지마다 따로 있었음) */}
+      <div className="border-b border-slate-200">
+        <div className="mx-auto max-w-[1450px] px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+          <div><b className="text-[#0B2A52]">세이프트레이스</b> · 재난 상황관리·대응 플랫폼</div>
+          <div className="flex items-center gap-5">
+            <span>이용약관</span>
+            <span>개인정보처리방침</span>
+            <span>서비스 소개</span>
+            {showWithdraw && (
+              <button type="button" onClick={onWithdraw} className="cursor-pointer hover:text-red-500">회원탈퇴</button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-[1450px] px-6 pt-6 pb-0 bg-[#F7F8FA]">
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1.55fr)_minmax(220px,0.9fr)_minmax(220px,0.9fr)]">
           <div className="min-w-0">
             <button
@@ -68,7 +83,7 @@ export default function SiteFooter({ onNavigate }) {
           </div>
         </div>
 
-        <div className="mt-7 flex flex-col gap-2 border-t border-slate-200 pt-5 text-[10px] text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-4 flex flex-col gap-2 border-t border-slate-200 py-2 text-[10px] leading-none text-slate-400 sm:flex-row sm:items-center sm:justify-between">
           <span>© 2026 SafeTrace. All rights reserved.</span>
           <span>재난·안전 제보 및 처리과정 추적 서비스</span>
         </div>

@@ -69,6 +69,7 @@ public class AuthController {
     }
 
     // 회원가입 - 이메일 인증코드 확인. body 예시: { "email": "a@b.com", "code": "123456" }
+    // 비밀번호 찾기 2단계(코드 확인)에서도 그대로 재사용한다 - 이메일+코드 검증이라는 로직 자체가 동일함
     @PostMapping("/email/verify-code")
     public Map<String, String> verifyCode(@RequestBody Map<String, String> body) {
         boolean ok = emailVerificationService.verifyCode(body.get("email"), body.get("code"));
@@ -76,5 +77,27 @@ public class AuthController {
             throw new IllegalArgumentException("인증번호가 올바르지 않거나 만료되었습니다.");
         }
         return Map.of("message", "이메일 인증이 완료되었습니다.");
+    }
+
+    // 아이디 찾기. body 예시: { "name": "곽지윤", "email": "a@b.com" }
+    @PostMapping("/find-id")
+    public Map<String, String> findId(@RequestBody Map<String, String> body) {
+        memberService.findLoginId(body.get("name"), body.get("email"));
+        return Map.of("message", "가입하신 이메일로 아이디를 보내드렸습니다.");
+    }
+
+    // 비밀번호 찾기 1단계 - 인증코드 발송. body 예시: { "loginId": "test123", "email": "a@b.com" }
+    @PostMapping("/password/send-code")
+    public Map<String, String> sendPasswordResetCode(@RequestBody Map<String, String> body) {
+        memberService.sendPasswordResetCode(body.get("loginId"), body.get("email"));
+        return Map.of("message", "인증번호를 발송했습니다.");
+    }
+
+    // 비밀번호 찾기 3단계 - 새 비밀번호로 교체. 이 전에 /api/auth/email/verify-code로 인증부터 완료해야 함.
+    // body 예시: { "loginId": "test123", "email": "a@b.com", "newPassword": "1234" }
+    @PostMapping("/password/reset")
+    public Map<String, String> resetPassword(@RequestBody Map<String, String> body) {
+        memberService.resetPassword(body.get("loginId"), body.get("email"), body.get("newPassword"));
+        return Map.of("message", "비밀번호가 변경되었습니다.");
     }
 }

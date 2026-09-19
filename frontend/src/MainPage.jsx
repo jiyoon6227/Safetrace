@@ -10,6 +10,7 @@ import ControlBoard from "./pages/ControlBoard";
 import ReportForm from "./pages/ReportForm";
 import ReportPage from "./pages/ReportPage";
 import MyPage from "./pages/MyPage";
+import WithdrawModal from "./pages/MyPage/WithdrawModal";
 import SafetyCheckResponsePage from "./pages/SafetyCheckResponsePage";
 import ShelterPage from "./pages/ShelterPage";
 import SafetyGuidePage from "./pages/SafetyGuidePage";
@@ -870,6 +871,7 @@ export default function MainPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [profileMenuOpen]);
   const [showReportForm, setShowReportForm] = useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false); // 마이페이지 푸터의 "회원탈퇴" - SiteFooter는 공통 컴포넌트라 여기서 상태를 들고 있다가 넘겨줌
   const [reportSuccess, setReportSuccess] = useState(false);
   const [myReports, setMyReports] = useState([]);
   const [myReportsLoading, setMyReportsLoading] = useState(false);
@@ -1392,10 +1394,10 @@ export default function MainPage() {
       return trackingSort === "newest" ? tb - ta : ta - tb;
     });
 
-  const renderWithFooter = (content) => (
+  const renderWithFooter = (content, footerProps = {}) => (
     <div className="min-h-screen flex flex-col">
       <div className="flex-1">{content}</div>
-      <SiteFooter onNavigate={goTo} />
+      <SiteFooter onNavigate={goTo} {...footerProps} />
     </div>
   );
 
@@ -1418,13 +1420,19 @@ export default function MainPage() {
   }
 
   if (page === "mypage") {
-    return renderWithFooter(
-      <MyPage
-        onBackToHome={() => goTo("home")}
-        onLogout={handleLogout}
-        onOpenShelters={(regionId) => goTo("shelters", { shelterRegionId: regionId })}
-        onOpenSafetyNews={(regionId) => goTo("safety-news", { safetyNewsRegionId: regionId })}
-      />
+    return (
+      <>
+        {renderWithFooter(
+          <MyPage
+            onBackToHome={() => goTo("home")}
+            onLogout={handleLogout}
+            onOpenShelters={(regionId) => goTo("shelters", { shelterRegionId: regionId })}
+            onOpenSafetyNews={(regionId) => goTo("safety-news", { safetyNewsRegionId: regionId })}
+          />,
+          { showWithdraw: true, onWithdraw: () => setShowWithdrawModal(true) }
+        )}
+        {showWithdrawModal && <WithdrawModal onClose={() => setShowWithdrawModal(false)} />}
+      </>
     );
   }
 
@@ -1453,7 +1461,11 @@ export default function MainPage() {
 
   if (page === "safety-map") {
     return renderWithFooter(
-      <SafetyMapPage onBackToHome={() => goTo("home")} onNavigate={goTo} />
+      <SafetyMapPage
+        onBackToHome={() => goTo("home")}
+        onNavigate={goTo}
+        focusIncidentId={window.history.state?.focusIncidentId ?? null}
+      />
     );
   }
 
@@ -1694,10 +1706,10 @@ export default function MainPage() {
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5">
-              <button onClick={() => safetyMapRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })} className="h-12 rounded-xl bg-[#0B2A52] hover:bg-[#173b65] transition text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer">
+              <button onClick={() => goTo("safety-map", { focusIncidentId: mainNearbyIncident?.incidentId ?? null })} className="h-12 rounded-xl bg-[#0B2A52] hover:bg-[#173b65] transition text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer">
                 <Navigation className="w-4 h-4" /> 주변 재난지도 보기 <ArrowRight className="w-4 h-4" />
               </button>
-              <button onClick={handleReportClick} className="h-12 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 transition text-[#0B2A52] text-sm font-bold flex items-center justify-center gap-2 cursor-pointer">
+              <button onClick={handleReportPageClick} className="h-12 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 transition text-[#0B2A52] text-sm font-bold flex items-center justify-center gap-2 cursor-pointer">
                 <Camera className="w-4 h-4" /> 현장 제보하기
               </button>
             </div>
@@ -2320,13 +2332,6 @@ export default function MainPage() {
           </div>
         </div>
       </main>
-
-      <footer className="border-t border-slate-200 bg-white">
-        <div className="max-w-[1450px] mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
-          <div><b className="text-[#0B2A52]">세이프트레이스</b> · 재난 상황관리·대응 플랫폼</div>
-          <div className="flex items-center gap-5"><span>이용약관</span><span>개인정보처리방침</span><span>서비스 소개</span></div>
-        </div>
-      </footer>
 
       {showReportForm && (
         <ReportForm onClose={() => setShowReportForm(false)} onSuccess={handleReportSuccess} />

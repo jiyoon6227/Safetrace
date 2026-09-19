@@ -12,7 +12,6 @@ import SafetyTab from "./SafetyTab";
 import ReportsTab from "./ReportsTab";
 import RegionsTab from "./RegionsTab";
 import NotifyTab from "./NotifyTab";
-import WithdrawModal from "./WithdrawModal";
 
 export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenSafetyNews }) {
   // 새로고침해도 보고 있던 탭(가족 관리 등)이 유지되도록 history.state에서 복원.
@@ -42,8 +41,6 @@ export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenS
     setActiveTab(key);
     window.history.replaceState({ ...window.history.state, mypageTab: key }, "");
   };
-  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
-
   const [notificationOpen, setNotificationOpen] = useState(false);
   const notificationPopupRef = useRef(null);
   const [readNotificationIds, setReadNotificationIds] = useState(() => {
@@ -497,24 +494,6 @@ export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenS
           </div>
         </div>
       </div>
-
-      {/* 푸터 */}
-      <footer className="border-t border-slate-200 mt-6">
-        <div className="max-w-6xl mx-auto px-4 py-5 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="font-extrabold text-[#0F2540]">세이프트레이스</span>
-            <span className="text-slate-400">재난으로부터 안전한 사회, 지금 함께 만들어요.</span>
-          </div>
-          <div className="flex items-center gap-4 text-xs text-slate-400">
-            <button className="hover:text-slate-600 cursor-pointer">이용약관</button>
-            <button className="hover:text-slate-600 cursor-pointer">개인정보처리방침</button>
-            <button className="hover:text-slate-600 cursor-pointer">고객센터</button>
-            <button onClick={() => setShowWithdrawModal(true)} className="hover:text-red-500 cursor-pointer">회원탈퇴</button>
-          </div>
-        </div>
-      </footer>
-
-      {showWithdrawModal && <WithdrawModal onClose={() => setShowWithdrawModal(false)} />}
     </div>
   );
 }
