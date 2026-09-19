@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.safetrace.mapper.NoticeMapper">
+
+    <sql id="noticeColumns">
+        N.NOTICE_ID,
+        N.TITLE,
+        N.CONTENT,
+        N.NOTICE_TYPE,
+        N.IS_PINNED,
+        N.VIEW_COUNT,
+        N.NOTICE_IMAGE_URL,
+        N.WRITER_ID,
+        M.NAME AS WRITER_NAME,
+        N.CREATED_AT,
+        N.UPDATED_AT
+    </sql>
+
+    <!-- 상단 고정(Y)을 먼저, 같은 그룹 안에서는 최신 작성순 -->
+    <select id="findAll" resultType="Notice">
+        SELECT <include refid="noticeColumns"/>
+        FROM SF_NOTICE N
+        JOIN SF_MEMBER M ON M.MEMBER_ID = N.WRITER_ID
+        ORDER BY
+            CASE WHEN N.IS_PINNED = 'Y' THEN 0 ELSE 1 END,
+            N.CREATED_AT DESC,
+            N.NOTICE_ID DESC
+    </select>
+
+    <select id="findById" resultType="Notice">
+        SELECT <include refid="noticeColumns"/>
+        FROM SF_NOTICE N
+        JOIN SF_MEMBER M ON M.MEMBER_ID = N.WRITER_ID
+        WHERE N.NOTICE_ID = #{noticeId}
+    </select>
+
+    <insert id="insert" parameterType="Notice">
+        <selectKey keyProperty="noticeId" resultType="Long" order="BEFORE">
+            SELECT SEQ_SF_NOTICE.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO SF_NOTICE (
+            NOTICE_ID,
+            TITLE,
+            CONTENT,
+            NOTICE_TYPE,
+            IS_PINNED,
+            VIEW_COUNT,
+            NOTICE_IMAGE_URL,
+            WRITER_ID,
+            CREATED_AT,
+            UPDATED_AT
+        ) VALUES (
+            #{noticeId},
+            #{title},
+            #{content},
+            #{noticeType},
+            #{isPinned},
+            0,
+            #{noticeImageUrl,jdbcType=VARCHAR},
+            #{writerId},
+            SYSTIMESTAMP,
+            SYSTIMESTAMP
+        )
+    </insert>
+
+    <update id="update" parameterType="Notice">
+        UPDATE SF_NOTICE
+        SET TITLE = #{title},
+            CONTENT = #{content},
+            NOTICE_TYPE = #{noticeType},
+            IS_PINNED = #{isPinned},
+            NOTICE_IMAGE_URL = #{noticeImageUrl,jdbcType=VARCHAR},
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE NOTICE_ID = #{noticeId}
+    </update>
+
+    <update id="increaseViewCount">
+        UPDATE SF_NOTICE
+        SET VIEW_COUNT = VIEW_COUNT + 1
+        WHERE NOTICE_ID = #{noticeId}
+    </update>
+
+    <delete id="delete">
+        DELETE FROM SF_NOTICE
+        WHERE NOTICE_ID = #{noticeId}
+    </delete>
+
+</mapper>

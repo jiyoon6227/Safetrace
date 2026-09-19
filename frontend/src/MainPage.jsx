@@ -3,24 +3,30 @@ import {
   Home, MapPin, ShieldAlert, Camera, GraduationCap, Users,
   Search, Menu, Bell, ChevronRight, ChevronLeft, ChevronDown, CloudRain, Wind, Waves,
   Thermometer, Mountain, CloudFog, Fish, Snowflake, Flame, Droplets,
-  CheckCircle2, Clock, Truck, Construction, ArrowRight, Navigation, X, Hash, Bot, MessageCircle
+  CheckCircle2, Clock, Truck, Construction, ArrowRight, Navigation, X, Hash, Bot, MessageCircle, RefreshCw, Send, Building2
 } from "lucide-react";
 import LoginPage from "./pages/LoginPage";
 import ControlBoard from "./pages/ControlBoard";
 import ReportForm from "./pages/ReportForm";
+import ReportPage from "./pages/ReportPage";
 import MyPage from "./pages/MyPage";
 import SafetyCheckResponsePage from "./pages/SafetyCheckResponsePage";
 import ShelterPage from "./pages/ShelterPage";
+import SafetyGuidePage from "./pages/SafetyGuidePage";
 import DisasterNewsPage from "./pages/DisasterNewsPage";
 import PublicDisasterPage from "./pages/PublicDisasterPage";
 import SafetyMapPage from "./pages/SafetyMapPage";
+import NoticePage from "./pages/NoticePage";
+import SearchPage from "./pages/SearchPage";
 import NearbySafetyMap from "./components/NearbySafetyMap";
+import SiteFooter from "./components/SiteFooter";
 import { getCurrentUser, authFetch, getNotifications } from "./api/client";
 import { connectIncidentSocket, connectSafetyCheckSocket, connectReportSocket } from "./api/socket";
 import { buildNotificationItems } from "./pages/MyPage/constants";
 import { useEscapeKey } from "./hooks/useEscapeKey";
 import mainBg from "./assets/main.png";
 import { MAIN_DISASTER_FILTERS, disasterBadgeClass, disasterFilterOf, disasterSummary, disasterTitle, formatDisasterTime } from "./utils/disasterMessages";
+import { SAFETY_GUIDES, SAFETY_GUIDE_ORDER, getSafetyGuide } from "./data/safetyGuides";
 
 // ---- 색상/토큰 -----------------------------------------------------------
 // 신뢰감 있는 네이비(공공/안전) + 경보용 레드 + 대응중 앰버 + 완료 그린
@@ -31,6 +37,23 @@ const quickMenu = [
   { icon: Camera, label: "현장제보", title: "현장 제보하기", sub: "지금, 바로 제보해주세요" },
   { icon: GraduationCap, label: "행동요령", title: "행동요령", sub: "재난별 행동요령을 확인하세요" },
   { icon: Users, label: "가족확인", title: "가족 안전확인", sub: "가족의 안전 상태를 확인하세요" },
+];
+
+const SAFETY_GUIDE_ICONS = {
+  FLOOD: CloudRain,
+  EARTHQUAKE: Waves,
+  FIRE: Flame,
+  TYPHOON: Wind,
+  WILDFIRE: Mountain,
+  HEATWAVE: Thermometer,
+  COLDWAVE: Snowflake,
+};
+
+const AI_SUGGESTED_QUESTIONS = [
+  "현재 주변 위험 상황이 뭐야?",
+  "지금 밖에 나가도 될까?",
+  "가까운 대피시설은 어디야?",
+  "침수 시 주의사항 알려줘.",
 ];
 
 const actionGuides = [
@@ -221,6 +244,87 @@ function LevelBadge({ level, children }) {
   );
 }
 
+
+const WEATHER_LOCATION_CACHE_KEY = "safetrace:last-location";
+
+const readWeatherCachedLocation = () => {
+  try {
+    const raw = window.sessionStorage.getItem(WEATHER_LOCATION_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const lat = Number(parsed?.lat);
+    const lng = Number(parsed?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { lat, lng };
+  } catch {
+    return null;
+  }
+};
+
+const weatherEmoji = (weather) => {
+  const type = String(weather?.precipitationType || "");
+  if (type.includes("눈") && type.includes("비")) return "🌨️";
+  if (type.includes("눈")) return "❄️";
+  if (type.includes("비") || type.includes("빗")) return "🌧️";
+  return "☀️";
+};
+
+const normalizeRainfall = (value) => {
+  if (value == null || value === "" || String(value).includes("없")) return "0mm";
+  const number = Number.parseFloat(String(value).replace(/[^0-9.]/g, ""));
+  return Number.isFinite(number) ? `${number}mm` : String(value);
+};
+
+const airGradeClass = (grade) => {
+  switch (grade) {
+    case "좋음": return "text-blue-600";
+    case "보통": return "text-emerald-600";
+    case "나쁨": return "text-orange-500";
+    case "매우나쁨": return "text-red-600";
+    default: return "text-slate-500";
+  }
+};
+
+const formatWeatherObservationTime = (weather) => {
+  const baseDate = String(weather?.baseDate || "");
+  const baseTime = String(weather?.baseTime || "").padStart(4, "0");
+
+  if (!/^\d{8}$/.test(baseDate) || !/^\d{4}$/.test(baseTime)) return "";
+
+  const year = Number(baseDate.slice(0, 4));
+  const month = Number(baseDate.slice(4, 6));
+  const day = Number(baseDate.slice(6, 8));
+  const hour = baseTime.slice(0, 2);
+  const minute = baseTime.slice(2, 4);
+  const date = new Date(year, month - 1, day);
+  const weekday = ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
+
+  return `${month}월 ${day}일 (${weekday}) ${hour}:${minute} 기준`;
+};
+
+// 위경도 두 점 사이의 거리(km) - 백엔드 GeoUtils(하버사인 공식)와 동일한 방식.
+// 히어로 카드에 "내 위치에서 약 X km" 표시할 때 씀.
+function distanceKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+// 사건 목록에서 히어로 카드에 띄울 "가장 심각한 사건" 하나만 뽑음 - HIGH > MEDIUM > LOW, 동급이면 최근 등록순.
+const INCIDENT_SEVERITY_RANK = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+function pickPriorityIncident(incidents) {
+  if (!incidents.length) return null;
+  return [...incidents].sort((a, b) => {
+    const rankDiff = (INCIDENT_SEVERITY_RANK[a.severity] ?? 3) - (INCIDENT_SEVERITY_RANK[b.severity] ?? 3);
+    if (rankDiff !== 0) return rankDiff;
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  })[0];
+}
+
 export default function MainPage() {
   const currentUser = getCurrentUser();
   const isStaff = currentUser?.role === "STAFF" || currentUser?.role === "ADMIN";
@@ -232,7 +336,7 @@ export default function MainPage() {
   // (history.state는 새로고침해도 그대로 남아있음 - 지금까지는 이걸 안 읽어서 새로고침할 때마다 무조건 "home"으로 튕겼었음)
   const [page, setPage] = useState(
     safetyCheckTokenFromUrl ? "safety-check-response" : window.history.state?.page || "home"
-  ); // "home" | "login" | "mypage" | "shelters" | "disaster-info" | "safety-map" | "safety-news" | "safety-check-response"
+  ); // "home" | "login" | "mypage" | "shelters" | "safety-guides" | "disaster-info" | "safety-map" | "safety-news" | "safety-check-response" | "notices"
   const [selectedShelterRegionId, setSelectedShelterRegionId] = useState(
     window.history.state?.shelterRegionId ?? null
   );
@@ -259,12 +363,407 @@ export default function MainPage() {
   const headerSearchInputRef = useRef(null);
   const disasterListRef = useRef(null);
   const safetyMapRef = useRef(null);
+  const shelterPanelRef = useRef(null);
+  const safetyGuidePanelRef = useRef(null);
 
   // 메인 "실시간 재난 · 안전 정보" - 행안부 긴급재난문자 최근 48시간 데이터를 사용
   const [mainDisasterMessages, setMainDisasterMessages] = useState([]);
+  const [mainNearbyIncident, setMainNearbyIncident] = useState(null);
+  const [mainNearbyIncidentLoading, setMainNearbyIncidentLoading] = useState(false);
   const [mainDisasterLoading, setMainDisasterLoading] = useState(true);
   const [mainDisasterError, setMainDisasterError] = useState("");
   const [mainDisasterFilter, setMainDisasterFilter] = useState("전체");
+
+  // 메인 현재 날씨 - 안전지도와 같은 sessionStorage 위치를 사용한다.
+  // 위치 권한을 자동으로 다시 요청하지 않고, 캐시된 위치가 있으면 그 좌표로만 조회한다.
+  const [weatherLocation, setWeatherLocation] = useState(() => readWeatherCachedLocation());
+  const [weatherLocationLabel, setWeatherLocationLabel] = useState("내 위치");
+  const [currentWeather, setCurrentWeather] = useState(null);
+  const [currentAirQuality, setCurrentAirQuality] = useState(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState("");
+  const [weatherRefreshKey, setWeatherRefreshKey] = useState(0);
+  const [weatherLocating, setWeatherLocating] = useState(false);
+
+  // 메인 퀵메뉴 "대피시설 찾기" 중간 패널
+  const [shelterPanelOpen, setShelterPanelOpen] = useState(false);
+  const [quickShelters, setQuickShelters] = useState([]);
+  const [quickShelterLoading, setQuickShelterLoading] = useState(false);
+  const [quickShelterError, setQuickShelterError] = useState("");
+  const [quickShelterQuery, setQuickShelterQuery] = useState("");
+  const [quickShelterRefreshKey, setQuickShelterRefreshKey] = useState(0);
+
+  // 메인 퀵메뉴 "행동요령" 중간 패널
+  const [safetyGuidePanelOpen, setSafetyGuidePanelOpen] = useState(false);
+  const [activeSafetyGuideKey, setActiveSafetyGuideKey] = useState("FLOOD");
+
+  // AI 상황 브리핑
+  const [aiBriefing, setAiBriefing] = useState("");
+  const [aiBriefingLoading, setAiBriefingLoading] = useState(false);
+  const [aiBriefingError, setAiBriefingError] = useState("");
+  const [aiBriefingRefreshKey, setAiBriefingRefreshKey] = useState(0);
+
+  // AI 안전 도우미 채팅
+  const [aiChatOpen, setAiChatOpen] = useState(false);
+  const [aiChatInput, setAiChatInput] = useState("");
+  const [aiChatLoading, setAiChatLoading] = useState(false);
+  const [aiChatError, setAiChatError] = useState("");
+  const [aiChatMessages, setAiChatMessages] = useState([
+    {
+      role: "assistant",
+      content: "안녕하세요. SafeTrace 안전 도우미입니다. 내 주변 정보뿐 아니라 서울·화성시처럼 다른 지역의 재난문자·사건·대피시설도 질문해보세요.",
+    },
+  ]);
+  const aiChatEndRef = useRef(null);
+
+  const closeAiChat = () => {
+    if (aiChatLoading) return;
+    setAiChatOpen(false);
+    setAiChatError("");
+  };
+
+  const openAiChat = () => {
+    setAiChatError("");
+    setAiChatOpen(true);
+  };
+
+  const sendAiChatMessage = async (presetQuestion) => {
+    const message = String(presetQuestion ?? aiChatInput).trim();
+    if (!message || aiChatLoading) return;
+
+    const region = weatherLocation
+      ? String(weatherLocationLabel || "")
+          .replace(/\s*기준\s*$/, "")
+          .trim() || "현재 위치 주변"
+      : "현재 위치 정보 없음";
+
+    const history = aiChatMessages
+      .slice(-8)
+      .map(({ role, content }) => ({ role, content }));
+
+    setAiChatMessages((prev) => [...prev, { role: "user", content: message }]);
+    setAiChatInput("");
+    setAiChatError("");
+    setAiChatLoading(true);
+
+    try {
+      const data = await authFetch("/api/ai/chat", {
+        method: "POST",
+        body: JSON.stringify({
+          message,
+          lat: weatherLocation?.lat ?? null,
+          lng: weatherLocation?.lng ?? null,
+          region,
+          history,
+        }),
+      });
+
+      setAiChatMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: String(data?.answer || "답변을 생성하지 못했습니다."),
+        },
+      ]);
+    } catch (e) {
+      setAiChatError(e?.message || "AI 안전 도우미 답변을 불러오지 못했습니다.");
+    } finally {
+      setAiChatLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!aiChatOpen) return;
+    aiChatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [aiChatOpen, aiChatMessages, aiChatLoading]);
+
+  useEscapeKey(aiChatOpen, closeAiChat);
+
+  const requestWeatherLocation = () => {
+    if (!navigator.geolocation) {
+      setWeatherError("이 브라우저에서는 위치 기능을 사용할 수 없습니다.");
+      return;
+    }
+
+    setWeatherLocating(true);
+    setWeatherError("");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const next = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        try {
+          window.sessionStorage.setItem(WEATHER_LOCATION_CACHE_KEY, JSON.stringify(next));
+        } catch {
+          // 저장소 사용 불가 환경에서는 현재 화면에서만 사용
+        }
+        setWeatherLocation(next);
+        setWeatherLocating(false);
+        setWeatherRefreshKey((value) => value + 1);
+      },
+      (error) => {
+        setWeatherLocating(false);
+        if (error.code === error.PERMISSION_DENIED) {
+          setWeatherError("위치 권한을 허용하면 현재 위치의 날씨를 볼 수 있어요.");
+        } else if (error.code === error.TIMEOUT) {
+          setWeatherError("위치 확인 시간이 초과됐습니다. 다시 시도해주세요.");
+        } else {
+          setWeatherError("현재 위치를 확인하지 못했습니다.");
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  };
+
+  // 안전지도에서 위치를 확인한 뒤 sessionStorage가 갱신되면 날씨 카드도 같은 위치로 따라간다.
+  // GPS를 재요청하는 타이머가 아니라, 저장된 좌표가 바뀌었는지만 확인한다.
+  useEffect(() => {
+    if (page !== "home") return undefined;
+
+    const syncCachedLocation = () => {
+      const cached = readWeatherCachedLocation();
+      if (!cached) return;
+      setWeatherLocation((prev) => {
+        if (prev && prev.lat === cached.lat && prev.lng === cached.lng) return prev;
+        return cached;
+      });
+    };
+
+    syncCachedLocation();
+    const timer = window.setInterval(syncCachedLocation, 1500);
+    return () => window.clearInterval(timer);
+  }, [page]);
+
+  useEffect(() => {
+    if (page !== "home" || !weatherLocation) return undefined;
+
+    let active = true;
+    setWeatherLoading(true);
+    setWeatherError("");
+
+    const { lat, lng } = weatherLocation;
+
+    const resolveRegion = () => new Promise((resolve) => {
+      let attempts = 0;
+      const tryResolve = () => {
+        if (!active) {
+          resolve(null);
+          return;
+        }
+
+        if (window.kakao?.maps?.services?.Geocoder) {
+          const geocoder = new window.kakao.maps.services.Geocoder();
+          geocoder.coord2RegionCode(lng, lat, (result, status) => {
+            if (!active || status !== window.kakao.maps.services.Status.OK || !result?.length) {
+              resolve(null);
+              return;
+            }
+            const region = result.find((item) => item.region_type === "H") || result[0];
+            resolve({
+              sido: region?.region_1depth_name || "",
+              label: [region?.region_1depth_name, region?.region_2depth_name]
+                .filter(Boolean)
+                .join(" "),
+            });
+          });
+          return;
+        }
+
+        attempts += 1;
+        if (attempts >= 30) {
+          resolve(null);
+          return;
+        }
+        window.setTimeout(tryResolve, 100);
+      };
+
+      tryResolve();
+    });
+
+    Promise.allSettled([
+      authFetch(`/api/environment/weather?lat=${lat}&lng=${lng}&_=${Date.now()}`),
+      resolveRegion(),
+    ]).then(async ([weatherResult, regionResult]) => {
+      if (!active) return;
+
+      const weatherData = weatherResult.status === "fulfilled" ? weatherResult.value : null;
+      const region = regionResult.status === "fulfilled" ? regionResult.value : null;
+
+      setCurrentWeather(weatherData?.available ? weatherData : null);
+      if (region?.label) setWeatherLocationLabel(`${region.label} 기준`);
+      else setWeatherLocationLabel("내 위치 기준");
+
+      if (region?.sido) {
+        try {
+          const air = await authFetch(`/api/environment/air-quality?sido=${encodeURIComponent(region.sido)}&_=${Date.now()}`);
+          if (active) setCurrentAirQuality(air?.available ? air : null);
+        } catch {
+          if (active) setCurrentAirQuality(null);
+        }
+      } else {
+        setCurrentAirQuality(null);
+      }
+
+      if (!weatherData?.available) {
+        setWeatherError(weatherData?.message || "현재 날씨를 불러오지 못했습니다.");
+      }
+
+      if (active) setWeatherLoading(false);
+    });
+
+    return () => { active = false; };
+  }, [page, weatherLocation, weatherRefreshKey]);
+
+
+  // 대피시설 패널이 열렸을 때만 실제 공공 API를 조회한다.
+  // 메인 진입 때마다 불필요하게 대피시설 API를 호출하지 않도록 분리함.
+  useEffect(() => {
+    if (page !== "home" || !shelterPanelOpen || !weatherLocation) return undefined;
+
+    const region = String(weatherLocationLabel || "")
+      .replace(/\s*기준\s*$/, "")
+      .trim();
+
+    // 카카오 좌표 -> 행정구역 변환이 끝나기 전에는 잠시 기다림
+    if (!region || region === "내 위치") return undefined;
+
+    let active = true;
+    const { lat, lng } = weatherLocation;
+
+    setQuickShelterLoading(true);
+    setQuickShelterError("");
+
+    const loadShelters = async () => {
+      try {
+        let data = await authFetch(
+          `/api/environment/shelters?guName=${encodeURIComponent(region)}&lat=${lat}&lng=${lng}&limit=50`
+        );
+
+        // 일부 공공데이터는 "대전광역시 동구"보다 "동구" LIKE 검색에서 더 잘 잡히는 경우가 있어 1회만 fallback
+        if (!Array.isArray(data) || data.length === 0) {
+          const parts = region.split(/\s+/).filter(Boolean);
+          const gu = parts.length >= 2 ? parts[1] : "";
+          if (gu) {
+            data = await authFetch(
+              `/api/environment/shelters?guName=${encodeURIComponent(gu)}&lat=${lat}&lng=${lng}&limit=50`
+            );
+          }
+        }
+
+        if (!active) return;
+        setQuickShelters(Array.isArray(data) ? data : []);
+      } catch (e) {
+        if (!active) return;
+        setQuickShelters([]);
+        setQuickShelterError(e?.message || "대피시설 정보를 불러오지 못했습니다.");
+      } finally {
+        if (active) setQuickShelterLoading(false);
+      }
+    };
+
+    loadShelters();
+
+    return () => {
+      active = false;
+    };
+  }, [page, shelterPanelOpen, weatherLocation, weatherLocationLabel, quickShelterRefreshKey]);
+
+  const filteredQuickShelters = quickShelters
+    .filter((shelter) => {
+      const query = quickShelterQuery.trim().toLowerCase();
+      if (!query) return true;
+
+      return `${shelter.name || ""} ${shelter.address || ""}`
+        .toLowerCase()
+        .includes(query);
+    })
+    .sort(
+      (a, b) =>
+        (Number(a.distanceM) || Number.MAX_SAFE_INTEGER) -
+        (Number(b.distanceM) || Number.MAX_SAFE_INTEGER)
+    );
+
+  const formatShelterDistance = (distanceM) => {
+    const value = Number(distanceM);
+    if (!Number.isFinite(value)) return "거리 정보 없음";
+    if (value >= 1000) return `${(value / 1000).toFixed(1)}km`;
+    return `${Math.round(value)}m`;
+  };
+
+  const openShelterPanel = () => {
+    const willOpen = !shelterPanelOpen;
+    setSafetyGuidePanelOpen(false);
+    setShelterPanelOpen(willOpen);
+    setQuickShelterError("");
+
+    if (willOpen) {
+      window.setTimeout(() => {
+        shelterPanelRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }, 50);
+    }
+  };
+
+  const openSafetyGuidePanel = () => {
+    const willOpen = !safetyGuidePanelOpen;
+    setShelterPanelOpen(false);
+    setSafetyGuidePanelOpen(willOpen);
+
+    if (willOpen) {
+      window.setTimeout(() => {
+        safetyGuidePanelRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }, 50);
+    }
+  };
+
+  // 현재 위치/지역을 기준으로 백엔드의 Gemini 상황 브리핑을 가져온다.
+  useEffect(() => {
+    if (page !== "home" || !weatherLocation) return undefined;
+
+    const region = String(weatherLocationLabel || "")
+      .replace(/\s*기준\s*$/, "")
+      .trim();
+
+    // 카카오 좌표→지역 변환이 끝나기 전에는 호출하지 않는다.
+    if (!region || region === "내 위치") return undefined;
+
+    let active = true;
+    setAiBriefingLoading(true);
+    setAiBriefingError("");
+
+    const { lat, lng } = weatherLocation;
+    const query = new URLSearchParams({
+      lat: String(lat),
+      lng: String(lng),
+      region,
+      _: String(Date.now()),
+    });
+
+    authFetch(`/api/ai/briefing?${query.toString()}`)
+      .then((data) => {
+        if (!active) return;
+        setAiBriefing(String(data?.summary || "").trim());
+      })
+      .catch((e) => {
+        if (!active) return;
+        setAiBriefing("");
+        setAiBriefingError(e?.message || "AI 상황 브리핑을 불러오지 못했습니다.");
+      })
+      .finally(() => {
+        if (active) setAiBriefingLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [page, weatherLocation, weatherLocationLabel, aiBriefingRefreshKey]);
 
   useEffect(() => {
     if (page !== "home") return undefined;
@@ -290,6 +789,38 @@ export default function MainPage() {
     return () => { active = false; };
   }, [page]);
 
+  // 히어로 카드용 - 내 위치 반경 3km 내 진행 중인 사건 중 가장 심각한 것 1건.
+  // 안전지도/대피시설 패널과 같은 /api/incidents/nearby를 쓰되, 여기선 화면에 하나만 보여주면 되므로
+  // 거리 계산(distanceKm) 후 pickPriorityIncident로 우선순위가 가장 높은 사건만 골라 state에 저장함.
+  useEffect(() => {
+    if (page !== "home" || !weatherLocation) {
+      setMainNearbyIncident(null);
+      return undefined;
+    }
+
+    let active = true;
+    const { lat, lng } = weatherLocation;
+    setMainNearbyIncidentLoading(true);
+
+    authFetch(`/api/incidents/nearby?lat=${lat}&lng=${lng}&radiusKm=3`)
+      .then((data) => {
+        if (!active) return;
+        const list = Array.isArray(data) ? data : [];
+        const picked = pickPriorityIncident(list);
+        setMainNearbyIncident(
+          picked ? { ...picked, distanceKm: distanceKm(lat, lng, picked.latitude, picked.longitude) } : null
+        );
+      })
+      .catch(() => {
+        if (active) setMainNearbyIncident(null);
+      })
+      .finally(() => {
+        if (active) setMainNearbyIncidentLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [page, weatherLocation]);
+
   // 브라우저 뒤로가기/앞으로가기가 앱 내 페이지 전환도 따라가게 함.
   // 지금까지는 setPage만 써서 화면은 바뀌어도 URL 히스토리엔 기록이 안 남았고,
   // 그래서 뒤로가기를 누르면 앱 안으로 안 돌아오고 이 탭을 열기 전 페이지(구글 등)로 튀어버렸음.
@@ -307,13 +838,23 @@ export default function MainPage() {
 
   // 페이지 전환: 추가 state도 같이 저장해두면 새로고침/뒤로가기에서도 선택 정보를 유지할 수 있음
   const goTo = (nextPage, extraState = {}) => {
+    // 일반 페이지 이동 시 열려 있던 현장제보 팝업 상태를 반드시 닫는다.
+    // openReport=true를 명시한 경우에만 기존 팝업 방식으로 연다.
+    if (extraState.openReport) {
+      setShowReportForm(true);
+    } else {
+      setShowReportForm(false);
+    }
+
     setPage(nextPage);
+
     if (Object.prototype.hasOwnProperty.call(extraState, "shelterRegionId")) {
       setSelectedShelterRegionId(extraState.shelterRegionId);
     }
     if (Object.prototype.hasOwnProperty.call(extraState, "safetyNewsRegionId")) {
       setSelectedSafetyNewsRegionId(extraState.safetyNewsRegionId);
     }
+
     window.history.pushState({ page: nextPage, ...extraState }, "");
   };
 
@@ -340,7 +881,7 @@ export default function MainPage() {
     const handleAuthInvalid = () => {
       setToken(null);
       setMyProfile(null);
-      if (page === "mypage" || page === "shelters" || page === "safety-news") {
+      if (page === "mypage" || page === "safety-news") {
         goTo("home");
       }
     };
@@ -360,8 +901,8 @@ export default function MainPage() {
   // trackingOpen=true & detailIncidentId=null  -> "내 연결된 사건 목록" 모드 (전체보기용)
   // trackingOpen=true & detailIncidentId=있음  -> 그 사건의 상태+타임라인 상세 모드
   const [trackingOpen, setTrackingOpen] = useState(false);
-  // 제보 목록 모달의 필터/정렬 (상태 전체·진행중·완료 / 재난유형 / 정렬)
-  const [trackingStatusFilter, setTrackingStatusFilter] = useState("all"); // "all" | "progress" | "closed"
+  // 제보 목록 모달의 필터/정렬 (상태 전체·진행중·완료·반려 / 재난유형 / 정렬)
+  const [trackingStatusFilter, setTrackingStatusFilter] = useState("all"); // "all" | "progress" | "closed" | "rejected"
   const [trackingTypeFilter, setTrackingTypeFilter] = useState(null); // null(전체) | "침수" | "화재" 등
   const [trackingSort, setTrackingSort] = useState("newest"); // "newest" | "oldest"
   const [detailIncidentId, setDetailIncidentId] = useState(null);
@@ -647,8 +1188,17 @@ export default function MainPage() {
     goTo("home");
   };
 
-  // 로그인 안 한 상태에서 현장제보 누르면 경고 팝업 띄우고 로그인부터 하도록 유도
+  // 메인 가운데/퀵메뉴의 "현장 제보하기"는 기존처럼 팝업을 연다.
   const handleReportClick = () => requireLogin(() => setShowReportForm(true));
+
+  // 헤더의 "현장 제보"만 별도 페이지로 이동한다.
+  // 혹시 기존 팝업 상태가 남아 있어도 먼저 닫고 report 페이지로 전환한다.
+  const handleReportPageClick = () =>
+    requireLogin(() => {
+      setShowReportForm(false);
+      goTo("report");
+      window.scrollTo({ top: 0, behavior: "auto" });
+    });
 
   const handleReportSuccess = () => {
     setShowReportForm(false);
@@ -786,11 +1336,8 @@ export default function MainPage() {
   }, [detailIncidentId, detailIncident?.latitude, detailIncident?.longitude]);
   const detailTimelineSorted = detailTimelineSort === "newest" ? [...detailTimeline].reverse() : detailTimeline;
 
-  // 제보 목록 모달용 - 내가 낸 제보에 실제로 등장하는 재난유형만 필터 칩으로 보여줌
-  const trackingDisasterTypes = [...new Set(groupedIncidents.map((g) => g.reports[0]?.disasterType).filter(Boolean))];
-
-  const trackingProgressCount = groupedIncidents.filter((g) => g.incident?.status !== "CLOSED").length;
-  const trackingClosedCount = groupedIncidents.filter((g) => g.incident?.status === "CLOSED").length;
+  // 제보 목록 모달용 - 연결 전/반려 제보까지 포함해서 실제 등장하는 재난유형을 보여준다.
+  const trackingDisasterTypes = [...new Set(myReports.map((r) => r.disasterType).filter(Boolean))];
 
   // 사건에 아직 연결되지 않은 제보의 현재 제보 상태를 그대로 표시한다.
   // RECEIVED=등록, REVIEWING=검토중, REJECTED=반려
@@ -803,11 +1350,25 @@ export default function MainPage() {
     };
   };
 
-  // 아직 사건에 연결되지 않은 제보도 목록에서 빠지지 않도록 별도로 함께 보여준다.
+  // 사건에 연결되지 않은 제보를 진행중 제보와 반려 제보로 분리한다.
+  // 반려(REJECTED)는 더 이상 진행중이 아니므로 진행중 개수/탭에서 제외한다.
   const pendingReports = myReports.filter((r) => !r.incidentId);
+  const rejectedReports = pendingReports.filter((r) => reportStateOf(r).code === "REJECTED");
+  const activePendingReports = pendingReports.filter((r) => reportStateOf(r).code !== "REJECTED");
+
+  const trackingProgressCount =
+    groupedIncidents.filter((g) => g.incident?.status !== "CLOSED").length + activePendingReports.length;
+  const trackingClosedCount = groupedIncidents.filter((g) => g.incident?.status === "CLOSED").length;
+  const trackingRejectedCount = rejectedReports.length;
+
   const filteredPendingReports = pendingReports
     .filter((r) => {
-      if (trackingStatusFilter === "closed") return false; // 대기중인 건 "완료"일 수 없음
+      const reportCode = reportStateOf(r).code;
+
+      if (trackingStatusFilter === "closed") return false;
+      if (trackingStatusFilter === "rejected" && reportCode !== "REJECTED") return false;
+      if (trackingStatusFilter === "progress" && reportCode === "REJECTED") return false;
+
       if (trackingTypeFilter && r.disasterType !== trackingTypeFilter) return false;
       return true;
     })
@@ -819,6 +1380,7 @@ export default function MainPage() {
 
   const filteredTrackingIncidents = groupedIncidents
     .filter((g) => {
+      if (trackingStatusFilter === "rejected") return false;
       if (trackingStatusFilter === "progress" && g.incident?.status === "CLOSED") return false;
       if (trackingStatusFilter === "closed" && g.incident?.status !== "CLOSED") return false;
       if (trackingTypeFilter && g.reports[0]?.disasterType !== trackingTypeFilter) return false;
@@ -830,8 +1392,15 @@ export default function MainPage() {
       return trackingSort === "newest" ? tb - ta : ta - tb;
     });
 
+  const renderWithFooter = (content) => (
+    <div className="min-h-screen flex flex-col">
+      <div className="flex-1">{content}</div>
+      <SiteFooter onNavigate={goTo} />
+    </div>
+  );
+
   if (page === "safety-check-response") {
-    return (
+    return renderWithFooter(
       <SafetyCheckResponsePage
         token={safetyCheckTokenFromUrl}
         onDone={() => {
@@ -843,11 +1412,13 @@ export default function MainPage() {
   }
 
   if (page === "login") {
-    return <LoginPage onLoginSuccess={handleLoginSuccess} onBackToHome={() => goTo("home")} />;
+    return renderWithFooter(
+      <LoginPage onLoginSuccess={handleLoginSuccess} onBackToHome={() => goTo("home")} onSearch={() => goTo("search")} />
+    );
   }
 
   if (page === "mypage") {
-    return (
+    return renderWithFooter(
       <MyPage
         onBackToHome={() => goTo("home")}
         onLogout={handleLogout}
@@ -858,40 +1429,61 @@ export default function MainPage() {
   }
 
   if (page === "shelters") {
-    return (
+    return renderWithFooter(
       <ShelterPage
         initialRegionId={selectedShelterRegionId}
+        initialFocusShelter={window.history.state?.shelterFocus ?? null}
         onBackToHome={() => goTo("home")}
-        onLogout={handleLogout}
-        onGoToMyPageTab={(tab) => goTo("mypage", { mypageTab: tab })}
+        onLogin={() => goTo("login")}
+        onNavigate={goTo}
+      />
+    );
+  }
+
+  if (page === "safety-guides") {
+    return renderWithFooter(
+      <SafetyGuidePage
+        initialGuideKey={window.history.state?.safetyGuideKey || "FLOOD"}
+        onBackToHome={() => goTo("home")}
+        onOpenShelters={() => goTo("shelters")}
+        onNavigate={goTo}
       />
     );
   }
 
   if (page === "safety-map") {
-    return (
-      <SafetyMapPage
-        onBackToHome={() => goTo("home")}
-      />
+    return renderWithFooter(
+      <SafetyMapPage onBackToHome={() => goTo("home")} onNavigate={goTo} />
     );
   }
 
   if (page === "disaster-info") {
-    return (
+    return renderWithFooter(
       <PublicDisasterPage
         initialMessageSn={window.history.state?.disasterSn ?? null}
         onBackToHome={() => goTo("home")}
-        onOpenShelters={() => requireLogin(() => goTo("shelters", { shelterRegionId: null }))}
-        onOpenReport={() => requireLogin(() => {
+        onOpenShelters={() => goTo("shelters", { shelterRegionId: null })}
+        onOpenReport={() => requireLogin(() => goTo("home", { openReport: true }))}
+        onNavigate={goTo}
+      />
+    );
+  }
+
+  if (page === "report") {
+    return renderWithFooter(
+      <ReportPage
+        onNavigate={goTo}
+        onSuccess={() => {
+          setReportSuccess(true);
           goTo("home");
-          setShowReportForm(true);
-        })}
+          setTimeout(() => setReportSuccess(false), 4000);
+        }}
       />
     );
   }
 
   if (page === "safety-news") {
-    return (
+    return renderWithFooter(
       <DisasterNewsPage
         initialRegionId={selectedSafetyNewsRegionId}
         onBackToHome={() => goTo("home")}
@@ -902,7 +1494,32 @@ export default function MainPage() {
   }
 
   if (page === "staff" && isStaff) {
-    return <ControlBoard onBackToHome={() => goTo("home")} onLogout={handleLogout} />;
+    return (
+      <ControlBoard
+        onBackToHome={() => goTo("home")}
+        onLogout={handleLogout}
+        onOpenNotices={(noticeId) => goTo("notices", noticeId ? { noticeId } : {})}
+      />
+    );
+  }
+
+  if (page === "search") {
+    return renderWithFooter(
+      <SearchPage
+        initialQuery={window.history.state?.searchQuery || ""}
+        onNavigate={goTo}
+      />
+    );
+  }
+
+  if (page === "notices") {
+    return renderWithFooter(
+      <NoticePage
+        initialNoticeId={window.history.state?.noticeId ?? null}
+        onBackToHome={() => goTo("home")}
+        onNavigate={goTo}
+      />
+    );
   }
 
   return (
@@ -921,49 +1538,25 @@ export default function MainPage() {
             </div>
           </button>
 
-          <nav className="hidden lg:flex items-center gap-10 text-[15px] font-semibold text-[#0B2A52]">
+          <nav className="hidden lg:flex items-center gap-10 text-[16px] font-semibold text-[#0B2A52]">
             <button onClick={() => goTo("disaster-info")} className="hover:text-blue-600 cursor-pointer transition">재난정보</button>
-            <button onClick={() => safetyMapRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })} className="hover:text-blue-600 cursor-pointer transition">안전지도</button>
-            <button onClick={handleReportClick} className="hover:text-blue-600 cursor-pointer transition">현장 제보</button>
-            <button className="hover:text-blue-600 cursor-pointer transition">행동요령</button>
-            <button className="hover:text-blue-600 cursor-pointer transition">공지사항</button>
+            <button onClick={() => goTo("safety-map")} className="hover:text-blue-600 cursor-pointer transition">안전지도</button>
+            <button onClick={() => goTo("shelters", { shelterRegionId: null })} className="hover:text-blue-600 cursor-pointer transition">대피시설</button>
+            <button onClick={handleReportPageClick} className="hover:text-blue-600 cursor-pointer transition">현장 제보</button>
+            <button onClick={() => goTo("safety-guides", { safetyGuideKey: activeSafetyGuideKey })} className="hover:text-blue-600 cursor-pointer transition">행동요령</button>
+            <button onClick={() => goTo("notices")} className="hover:text-blue-600 cursor-pointer transition">공지사항</button>
           </nav>
 
           <div className="flex items-center gap-4 text-[#0B2A52]">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                disasterListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-              }}
-                            className="hidden md:flex items-center"
+            <button
+              type="button"
+              onClick={() => goTo("search")}
+              className="hidden md:flex w-9 h-9 items-center justify-center hover:bg-slate-100 transition cursor-pointer"
+              aria-label="통합검색"
+              title="통합검색"
             >
-              <div className="flex items-center bg-slate-100 rounded-full pl-3 pr-1 py-1.5">
-                <input
-                  ref={headerSearchInputRef}
-                  value={headerSearchQuery}
-                  onChange={(e) => setHeaderSearchQuery(e.target.value)}
-                  placeholder="지역, 재난 유형 검색"
-                  className="w-36 lg:w-44 bg-transparent outline-none text-sm placeholder:text-slate-400"
-                />
-                {headerSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setHeaderSearchQuery("")}
-                    className="text-slate-400 hover:text-slate-600 cursor-pointer p-1.5"
-                    aria-label="검색어 지우기"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                <button
-                  type="submit"
-                  className="w-7 h-7 rounded-full hover:bg-slate-200 transition text-[#0B2A52] flex items-center justify-center cursor-pointer shrink-0"
-                  aria-label="검색"
-                >
-                  <Search className="w-4 h-4" />
-                </button>
-              </div>
-            </form>
+              <Search className="w-5 h-5" />
+            </button>
             <div className="relative">
               <button
                 onClick={() => requireLogin(() => goTo("mypage", { mypageTab: "notify" }))}
@@ -1057,21 +1650,49 @@ export default function MainPage() {
           <div className="w-full bg-white/95 backdrop-blur-[2px] rounded-[22px] shadow-2xl shadow-slate-900/15 p-5 sm:p-6 border border-white/80">
             <div className="flex items-start sm:items-center justify-between gap-3 mb-5">
               <div className="flex items-center gap-3 font-bold text-[#0B2A52] text-sm sm:text-base">
-                <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center shrink-0"><ShieldAlert className="w-5 h-5 text-red-500" /></div>
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${mainNearbyIncident ? "bg-red-50" : "bg-emerald-50"}`}>
+                  {mainNearbyIncident ? (
+                    <ShieldAlert className="w-5 h-5 text-red-500" />
+                  ) : (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                  )}
+                </div>
                 지금, 내 주변에 발생한 재난
               </div>
               <button onClick={() => goTo("disaster-info")} className="text-xs sm:text-sm text-slate-500 flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer shrink-0">더보기 <ChevronRight className="w-4 h-4" /></button>
             </div>
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <h2 className="text-[26px] sm:text-[31px] font-extrabold tracking-tight text-[#0B2A52]">내 주변 침수 위험</h2>
-              <span className="px-3 py-1 rounded-full bg-red-50 text-red-500 text-xs font-bold">호우</span>
-            </div>
-            <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
-              <MapPin className="w-4 h-4 text-[#0B2A52] shrink-0" /> 내 위치에서 약 1.3km
-            </div>
-            <p className="mt-4 text-sm leading-6 text-slate-600">
-              현재 도로 일부 구간이 침수되어 통제되고 있습니다.<br className="hidden sm:block" /> 가까운 대피시설을 확인하고, 안전에 유의하세요.
-            </p>
+
+            {!weatherLocation ? (
+              <>
+                <h2 className="text-[22px] sm:text-[26px] font-extrabold tracking-tight text-[#0B2A52]">내 위치를 확인해주세요</h2>
+                <p className="mt-3 text-sm leading-6 text-slate-600">
+                  위치 권한을 허용하면 내 주변 반경 3km 내 진행 중인 사건을 바로 보여드려요.
+                </p>
+              </>
+            ) : mainNearbyIncidentLoading ? (
+              <h2 className="text-[22px] sm:text-[26px] font-extrabold tracking-tight text-slate-300">불러오는 중...</h2>
+            ) : mainNearbyIncident ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  <h2 className="text-[26px] sm:text-[31px] font-extrabold tracking-tight text-[#0B2A52]">{mainNearbyIncident.title}</h2>
+                  <span className="px-3 py-1 rounded-full bg-red-50 text-red-500 text-xs font-bold">{mainNearbyIncident.disasterType}</span>
+                </div>
+                <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <MapPin className="w-4 h-4 text-[#0B2A52] shrink-0" /> 내 위치에서 약 {mainNearbyIncident.distanceKm.toFixed(1)}km
+                </div>
+                <p className="mt-4 text-sm leading-6 text-slate-600">
+                  {mainNearbyIncident.region}에서 {mainNearbyIncident.disasterType} 상황이 진행 중입니다.<br className="hidden sm:block" /> 가까운 대피시설을 확인하고, 안전에 유의하세요.
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="text-[22px] sm:text-[26px] font-extrabold tracking-tight text-[#0B2A52]">현재 반경 3km 내 접수된 재난이 없습니다</h2>
+                <p className="mt-3 text-sm leading-6 text-slate-600">
+                  평온한 상황이에요. 그래도 이상한 상황을 발견하면 바로 제보해주세요.
+                </p>
+              </>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5">
               <button onClick={() => safetyMapRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })} className="h-12 rounded-xl bg-[#0B2A52] hover:bg-[#173b65] transition text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer">
                 <Navigation className="w-4 h-4" /> 주변 재난지도 보기 <ArrowRight className="w-4 h-4" />
@@ -1086,7 +1707,7 @@ export default function MainPage() {
 
       {/* 퀵 메뉴 - 자주 쓰는 기능만 4개로 축소 */}
       <section className="relative z-20 -mt-7 max-w-[1450px] mx-auto px-6">
-        <div className="bg-white rounded-[22px] shadow-lg shadow-slate-900/8 border border-slate-100 grid grid-cols-2 lg:grid-cols-4 overflow-hidden">
+        <div className="bg-white rounded-[22px] shadow-lg shadow-slate-900/8 border border-slate-200 grid grid-cols-2 lg:grid-cols-4 overflow-hidden">
           {quickMenu.map(({ icon: Icon, label, title, sub }, index) => {
             const iconStyles = [
               "bg-blue-50 text-blue-600",
@@ -1097,25 +1718,30 @@ export default function MainPage() {
 
             const handleClick = () => {
               if (label === "대피시설") {
-                goTo("shelters", { shelterRegionId: null });
+                openShelterPanel();
                 return;
               }
               if (label === "현장제보") {
                 handleReportClick();
                 return;
               }
+              if (label === "행동요령") {
+                openSafetyGuidePanel();
+                return;
+              }
               if (label === "가족확인") {
                 requireLogin(() => goTo("mypage", { mypageTab: "family" }));
                 return;
               }
-              // 행동요령 상세 페이지 연결 전까지는 메인에서 안내용 메뉴로 유지
             };
 
             return (
               <button
                 key={label}
                 onClick={handleClick}
-                className={`group px-5 py-4 sm:py-5 flex items-center gap-4 text-left hover:bg-slate-50 transition-colors cursor-pointer ${index !== 3 ? "lg:border-r border-slate-100" : ""}`}
+                className={`group px-5 py-4 sm:py-5 flex items-center gap-4 text-left hover:bg-slate-50 transition-colors cursor-pointer border-slate-200 ${
+                  index % 2 === 0 ? "border-r" : ""
+                } ${index < 2 ? "border-b lg:border-b-0" : ""} ${index !== 3 ? "lg:border-r" : ""}`}
               >
                 <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${iconStyles[index]}`}>
                   <Icon className="w-5 h-5" />
@@ -1129,6 +1755,233 @@ export default function MainPage() {
           })}
         </div>
       </section>
+
+
+      {/* 대피시설 찾기 - 퀵메뉴 클릭 시 메인 중간에 펼쳐지는 패널 */}
+      {shelterPanelOpen && (
+        <section ref={shelterPanelRef} className="max-w-[1450px] mx-auto px-6 pt-4">
+          <div className="bg-white rounded-[22px] border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-5 sm:px-6 py-4 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-[20px] font-extrabold text-[#0B2A52]">가까운 대피시설</h2>
+                    {weatherLocation && (
+                      <span className="text-[11px] text-slate-400 truncate">
+                        {String(weatherLocationLabel || "").replace(/\s*기준\s*$/, "")} 기준
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">현재 위치에서 가까운 실제 민방위 대피시설을 거리순으로 보여드립니다.</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="h-9 w-full sm:w-[320px] border border-slate-200 rounded-lg px-3 flex items-center gap-2 focus-within:border-blue-300">
+                  <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                  <input
+                    value={quickShelterQuery}
+                    onChange={(e) => setQuickShelterQuery(e.target.value)}
+                    placeholder="시설명 또는 주소 검색"
+                    className="flex-1 min-w-0 text-xs outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {!weatherLocation ? (
+              <div className="px-6 py-10 text-center">
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <MapPin className="w-6 h-6" />
+                </div>
+                <p className="mt-3 text-sm font-extrabold text-[#0B2A52]">가까운 대피시설을 보려면 현재 위치가 필요합니다.</p>
+                <button
+                  type="button"
+                  onClick={requestWeatherLocation}
+                  disabled={weatherLocating}
+                  className="mt-4 h-10 px-5 rounded-xl bg-[#0B2A52] text-white text-xs font-bold cursor-pointer disabled:opacity-60"
+                >
+                  {weatherLocating ? "위치 확인 중..." : "내 위치 확인하기"}
+                </button>
+              </div>
+            ) : quickShelterLoading ? (
+              <div className="px-6 py-10 text-center text-sm text-slate-400">가까운 대피시설을 불러오는 중입니다.</div>
+            ) : quickShelterError ? (
+              <div className="px-6 py-8 text-center">
+                <p className="text-sm text-red-500">{quickShelterError}</p>
+                <button
+                  type="button"
+                  onClick={() => setQuickShelterRefreshKey((value) => value + 1)}
+                  className="mt-3 text-xs font-bold text-blue-600 cursor-pointer"
+                >
+                  다시 확인하기
+                </button>
+              </div>
+            ) : filteredQuickShelters.length === 0 ? (
+              <div className="px-6 py-10 text-center text-sm text-slate-400">
+                검색 조건에 맞는 대피시설이 없습니다. 시설명이나 주소를 다시 확인해주세요.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {filteredQuickShelters.slice(0, 3).map((shelter, index) => (
+                  <div key={`${shelter.name || "대피시설"}-${shelter.address || index}`} className="px-5 sm:px-6 py-4 flex items-center gap-4 hover:bg-slate-50 transition-colors">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                      <span className="text-sm font-extrabold">{index + 1}</span>
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm font-extrabold text-[#0B2A52]">{shelter.name || "대피시설"}</h3>
+                        {index === 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold">가장 가까운 곳</span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1 truncate">{shelter.address || "주소 정보 없음"}</p>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-slate-500">
+                        {shelter.floorType && <span className="px-2 py-1 rounded-md bg-slate-100">{shelter.floorType}</span>}
+                        {shelter.capacity && <span className="px-2 py-1 rounded-md bg-slate-100">수용인원 {shelter.capacity}명</span>}
+                      </div>
+                    </div>
+
+                    <div className="hidden sm:flex items-center gap-1.5 text-sm font-extrabold text-blue-600 shrink-0">
+                      <MapPin className="w-4 h-4" />
+                      {formatShelterDistance(shelter.distanceM)}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        goTo("shelters", {
+                          shelterFocus: {
+                            name: shelter.name || "",
+                            address: shelter.address || "",
+                            latitude: shelter.latitude ?? null,
+                            longitude: shelter.longitude ?? null,
+                          },
+                        })
+                      }
+                      className="h-9 px-3 rounded-lg border border-blue-100 text-blue-600 text-xs font-bold flex items-center gap-1.5 shrink-0 hover:bg-blue-50 cursor-pointer"
+                    >
+                      <Navigation className="w-4 h-4" />
+                      지도에서 보기
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="px-5 sm:px-6 py-3.5 border-t border-slate-100 flex items-center justify-between gap-3">
+              <span className="text-[11px] text-slate-400">
+                {weatherLocation ? `가까운 순 · ${filteredQuickShelters.length}개 확인` : "현재 위치 확인 필요"}
+              </span>
+              <button
+                type="button"
+                onClick={() => goTo("shelters")}
+                className="text-xs font-extrabold text-[#0B2A52] hover:text-blue-600 flex items-center gap-1 cursor-pointer"
+              >
+                전체 대피시설 보기 <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 재난 행동요령 - 퀵메뉴 클릭 시 대피시설 패널과 같은 자리를 교체해서 사용 */}
+      {safetyGuidePanelOpen && (() => {
+        const guide = getSafetyGuide(activeSafetyGuideKey);
+        return (
+          <section ref={safetyGuidePanelRef} className="max-w-[1450px] mx-auto px-6 pt-4">
+            <div className="bg-white rounded-[22px] border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-5 sm:px-6 py-4 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0">
+                    <GraduationCap className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-[20px] font-extrabold text-[#0B2A52]">재난 행동요령</h2>
+                    <p className="text-[11px] text-slate-400 mt-1">재난 유형을 선택해 지금 필요한 핵심 행동요령을 확인하세요.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-5 sm:px-6 pt-4 flex gap-2 overflow-x-auto">
+                {SAFETY_GUIDE_ORDER.map((key) => {
+                  const item = SAFETY_GUIDES[key];
+                  const Icon = SAFETY_GUIDE_ICONS[key] || ShieldAlert;
+                  const active = activeSafetyGuideKey === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setActiveSafetyGuideKey(key)}
+                      className={`h-10 px-4 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap border transition-colors cursor-pointer ${
+                        active
+                          ? "bg-[#0B2A52] border-[#0B2A52] text-white"
+                          : "bg-slate-50 border-slate-100 text-slate-500 hover:bg-slate-100"
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" /> {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="px-5 sm:px-6 py-5">
+                <div className="rounded-2xl bg-orange-50/70 border border-orange-100 px-4 py-3 flex items-start gap-3">
+                  <ShieldAlert className="w-5 h-5 text-orange-500 mt-0.5 shrink-0" />
+                  <div>
+                    <div className="text-sm font-extrabold text-[#0B2A52]">{guide.label} 핵심 행동요령</div>
+                    <div className="text-xs text-slate-500 mt-1">{guide.shortDescription}</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-4">
+                  {guide.quickTips.map((tip, index) => (
+                    <article
+                      key={tip.title}
+                      className="min-h-[104px] rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-[0_2px_10px_rgba(15,23,42,0.06)]"
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center text-sm font-black shrink-0 shadow-sm">
+                          {index + 1}
+                        </div>
+                        <div className="min-w-0 pt-0.5">
+                          <h3 className="text-[14px] font-extrabold text-[#0B2A52] leading-5">{tip.title}</h3>
+                          <div className="w-8 h-[2px] bg-blue-100 rounded-full my-2" />
+                          <p className="text-[12px] font-medium text-slate-600 leading-5">{tip.description}</p>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+
+              <div className="px-5 sm:px-6 py-3.5 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <span className="text-[11px] text-slate-400">공식 국민행동요령을 바탕으로 핵심 내용을 요약했습니다.</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={openShelterPanel}
+                    className="h-9 px-4 rounded-lg border border-slate-200 text-[#0B2A52] text-xs font-bold hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <MapPin className="w-4 h-4" /> 가까운 대피시설 보기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goTo("safety-guides", { safetyGuideKey: activeSafetyGuideKey })}
+                    className="h-9 px-4 rounded-lg bg-[#0B2A52] text-white text-xs font-bold hover:bg-[#173b65] flex items-center gap-1.5 cursor-pointer"
+                  >
+                    상세 행동요령 <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        );
+      })()}
 
       {/* 하단 대시보드 - 정보/지도/개인화 3열 구조 */}
       <main className="max-w-[1450px] mx-auto px-6 py-5 pb-10">
@@ -1171,11 +2024,6 @@ export default function MainPage() {
 
               {!mainDisasterLoading && !mainDisasterError && mainDisasterMessages
                 .filter((m) => mainDisasterFilter === "전체" || disasterFilterOf(m) === mainDisasterFilter)
-                .filter((m) => {
-                  const q = headerSearchQuery.trim().toLowerCase();
-                  if (!q) return true;
-                  return `${m.message || ""} ${m.region || ""} ${disasterFilterOf(m)} ${m.emergencyLevel || ""}`.toLowerCase().includes(q);
-                })
                 .slice(0, 4)
                 .map((m, i) => (
                   <li
@@ -1195,12 +2043,7 @@ export default function MainPage() {
                 ))}
 
               {!mainDisasterLoading && !mainDisasterError && mainDisasterMessages
-                .filter((m) => mainDisasterFilter === "전체" || disasterFilterOf(m) === mainDisasterFilter)
-                .filter((m) => {
-                  const q = headerSearchQuery.trim().toLowerCase();
-                  if (!q) return true;
-                  return `${m.message || ""} ${m.region || ""} ${disasterFilterOf(m)} ${m.emergencyLevel || ""}`.toLowerCase().includes(q);
-                }).length === 0 && (
+                .filter((m) => mainDisasterFilter === "전체" || disasterFilterOf(m) === mainDisasterFilter).length === 0 && (
                   <li className="py-10 text-center text-sm text-slate-400 border-t border-slate-100">조건에 맞는 재난문자가 없습니다.</li>
                 )}
             </ul>
@@ -1217,32 +2060,118 @@ export default function MainPage() {
           {/* 오른쪽: 날씨 / AI 브리핑 / 내 제보 */}
           <div className="space-y-3">
 
-            {/* 현재 날씨 */}
+            {/* 현재 날씨 - 기상청 초단기실황 + 에어코리아 */}
             <section className="bg-white rounded-[18px] border border-slate-200 shadow-sm p-4">
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between">
                 <h2 className="text-[17px] font-extrabold text-[#0B2A52]">현재 날씨</h2>
-                <button className="text-xs text-[#0B2A52] flex items-center gap-0.5 hover:text-blue-600 transition cursor-pointer">
-                  더보기 <ChevronRight className="w-3.5 h-3.5" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!weatherLocation || weatherLoading) return;
+                    setWeatherError("");
+                    setWeatherRefreshKey((value) => value + 1);
+                  }}
+                  disabled={weatherLoading || !weatherLocation}
+                  className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  title="날씨 새로고침"
+                  aria-label="날씨 새로고침"
+                >
+                  <RefreshCw className={`w-4 h-4 ${weatherLoading ? "animate-spin" : ""}`} />
                 </button>
               </div>
-              <div className="text-[11px] text-slate-400 mb-2">내 위치 기준</div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="text-[38px]">🌤️</div>
+
+              {!weatherLocation ? (
+                <div className="mt-3 flex min-h-[112px] items-center justify-between gap-3">
                   <div>
-                    <div className="text-[31px] leading-none font-black text-[#0B2A52]">28°C</div>
-                    <div className="text-[11px] text-slate-500 mt-1.5">구름 조금 · 체감 30°C</div>
+                    <p className="text-[12px] font-bold text-[#0B2A52]">내 위치의 날씨를 확인해보세요.</p>
+                    <p className="mt-1 text-[10px] text-slate-400">위치 권한은 버튼을 누를 때만 요청합니다.</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={requestWeatherLocation}
+                    disabled={weatherLocating}
+                    className="h-9 shrink-0 cursor-pointer rounded-lg border border-blue-100 bg-blue-50 px-3 text-[10px] font-bold text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {weatherLocating ? "확인 중..." : "내 위치 확인"}
+                  </button>
                 </div>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-slate-500">
-                  <span>미세먼지</span><b className="text-blue-600">좋음</b>
-                  <span>강수확률</span><b>30%</b>
-                  <span>습도</span><b>65%</b>
+              ) : weatherLoading && !currentWeather ? (
+                <div className="mt-3 flex min-h-[112px] items-center justify-center gap-2 text-[11px] font-semibold text-slate-400">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  날씨 정보를 불러오는 중...
                 </div>
-              </div>
+              ) : currentWeather ? (
+                <>
+                  <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="text-[46px] leading-none">{weatherEmoji(currentWeather)}</div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-end gap-1">
+                          <span className="text-[31px] leading-none font-black tracking-tight text-[#0B2A52]">
+                            {currentWeather.temperature ?? "-"}°C
+                          </span>
+                        </div>
+
+                        <div className="mt-1.5 text-[12px] font-bold text-slate-600">
+                          {currentWeather.precipitationType || "현재 상태"}
+                        </div>
+
+                        <div className="mt-0.5 text-[10px] text-slate-400">
+                          풍속 {currentWeather.windSpeed ?? "-"}m/s
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-[auto_auto] gap-x-3 gap-y-1.5 border-l border-slate-100 pl-4 text-[11px]">
+                      <span className="text-slate-500">미세먼지</span>
+                      <b className={airGradeClass(currentAirQuality?.pm10Grade)}>
+                        {currentAirQuality?.pm10Grade || "-"}
+                      </b>
+
+                      <span className="text-slate-500">1시간 강수</span>
+                      <b className="text-[#0B2A52]">
+                        {normalizeRainfall(currentWeather.hourlyRainfall)}
+                      </b>
+
+                      <span className="text-slate-500">습도</span>
+                      <b className="text-[#0B2A52]">{currentWeather.humidity ?? "-"}%</b>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-1.5 border-t border-slate-100 pt-3 text-[10px] text-slate-400">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                    <span className="truncate">{weatherLocationLabel}</span>
+                    {formatWeatherObservationTime(currentWeather) && (
+                      <>
+                        <span className="text-slate-300">·</span>
+                        <span className="shrink-0">{formatWeatherObservationTime(currentWeather)}</span>
+                      </>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="mt-3 flex min-h-[112px] items-center justify-between gap-3">
+                  <p className="text-[11px] text-red-500">
+                    {weatherError || "날씨 정보를 불러오지 못했습니다."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setWeatherRefreshKey((value) => value + 1)}
+                    className="h-8 shrink-0 cursor-pointer rounded-lg border border-slate-200 px-3 text-[10px] font-bold text-slate-600 transition-colors hover:bg-slate-50"
+                  >
+                    다시 시도
+                  </button>
+                </div>
+              )}
+
+              {weatherError && currentWeather && (
+                <p className="mt-2 text-[9px] text-slate-400">일부 환경정보를 불러오지 못했습니다.</p>
+              )}
             </section>
 
-            {/* LLM API가 들어갈 AI 상황 브리핑 영역 */}
+            {/* Gemini API 기반 AI 상황 브리핑 */}
             <section className="bg-white rounded-[18px] border border-slate-200 shadow-sm p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-[17px] font-extrabold text-[#0B2A52] flex items-center gap-2">
@@ -1252,17 +2181,51 @@ export default function MainPage() {
                   AI 상황 브리핑
                   <span className="rounded-full bg-rose-50 text-rose-500 px-2 py-0.5 text-[9px] font-extrabold">Beta</span>
                 </h2>
+
+                <button
+                  type="button"
+                  onClick={() => setAiBriefingRefreshKey((value) => value + 1)}
+                  disabled={!weatherLocation || aiBriefingLoading}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                  title="AI 브리핑 새로고침"
+                  aria-label="AI 브리핑 새로고침"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${aiBriefingLoading ? "animate-spin" : ""}`} />
+                </button>
               </div>
 
-              <p className="mt-3 text-[12px] leading-5 text-slate-600">
-                현재 재난·안전 정보와 주변 사건을 바탕으로 핵심 상황을 짧게 요약해 보여주는 영역입니다.
-                LLM API 연결 시 실시간 데이터 기준으로 자동 브리핑합니다.
-              </p>
+              <div className="mt-3 min-h-[60px]">
+                {!weatherLocation ? (
+                  <p className="text-[12px] leading-5 text-slate-500">
+                    내 위치를 확인하면 주변 재난·날씨·현장정보를 바탕으로 AI 브리핑을 생성합니다.
+                  </p>
+                ) : aiBriefingLoading ? (
+                  <div className="flex items-center gap-2 text-[12px] text-slate-500">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                    주변 정보를 분석해 AI 상황 브리핑을 생성하고 있습니다...
+                  </div>
+                ) : aiBriefingError ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[11px] leading-5 text-rose-500">{aiBriefingError}</p>
+                    <button
+                      type="button"
+                      onClick={() => setAiBriefingRefreshKey((value) => value + 1)}
+                      className="shrink-0 h-8 px-3 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+                    >
+                      다시 시도
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-[12px] leading-5 text-slate-600 whitespace-pre-line">
+                    {aiBriefing || "현재 위치의 AI 상황 브리핑을 준비하고 있습니다."}
+                  </p>
+                )}
+              </div>
 
               <button
                 type="button"
                 className="mt-3 w-full h-9 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold flex items-center justify-center gap-2 hover:bg-blue-100 transition cursor-pointer"
-                onClick={() => window.alert("AI 안전 도우미는 LLM API 연결 후 활성화됩니다.")}
+                onClick={openAiChat}
               >
                 <MessageCircle className="w-4 h-4" /> AI 안전 도우미에게 질문하기 <ArrowRight className="w-3.5 h-3.5" />
               </button>
@@ -1375,6 +2338,151 @@ export default function MainPage() {
         </div>
       )}
 
+      {/* AI 안전 도우미 채팅 모달 */}
+      {aiChatOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeAiChat();
+          }}
+        >
+          <div className="flex h-[min(720px,86vh)] w-full max-w-[560px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white">
+                  <Bot className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-extrabold text-[#0B2A52]">AI 안전 도우미</h2>
+                    <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[9px] font-extrabold text-rose-500">Beta</span>
+                  </div>
+                  <p className="mt-0.5 truncate text-[11px] text-slate-400">
+                    {weatherLocation
+                      ? `${weatherLocationLabel || "현재 위치"} · 실시간 안전정보 기반`
+                      : "지역 지정 질문 가능 · 내 주변 질문은 위치 확인 필요"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeAiChat}
+                disabled={aiChatLoading}
+                className="cursor-pointer rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="AI 안전 도우미 닫기"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="border-b border-slate-100 bg-slate-50/70 px-4 py-3">
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {AI_SUGGESTED_QUESTIONS.map((question) => (
+                  <button
+                    key={question}
+                    type="button"
+                    onClick={() => sendAiChatMessage(question)}
+                    disabled={aiChatLoading}
+                    className="shrink-0 cursor-pointer rounded-full border border-blue-100 bg-white px-3 py-2 text-[11px] font-semibold text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {question}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-white px-4 py-4">
+              <div className="space-y-3">
+                {aiChatMessages.map((message, index) => (
+                  <div
+                    key={`${message.role}-${index}`}
+                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    {message.role === "assistant" && (
+                      <span className="mr-2 mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                        <Bot className="h-4 w-4" />
+                      </span>
+                    )}
+                    <div
+                      className={`max-w-[82%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-[12px] leading-5 ${
+                        message.role === "user"
+                          ? "rounded-br-md bg-blue-600 text-white"
+                          : "rounded-bl-md bg-slate-100 text-slate-700"
+                      }`}
+                    >
+                      {message.content}
+                    </div>
+                  </div>
+                ))}
+
+                {aiChatLoading && (
+                  <div className="flex justify-start">
+                    <span className="mr-2 mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                      <Bot className="h-4 w-4" />
+                    </span>
+                    <div className="flex items-center gap-2 rounded-2xl rounded-bl-md bg-slate-100 px-3.5 py-2.5 text-[12px] text-slate-500">
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-500" />
+                      현재 안전정보를 확인해 답변하고 있습니다...
+                    </div>
+                  </div>
+                )}
+
+                <div ref={aiChatEndRef} />
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 bg-white px-4 py-3">
+              {!weatherLocation && (
+                <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+                  <span>서울·화성시처럼 지역을 직접 물어볼 수 있어요. "내 주변" 질문은 위치 확인이 필요합니다.</span>
+                  <button
+                    type="button"
+                    onClick={requestWeatherLocation}
+                    className="shrink-0 cursor-pointer font-bold underline underline-offset-2"
+                  >
+                    내 위치 확인
+                  </button>
+                </div>
+              )}
+
+              {aiChatError && (
+                <p className="mb-2 text-[11px] text-rose-500">{aiChatError}</p>
+              )}
+
+              <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 focus-within:border-blue-300 focus-within:bg-white">
+                <textarea
+                  value={aiChatInput}
+                  onChange={(e) => setAiChatInput(e.target.value.slice(0, 1200))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      sendAiChatMessage();
+                    }
+                  }}
+                  disabled={aiChatLoading}
+                  rows={2}
+                  placeholder="재난·안전과 관련해 궁금한 내용을 입력하세요..."
+                  className="max-h-28 min-h-[44px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[12px] leading-5 text-slate-700 outline-none placeholder:text-slate-400 disabled:opacity-60"
+                />
+                <button
+                  type="button"
+                  onClick={() => sendAiChatMessage()}
+                  disabled={!aiChatInput.trim() || aiChatLoading}
+                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  aria-label="질문 보내기"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="mt-1.5 flex items-center justify-between text-[9px] text-slate-400">
+                <span>현재 상황은 SafeTrace 수집 데이터 기준이며 긴급 상황에서는 공식 안내를 우선하세요.</span>
+                <span>{aiChatInput.length}/1200</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 대응상황 추적 모달 - 목록 모드 / 상세(타임라인) 모드 겸용 */}
       {trackingOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
@@ -1414,8 +2522,9 @@ export default function MainPage() {
                   <div className="flex items-center flex-wrap gap-2 mb-4">
                     {[
                       ["all", `전체 ${groupedIncidents.length + pendingReports.length}`],
-                      ["progress", `진행중 ${trackingProgressCount + pendingReports.length}`],
+                      ["progress", `진행중 ${trackingProgressCount}`],
                       ["closed", `완료 ${trackingClosedCount}`],
+                      ["rejected", `반려 ${trackingRejectedCount}`],
                     ].map(([key, label]) => (
                       <button
                         key={key}
@@ -1733,6 +2842,8 @@ export default function MainPage() {
           </div>
         </div>
       )}
+
+      <SiteFooter onNavigate={goTo} />
     </div>
   );
 }

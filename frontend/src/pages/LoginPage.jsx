@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { ShieldAlert, User, Lock, Mail, Eye, EyeOff, ArrowRight, ShieldCheck, Search } from "lucide-react";
+import { ShieldAlert, User, Lock, Mail, Eye, EyeOff, ArrowRight, ShieldCheck, Search, Bell } from "lucide-react";
 
-export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = "login" }) {
+export default function LoginPage({ onLoginSuccess, onBackToHome, onSearch, initialMode = "login" }) {
   const [mode, setMode] = useState(initialMode); // "login" | "signup"
   const [showPassword, setShowPassword] = useState(false);
 
@@ -167,35 +167,39 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
 
   return (
     <div className="min-h-screen bg-slate-100 text-[#0F2540]">
-      {/* 상단 헤더 */}
-      <header className="relative z-30 bg-white/95 backdrop-blur-md border-b border-slate-200">
-        <div className="max-w-[1460px] mx-auto h-[74px] px-5 lg:px-8 flex items-center justify-between">
+      {/* 상단 헤더 - 메인페이지와 동일한 메뉴 구성 */}
+      <header className="bg-white border-b border-slate-100 sticky top-0 z-40">
+        <div className="max-w-[1450px] mx-auto px-6 h-[72px] flex items-center justify-between">
           <button
             type="button"
             onClick={onBackToHome}
-            className="flex items-center gap-3 hover:opacity-90 transition cursor-pointer"
+            className="flex items-center gap-3 hover:opacity-80 transition cursor-pointer"
           >
-            <div className="w-11 h-11 rounded-xl bg-[#0F2540] flex items-center justify-center shadow-sm">
-              <ShieldAlert className="w-6 h-6 text-amber-400" strokeWidth={2.5} />
+            <div className="w-10 h-10 rounded-xl bg-[#0B2A52] flex items-center justify-center shadow-sm">
+              <ShieldAlert className="w-5 h-5 text-amber-400" strokeWidth={2.4} />
             </div>
             <div className="text-left leading-tight">
-              <div className="text-xl font-black tracking-[-0.04em]">세이프트레이스</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">함께 만드는 더 안전한 일상</div>
+              <div className="font-extrabold text-xl text-[#0B2A52] tracking-tight">세이프트레이스</div>
+              <div className="text-[10px] text-slate-400">함께 만드는 더 안전한 일상</div>
             </div>
           </button>
 
-          <nav className="hidden lg:flex items-center gap-10 text-sm font-extrabold text-[#17385E]">
-            <button onClick={onBackToHome} className="hover:text-blue-600 transition cursor-pointer">서비스 소개</button>
-            <button onClick={onBackToHome} className="hover:text-blue-600 transition cursor-pointer">안전 신고</button>
-            <button onClick={onBackToHome} className="hover:text-blue-600 transition cursor-pointer">가족 안전확인</button>
-            <button onClick={onBackToHome} className="hover:text-blue-600 transition cursor-pointer">소식 · 알림</button>
+          <nav className="hidden lg:flex items-center gap-10 text-[16px] font-semibold text-[#0B2A52]">
+            <button type="button" onClick={onBackToHome} className="hover:text-blue-600 cursor-pointer transition">재난정보</button>
+            <button type="button" onClick={onBackToHome} className="hover:text-blue-600 cursor-pointer transition">안전지도</button>
+            <button type="button" onClick={onBackToHome} className="hover:text-blue-600 cursor-pointer transition">대피시설</button>
+            <button type="button" onClick={onBackToHome} className="hover:text-blue-600 cursor-pointer transition">현장 제보</button>
+            <button type="button" onClick={onBackToHome} className="hover:text-blue-600 cursor-pointer transition">행동요령</button>
+            <button type="button" onClick={onBackToHome} className="hover:text-blue-600 cursor-pointer transition">공지사항</button>
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4 text-[#0B2A52]">
             <button
               type="button"
-              className="hidden sm:flex w-10 h-10 rounded-full items-center justify-center hover:bg-slate-100 cursor-pointer"
-              aria-label="검색"
+              onClick={onSearch ?? onBackToHome}
+              className="hidden md:flex w-9 h-9 items-center justify-center hover:bg-slate-100 transition cursor-pointer"
+              aria-label="통합검색"
+              title="통합검색"
             >
               <Search className="w-5 h-5" />
             </button>
@@ -203,25 +207,25 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, initialMode = 
             <button
               type="button"
               onClick={() => switchMode("login")}
-              className="hidden sm:block text-sm font-bold text-[#17385E] px-3 py-2 cursor-pointer"
+              className="relative w-9 h-9 rounded-full flex items-center justify-center hover:bg-slate-100 transition cursor-pointer"
+              aria-label="알림"
             >
-              로그인
+              <Bell className="w-5 h-5" />
             </button>
 
             <button
               type="button"
-              onClick={() => switchMode("signup")}
-              className="hidden sm:flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0F2540] hover:bg-[#173b65] text-white text-sm font-extrabold shadow-sm transition cursor-pointer"
+              onClick={() => switchMode("login")}
+              className="hidden sm:block font-bold text-sm cursor-pointer hover:text-blue-600 transition"
             >
-              <User className="w-4 h-4" />
-              회원가입
+              로그인
             </button>
           </div>
         </div>
       </header>
 
       {/* 메인 */}
-      <main className="min-h-[calc(100vh-74px)] flex items-center justify-center px-5 py-12 bg-[#F4F7FB]">
+      <main className="min-h-[calc(100vh-72px)] flex items-center justify-center px-5 py-12 bg-[#F4F7FB]">
         <div className="w-full max-w-[420px]">
           <div className="bg-white rounded-2xl border border-slate-200 px-6 sm:px-8 py-7 sm:py-8">
             <div className="flex flex-col items-center mb-6">

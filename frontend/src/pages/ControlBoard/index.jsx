@@ -35,7 +35,7 @@ function getInitialControlBoardTab() {
   }
 }
 
-export default function ControlBoard({ onBackToHome, onLogout }) {
+export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) {
   // 지도 DOM이 다시 마운트되는 경우(HMR/탭 재진입 등)도 감지할 수 있도록 callback ref 사용
   const mapContainerRef = useRef(null);
   const mapElementRef = useRef(null);
@@ -1302,13 +1302,33 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
       return incidentSortOrder === "newest" ? bDate - aDate : aDate - bDate;
     });
 
+  // 상태 요약 카드/탭 숫자는 현재 선택한 지역·유형·위험도·기간·검색어를 기준으로 계산한다.
+  // 단, 상태 필터 자체는 제외해야 각 상태별 건수를 동시에 보여줄 수 있다.
+  const incidentsForCounts = incidents.filter((inc) => {
+    const q = incidentSearchQuery.trim().toLowerCase();
+    const matchSearch =
+      !q ||
+      inc.title?.toLowerCase().includes(q) ||
+      inc.region?.toLowerCase().includes(q) ||
+      inc.disasterType?.toLowerCase().includes(q);
+    const matchType = incidentTypeFilter === "ALL" || inc.disasterType === incidentTypeFilter;
+    const matchRegion = incidentRegionFilter === "ALL" || inc.region?.startsWith(incidentRegionFilter);
+    const matchSeverity = incidentSeverityFilter === "ALL" || inc.severity === incidentSeverityFilter;
+    const incDate = (inc.createdAt || "").slice(0, 10);
+    const matchDate =
+      (!appliedIncidentDateFrom || incDate >= appliedIncidentDateFrom) &&
+      (!appliedIncidentDateTo || incDate <= appliedIncidentDateTo);
+
+    return matchSearch && matchType && matchRegion && matchSeverity && matchDate;
+  });
+
   const incidentCounts = {
-    ALL: incidents.length,
-    RECEIVED: incidents.filter((i) => i.status === "RECEIVED").length,
-    CONFIRMING: incidents.filter((i) => i.status === "CONFIRMING").length,
-    RESPONDING: incidents.filter((i) => i.status === "RESPONDING").length,
-    RECOVERING: incidents.filter((i) => i.status === "RECOVERING").length,
-    CLOSED: incidents.filter((i) => i.status === "CLOSED").length,
+    ALL: incidentsForCounts.length,
+    RECEIVED: incidentsForCounts.filter((i) => i.status === "RECEIVED").length,
+    CONFIRMING: incidentsForCounts.filter((i) => i.status === "CONFIRMING").length,
+    RESPONDING: incidentsForCounts.filter((i) => i.status === "RESPONDING").length,
+    RECOVERING: incidentsForCounts.filter((i) => i.status === "RECOVERING").length,
+    CLOSED: incidentsForCounts.filter((i) => i.status === "CLOSED").length,
   };
 
   // 목록 정렬(최신순)과 무관하게, 제일 오래 접수된 사건이 1번이 되도록 접수일시 기준으로 번호를 매김
@@ -1818,6 +1838,7 @@ export default function ControlBoard({ onBackToHome, onLogout }) {
             dailyMax={dailyMax}
             typeTotal={typeTotal}
             typeStats={typeStats}
+            onOpenNotices={onOpenNotices}
           />
         )}
 

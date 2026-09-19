@@ -1,58 +1,33 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ShieldAlert,
-  Bell,
-  ChevronRight,
-  ChevronLeft,
-  Home,
-  Users,
-  ClipboardList,
-  MapPin,
   Building2,
-  Map as MapIcon,
-  Heart,
-  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  Home,
+  LocateFixed,
+  MapPin,
   Navigation,
   Search,
-  Info,
-  LocateFixed,
 } from "lucide-react";
 import { authFetch } from "../api/client";
+import ServicePageLayout from "../components/ServicePageLayout";
 
-// 행안부 쪽 지역명 표기가 정식명/약칭으로 들쭉날쭉해서 재시도용으로 쓰는 시/도 약칭 매핑
-// (MyPage.jsx의 SIDO_SHORT_NAME과 동일 - 세종처럼 "구" 단위가 없는 지역까지 커버하기 위함)
-const SIDO_SHORT_NAME = {
-  서울특별시: "서울",
-  부산광역시: "부산",
-  대구광역시: "대구",
-  인천광역시: "인천",
-  광주광역시: "광주",
-  대전광역시: "대전",
-  울산광역시: "울산",
-  세종특별자치시: "세종",
-  경기도: "경기",
-  강원도: "강원",
-  강원특별자치도: "강원",
-  충청북도: "충북",
-  충청남도: "충남",
-  전라북도: "전북",
-  전북특별자치도: "전북",
-  전라남도: "전남",
-  경상북도: "경북",
-  경상남도: "경남",
-  제주특별자치도: "제주",
-};
+const LOCATION_CACHE_KEY = "safetrace:last-location";
+const PAGE_SIZE = 6;
 
-const PAGE_SIZE = 8;
-
-const TABS = [
-  { key: "info", label: "내 정보", icon: Home },
-  { key: "family", label: "가족 관리", icon: Users },
-  { key: "safety", label: "안전확인 이력", icon: ShieldAlert },
-  { key: "reports", label: "내 제보 내역", icon: ClipboardList },
-  { key: "regions", label: "관심 지역", icon: MapPin },
-  { key: "notify", label: "알림 설정", icon: Bell },
-];
+function readCachedLocation() {
+  try {
+    const raw = window.sessionStorage.getItem(LOCATION_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const lat = Number(parsed?.lat);
+    const lng = Number(parsed?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { lat, lng };
+  } catch {
+    return null;
+  }
+}
 
 function formatDistance(distanceM) {
   const value = Number(distanceM);
@@ -62,14 +37,23 @@ function formatDistance(distanceM) {
 }
 
 function shelterKey(shelter) {
-  return String(
-    shelter.id ??
-      shelter.shelterId ??
-      `${shelter.name || "대피시설"}|${shelter.address || ""}`
-  );
+  return `${shelter.name || "대피시설"}|${shelter.address || ""}`;
 }
 
-function openKakaoMap(shelter) {
+function openKakaoRoute(shelter) {
+  const lat = Number(shelter.latitude);
+  const lng = Number(shelter.longitude);
+  const name = encodeURIComponent(shelter.name || "대피시설");
+
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    window.open(
+      `https://map.kakao.com/link/to/${name},${lat},${lng}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+    return;
+  }
+
   const keyword = encodeURIComponent(shelter.address || shelter.name || "대피시설");
   window.open(
     `https://map.kakao.com/link/search/${keyword}`,
@@ -78,266 +62,344 @@ function openKakaoMap(shelter) {
   );
 }
 
-export default function ShelterPage({
-  initialRegionId,
-  onBackToHome,
-  onLogout,
-  onGoToMyPageTab,
-}) {
-  const [regions, setRegions] = useState([]);
-  const [regionsLoading, setRegionsLoading] = useState(true);
-  const [selectedRegionId, setSelectedRegionId] = useState(initialRegionId ?? null);
+function createShelterMarker(active = false) {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.setAttribute("aria-label", "대피시설");
+  el.style.width = active ? "38px" : "32px";
+  el.style.height = active ? "38px" : "32px";
+  el.style.borderRadius = "50%";
+  el.style.border = "3px solid #fff";
+  el.style.background = active ? "#ef4444" : "#10b981";
+  el.style.color = "#fff";
+  el.style.fontWeight = "900";
+  el.style.fontSize = active ? "18px" : "15px";
+  el.style.boxShadow = "0 5px 15px rgba(15,35,65,.28)";
+  el.style.cursor = "pointer";
+  el.style.display = "flex";
+  el.style.alignItems = "center";
+  el.style.justifyContent = "center";
+  el.textContent = "⌂";
+  return el;
+}
+
+function createLocationMarker() {
+  const el = document.createElement("div");
+  el.style.width = "22px";
+  el.style.height = "22px";
+  el.style.borderRadius = "50%";
+  el.style.border = "4px solid #fff";
+  el.style.background = "#2563eb";
+  el.style.boxShadow = "0 0 0 7px rgba(37,99,235,.16), 0 4px 12px rgba(15,35,65,.24)";
+  return el;
+}
+
+export default function ShelterPage({ initialRegionId, initialFocusShelter, onBackToHome, onLogin, onNavigate }) {
+  const [location, setLocation] = useState(() => readCachedLocation());
+  const [locationLabel, setLocationLabel] = useState("현재 위치");
+  const [locating, setLocating] = useState(false);
+  const [regionQuery, setRegionQuery] = useState("");
   const [shelters, setShelters] = useState([]);
-  const [sheltersLoading, setSheltersLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [radiusKm, setRadiusKm] = useState(3);
-  const [sort, setSort] = useState("distance");
-  const [page, setPage] = useState(1);
+  const [radiusKm, setRadiusKm] = useState(5);
   const [query, setQuery] = useState("");
-  const [selectedShelterKey, setSelectedShelterKey] = useState(null);
+  const [page, setPage] = useState(1);
+  const [selectedKey, setSelectedKey] = useState(null);
 
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const mapObjectsRef = useRef([]);
   const shelterPositionsRef = useRef(new Map());
 
+  // 마이페이지 관심지역에서 들어온 경우에는 그 관심지역 좌표를 우선 사용한다.
+  // 메인 퀵메뉴에서 들어오면 initialRegionId가 없으므로 sessionStorage의 현재 위치를 그대로 사용한다.
   useEffect(() => {
-    setRegionsLoading(true);
+    if (!initialRegionId) return;
+
+    let active = true;
     authFetch("/api/mypage/regions")
       .then((data) => {
-        const list = Array.isArray(data) ? data : [];
-        setRegions(list);
-
-        if (list.length === 0) {
-          setSelectedRegionId(null);
-          return;
-        }
-
-        const initial = list.find(
-          (r) => String(r.memberRegionId) === String(initialRegionId)
+        if (!active) return;
+        const regions = Array.isArray(data) ? data : [];
+        const region = regions.find(
+          (item) => String(item.memberRegionId) === String(initialRegionId)
         );
-        const primary = list.find((r) => r.isPrimary === "Y");
-        const chosen = initial || primary || list[0];
-        setSelectedRegionId(chosen.memberRegionId);
+        const lat = Number(region?.latitude);
+        const lng = Number(region?.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+        setLocation({ lat, lng });
+        setLocationLabel(
+          [region?.regionLabel, region?.regionName].filter(Boolean).join(" · ") ||
+            "관심 지역"
+        );
       })
-      .catch((err) => setError(err.message || "관심 지역을 불러오지 못했습니다."))
-      .finally(() => setRegionsLoading(false));
+      .catch(() => {
+        // 관심지역 조회 실패 시 현재 위치 기반 흐름을 그대로 사용한다.
+      });
+
+    return () => {
+      active = false;
+    };
   }, [initialRegionId]);
 
-  const selectedRegion = useMemo(
-    () => regions.find((r) => String(r.memberRegionId) === String(selectedRegionId)) || null,
-    [regions, selectedRegionId]
-  );
+  const requestLocation = () => {
+    if (!navigator.geolocation) {
+      setError("이 브라우저에서는 위치 기능을 사용할 수 없습니다.");
+      return;
+    }
+
+    setLocating(true);
+    setError("");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const next = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        try {
+          window.sessionStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify(next));
+        } catch {
+          // 저장소 사용 불가 환경에서는 현재 화면에서만 사용
+        }
+        setLocation(next);
+        setLocating(false);
+      },
+      (geoError) => {
+        setLocating(false);
+        if (geoError.code === geoError.PERMISSION_DENIED) {
+          setError("위치 권한을 허용하면 가까운 대피시설을 확인할 수 있습니다.");
+        } else if (geoError.code === geoError.TIMEOUT) {
+          setError("위치 확인 시간이 초과됐습니다. 다시 시도해주세요.");
+        } else {
+          setError("현재 위치를 확인하지 못했습니다.");
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  };
 
   useEffect(() => {
-    setPage(1);
-    setSelectedShelterKey(null);
-
-    if (!selectedRegion?.latitude || !selectedRegion?.longitude) {
+    if (!location) {
       setShelters([]);
-      return;
+      setRegionQuery("");
+      setLocationLabel("현재 위치를 확인해주세요");
+      return undefined;
     }
 
-    if (!window.kakao?.maps) {
-      setError("카카오 지도 API를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
-      return;
-    }
+    let active = true;
+    let timerId = null;
+    let attempts = 0;
 
-    setError("");
-    setSheltersLoading(true);
+    const resolveRegionAndLoad = () => {
+      if (!active) return;
 
-    const lat = Number(selectedRegion.latitude);
-    const lng = Number(selectedRegion.longitude);
+      if (!window.kakao?.maps?.services?.Geocoder) {
+        attempts += 1;
+        if (attempts >= 40) {
+          setError("카카오 지도 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
+          return;
+        }
+        timerId = window.setTimeout(resolveRegionAndLoad, 100);
+        return;
+      }
 
-    window.kakao.maps.load(() => {
+      const { lat, lng } = location;
       const geocoder = new window.kakao.maps.services.Geocoder();
-      geocoder.coord2RegionCode(lng, lat, (result, status) => {
-        const regionCode =
-          status === window.kakao.maps.services.Status.OK
-            ? result.find((r) => r.region_type === "H") || result[0]
-            : null;
-
-        const sido = regionCode?.region_1depth_name;
-        const gu = regionCode?.region_2depth_name;
-
-        // 세종특별자치시처럼 "구" 단위 행정구역이 아예 없는 지역은 gu가 빈 문자열로 옴 -
-        // 예전엔 여기서 바로 에러 처리돼서 세종은 대피시설이 항상 안 떴음. gu 없으면 시도명 자체를 씀.
-        if (!sido) {
-          setShelters([]);
-          setSheltersLoading(false);
-          setError("선택한 관심 지역의 행정구역을 확인하지 못했습니다.");
+      geocoder.coord2RegionCode(lng, lat, async (result, status) => {
+        if (!active) return;
+        if (status !== window.kakao.maps.services.Status.OK || !result?.length) {
+          setError("현재 위치의 행정구역을 확인하지 못했습니다.");
           return;
         }
 
-        const regionQuery = gu ? `${sido} ${gu}` : sido;
-        const regionFallback = gu || null;
-        const regionShortFallback = gu && SIDO_SHORT_NAME[sido] ? `${SIDO_SHORT_NAME[sido]} ${gu}` : null;
+        const region = result.find((item) => item.region_type === "H") || result[0];
+        const sido = region?.region_1depth_name || "";
+        const gu = region?.region_2depth_name || "";
+        const label = [sido, gu].filter(Boolean).join(" ");
+        const primaryQuery = label || sido;
+        const fallbackQuery = gu || sido;
 
-        authFetch(
-          `/api/environment/shelters?guName=${encodeURIComponent(regionQuery)}&lat=${lat}&lng=${lng}&limit=50`
-        )
-          .then((data) => {
-            const first = Array.isArray(data) ? data : [];
-            if (first.length > 0 || !regionFallback) return first;
-            return authFetch(
-              `/api/environment/shelters?guName=${encodeURIComponent(regionFallback)}&lat=${lat}&lng=${lng}&limit=50`
+        setLocationLabel(label || "현재 위치");
+        setRegionQuery(primaryQuery);
+        setLoading(true);
+        setError("");
+
+        try {
+          let data = await authFetch(
+            `/api/environment/shelters?guName=${encodeURIComponent(primaryQuery)}&lat=${lat}&lng=${lng}&limit=100`
+          );
+
+          if ((!Array.isArray(data) || data.length === 0) && fallbackQuery && fallbackQuery !== primaryQuery) {
+            data = await authFetch(
+              `/api/environment/shelters?guName=${encodeURIComponent(fallbackQuery)}&lat=${lat}&lng=${lng}&limit=100`
             );
-          })
-          .then((data) => {
-            const arr = Array.isArray(data) ? data : [];
-            if (arr.length > 0 || !regionShortFallback) return arr;
-            return authFetch(
-              `/api/environment/shelters?guName=${encodeURIComponent(regionShortFallback)}&lat=${lat}&lng=${lng}&limit=50`
-            );
-          })
-          .then((data) => setShelters(Array.isArray(data) ? data : []))
-          .catch((err) => {
-            setShelters([]);
-            setError(err.message || "대피시설 정보를 불러오지 못했습니다.");
-          })
-          .finally(() => setSheltersLoading(false));
+          }
+
+          if (!active) return;
+          const list = Array.isArray(data) ? data : [];
+          setShelters(list);
+
+          const initialMatch = initialFocusShelter
+            ? list.find((shelter) => {
+                const sameName =
+                  String(shelter.name || "") === String(initialFocusShelter.name || "");
+                const sameAddress =
+                  String(shelter.address || "") === String(initialFocusShelter.address || "");
+                return sameName && sameAddress;
+              })
+            : null;
+
+          setSelectedKey(
+            initialMatch
+              ? shelterKey(initialMatch)
+              : list.length
+                ? shelterKey(list[0])
+                : null
+          );
+          setPage(1);
+        } catch (e) {
+          if (!active) return;
+          setShelters([]);
+          setError(e?.message || "대피시설 정보를 불러오지 못했습니다.");
+        } finally {
+          if (active) setLoading(false);
+        }
       });
-    });
-  }, [selectedRegion?.memberRegionId, selectedRegion?.latitude, selectedRegion?.longitude]);
+    };
+
+    resolveRegionAndLoad();
+
+    return () => {
+      active = false;
+      if (timerId) window.clearTimeout(timerId);
+    };
+  }, [location, initialFocusShelter]);
 
   const filteredShelters = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    let list = shelters.filter((s) => {
-      const distance = Number(s.distanceM);
-      const inRadius = !Number.isFinite(distance) || distance <= radiusKm * 1000;
-      if (!inRadius) return false;
-
-      if (!normalizedQuery) return true;
-      const target = `${s.name || ""} ${s.address || ""}`.toLowerCase();
-      return target.includes(normalizedQuery);
-    });
-
-    list = [...list].sort((a, b) => {
-      if (sort === "name") {
-        return String(a.name || "").localeCompare(String(b.name || ""), "ko");
-      }
-      return (Number(a.distanceM) || Number.MAX_SAFE_INTEGER) - (Number(b.distanceM) || Number.MAX_SAFE_INTEGER);
-    });
-
-    return list;
-  }, [shelters, radiusKm, sort, query]);
+    const keyword = query.trim().toLowerCase();
+    return shelters
+      .filter((shelter) => {
+        const distance = Number(shelter.distanceM);
+        if (Number.isFinite(distance) && distance > radiusKm * 1000) return false;
+        if (!keyword) return true;
+        return `${shelter.name || ""} ${shelter.address || ""}`
+          .toLowerCase()
+          .includes(keyword);
+      })
+      .sort(
+        (a, b) =>
+          (Number(a.distanceM) || Number.MAX_SAFE_INTEGER) -
+          (Number(b.distanceM) || Number.MAX_SAFE_INTEGER)
+      );
+  }, [shelters, radiusKm, query]);
 
   const totalPages = Math.max(1, Math.ceil(filteredShelters.length / PAGE_SIZE));
   const visibleShelters = filteredShelters.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const selectedShelter =
+    filteredShelters.find((shelter) => shelterKey(shelter) === selectedKey) ||
+    filteredShelters[0] ||
+    null;
+  const oneKmCount = shelters.filter((s) => Number(s.distanceM) <= 1000).length;
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
   useEffect(() => {
-    if (!mapRef.current || !selectedRegion?.latitude || !selectedRegion?.longitude || !window.kakao?.maps) return;
+    if (!mapRef.current || !location || !window.kakao?.maps?.load) return undefined;
 
     let disposed = false;
-    let resizeObserver;
+    let timerId = null;
+    let attempts = 0;
 
-    window.kakao.maps.load(() => {
-      if (disposed || !mapRef.current) return;
+    const buildMap = () => {
+      if (disposed) return;
 
-      mapObjectsRef.current.forEach((obj) => obj.setMap?.(null));
-      mapObjectsRef.current = [];
-      shelterPositionsRef.current = new Map();
+      if (!window.kakao?.maps?.Map) {
+        attempts += 1;
+        if (attempts >= 40) return;
+        timerId = window.setTimeout(buildMap, 100);
+        return;
+      }
 
-      const center = new window.kakao.maps.LatLng(
-        Number(selectedRegion.latitude),
-        Number(selectedRegion.longitude)
-      );
+      window.kakao.maps.load(() => {
+        if (disposed || !mapRef.current) return;
 
-      const map = new window.kakao.maps.Map(mapRef.current, {
-        center,
-        level: 5,
-      });
-      mapInstanceRef.current = map;
+        mapObjectsRef.current.forEach((obj) => obj.setMap?.(null));
+        mapObjectsRef.current = [];
+        shelterPositionsRef.current = new Map();
 
-      const homeContent = document.createElement("button");
-      homeContent.type = "button";
-      homeContent.className = "flex items-center gap-2 bg-white border border-blue-200 rounded-full px-3 py-2 shadow-lg font-extrabold text-[#0F2540] text-xs";
-      homeContent.innerHTML = `<span style="display:flex;width:28px;height:28px;border-radius:9999px;background:#3b82f6;color:#fff;align-items:center;justify-content:center;font-size:14px;">⌂</span><span>${selectedRegion.regionLabel || "선택 지역"}</span>`;
-
-      const homeOverlay = new window.kakao.maps.CustomOverlay({
-        position: center,
-        content: homeContent,
-        yAnchor: 1.6,
-        zIndex: 20,
-      });
-      homeOverlay.setMap(map);
-      mapObjectsRef.current.push(homeOverlay);
-
-      const circle = new window.kakao.maps.Circle({
-        center,
-        radius: radiusKm * 1000,
-        strokeWeight: 2,
-        strokeColor: "#60A5FA",
-        strokeOpacity: 0.55,
-        strokeStyle: "solid",
-        fillColor: "#93C5FD",
-        fillOpacity: 0.12,
-      });
-      circle.setMap(map);
-      mapObjectsRef.current.push(circle);
-
-      const geocoder = new window.kakao.maps.services.Geocoder();
-
-      const addShelterMarker = (shelter, index, position) => {
-        if (disposed) return;
-
-        const key = shelterKey(shelter);
-        shelterPositionsRef.current.set(key, position);
-
-        const marker = new window.kakao.maps.Marker({ position, map });
-        mapObjectsRef.current.push(marker);
-
-        window.kakao.maps.event.addListener(marker, "click", () => {
-          setSelectedShelterKey(key);
-          map.panTo(position);
-        });
-      };
-
-      filteredShelters.slice(0, 30).forEach((shelter, index) => {
-        const lat = Number(shelter.latitude ?? shelter.lat);
-        const lng = Number(shelter.longitude ?? shelter.lng);
-
-        if (Number.isFinite(lat) && Number.isFinite(lng)) {
-          addShelterMarker(shelter, index, new window.kakao.maps.LatLng(lat, lng));
-          return;
+        const center = new window.kakao.maps.LatLng(location.lat, location.lng);
+        let map = mapInstanceRef.current;
+        if (!map) {
+          map = new window.kakao.maps.Map(mapRef.current, { center, level: 5 });
+          const zoomControl = new window.kakao.maps.ZoomControl();
+          map.addControl(zoomControl, window.kakao.maps.ControlPosition.RIGHT);
+          mapInstanceRef.current = map;
+        } else {
+          map.relayout();
+          map.setCenter(center);
+          map.setLevel(5);
         }
 
-        if (!shelter.address) return;
-        geocoder.addressSearch(shelter.address, (result, status) => {
-          if (status !== window.kakao.maps.services.Status.OK || !result[0]) return;
-          const position = new window.kakao.maps.LatLng(Number(result[0].y), Number(result[0].x));
-          addShelterMarker(shelter, index, position);
+        const myLocation = new window.kakao.maps.CustomOverlay({
+          position: center,
+          content: createLocationMarker(),
+          yAnchor: 0.5,
+          xAnchor: 0.5,
+          zIndex: 10,
+        });
+        myLocation.setMap(map);
+        mapObjectsRef.current.push(myLocation);
+
+        filteredShelters.slice(0, 60).forEach((shelter) => {
+          const lat = Number(shelter.latitude);
+          const lng = Number(shelter.longitude);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+          const key = shelterKey(shelter);
+          const position = new window.kakao.maps.LatLng(lat, lng);
+          shelterPositionsRef.current.set(key, position);
+
+          const markerElement = createShelterMarker(key === selectedKey);
+          markerElement.addEventListener("click", () => {
+            setSelectedKey(key);
+            map.panTo(position);
+            map.setLevel(3);
+          });
+
+          const overlay = new window.kakao.maps.CustomOverlay({
+            position,
+            content: markerElement,
+            yAnchor: 0.5,
+            xAnchor: 0.5,
+            zIndex: key === selectedKey ? 9 : 5,
+          });
+          overlay.setMap(map);
+          mapObjectsRef.current.push(overlay);
+        });
+
+        requestAnimationFrame(() => {
+          map.relayout();
+          map.setCenter(center);
         });
       });
+    };
 
-      resizeObserver = new ResizeObserver(() => {
-        map.relayout();
-        map.setCenter(center);
-      });
-      resizeObserver.observe(mapRef.current);
-
-      requestAnimationFrame(() => {
-        map.relayout();
-        map.setCenter(center);
-      });
-    });
+    buildMap();
 
     return () => {
       disposed = true;
-      resizeObserver?.disconnect();
-      mapObjectsRef.current.forEach((obj) => obj.setMap?.(null));
-      mapObjectsRef.current = [];
+      if (timerId) window.clearTimeout(timerId);
     };
-  }, [selectedRegion, filteredShelters, radiusKm]);
+  }, [location, filteredShelters, selectedKey]);
 
-  const moveToShelter = (shelter) => {
+  const focusShelter = (shelter) => {
     const key = shelterKey(shelter);
-    setSelectedShelterKey(key);
+    setSelectedKey(key);
     const position = shelterPositionsRef.current.get(key);
     if (position && mapInstanceRef.current) {
       mapInstanceRef.current.panTo(position);
@@ -345,336 +407,211 @@ export default function ShelterPage({
     }
   };
 
+  const resetToMyLocation = () => {
+    if (!location || !mapInstanceRef.current || !window.kakao?.maps) return;
+    const center = new window.kakao.maps.LatLng(location.lat, location.lng);
+    mapInstanceRef.current.panTo(center);
+    mapInstanceRef.current.setLevel(5);
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <button onClick={onBackToHome} className="flex items-center gap-2.5 hover:opacity-80 cursor-pointer">
-            <div className="w-9 h-9 rounded-lg bg-[#0F2540] flex items-center justify-center shrink-0">
-              <ShieldAlert className="w-4.5 h-4.5 text-amber-400" />
+    <ServicePageLayout
+      activeNav="shelters"
+      onNavigate={onNavigate}
+      sectionTitle="서비스 안내"
+      pageTitle="대피시설 찾기"
+      breadcrumbParent="서비스 안내"
+      description="현재 위치 주변의 실제 민방위 대피시설을 거리순으로 확인할 수 있습니다."
+      wide
+      headerAction={
+        <button
+          type="button"
+          onClick={requestLocation}
+          disabled={locating}
+          className="inline-flex min-w-[230px] cursor-pointer items-center gap-3 border border-slate-300 bg-white px-4 py-2.5 text-left disabled:opacity-60"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-blue-50 text-blue-600">
+            <LocateFixed className="h-4.5 w-4.5" />
+          </span>
+          <span className="min-w-0">
+            <strong className="block text-[11px] font-extrabold text-[#0B2A52]">
+              {locating ? "현재 위치 확인 중..." : "내 위치 다시 확인"}
+            </strong>
+            <span className="mt-0.5 block truncate text-[10px] text-slate-400">
+              {locationLabel}
+            </span>
+          </span>
+        </button>
+      }
+    >
+        {!location ? (
+          <section className="bg-white rounded-[22px] border border-slate-200 shadow-sm p-12 text-center">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <LocateFixed className="w-7 h-7" />
             </div>
-            <div className="leading-tight text-left">
-              <div className="font-extrabold text-[#0F2540] text-lg tracking-tight">세이프트레이스</div>
-              <div className="text-[10px] text-slate-400">함께 만드는 더 안전한 일상</div>
-            </div>
-          </button>
-
-          <div className="flex items-center gap-4">
-            <button onClick={onBackToHome} className="text-xs font-semibold text-slate-500 hover:text-blue-600 cursor-pointer">홈으로</button>
-            <button type="button" className="relative cursor-pointer">
-              <Bell className="w-4 h-4 text-slate-500" />
-              <span className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-red-500 rounded-full ring-2 ring-white" />
+            <h2 className="mt-4 text-xl font-extrabold text-[#0B2A52]">현재 위치가 필요합니다</h2>
+            <p className="mt-2 text-sm text-slate-500">위치를 확인하면 가까운 대피시설을 거리순으로 보여드려요.</p>
+            <button
+              onClick={requestLocation}
+              disabled={locating}
+              className="mt-5 px-5 h-11 rounded-xl bg-[#0B2A52] text-white text-sm font-bold cursor-pointer disabled:opacity-60"
+            >
+              {locating ? "위치 확인 중..." : "내 위치 확인하기"}
             </button>
-            <span className="w-px h-4 bg-slate-200" />
-            <button onClick={onLogout} className="text-xs font-semibold text-slate-500 hover:text-red-500 cursor-pointer">로그아웃</button>
-          </div>
-        </div>
-      </header>
-
-      <div className="max-w-6xl mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-6 items-start">
-          <aside className="space-y-4">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3">
-              <h2 className="font-bold text-[#0F2540] px-2 py-1.5 mb-1">마이페이지</h2>
-              <nav className="space-y-1">
-                {TABS.map(({ key, label, icon: Icon }) => (
-                  <button
-                    key={key}
-                    onClick={() => onGoToMyPageTab?.(key)}
-                    className={`group w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors duration-200 cursor-pointer ${
-                      key === "regions"
-                        ? "bg-sky-100 text-sky-700"
-                        : "text-slate-600 hover:bg-sky-50 hover:text-sky-700"
-                    }`}
-                  >
-                    <span className="flex items-center gap-2.5">
-                      <span className={`w-6 h-6 rounded-full flex items-center justify-center ${key === "regions" ? "bg-sky-500 text-white" : "text-slate-400"}`}>
-                        <Icon className="w-3.5 h-3.5" />
-                      </span>
-                      {label}
-                    </span>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </button>
-                ))}
-              </nav>
-            </div>
-
-            <div className="bg-gradient-to-br from-[#0F2540] to-[#1B3A5C] rounded-2xl p-5 relative overflow-hidden shadow-sm">
-              <Heart className="w-28 h-28 text-white/10 fill-white/10 absolute -right-6 -bottom-6 rotate-[-12deg]" />
-              <p className="text-sm font-bold text-white leading-snug relative mb-4">
-                소중한 사람들의<br />안전을<br />함께 지켜요
-              </p>
-              <button
-                onClick={() => onGoToMyPageTab?.("family")}
-                className="relative w-9 h-9 rounded-full bg-amber-400 flex items-center justify-center text-[#0F2540] shadow-md hover:bg-amber-300 cursor-pointer"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </aside>
-
-          <main className="min-w-0 space-y-4">
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-              <button onClick={() => onGoToMyPageTab?.("regions")} className="hover:text-blue-600 cursor-pointer">마이페이지</button>
-              <ChevronRight className="w-3 h-3" />
-              <button onClick={() => onGoToMyPageTab?.("regions")} className="hover:text-blue-600 cursor-pointer">관심 지역</button>
-              <ChevronRight className="w-3 h-3" />
-              <span className="text-slate-600 font-semibold">주변 대피시설</span>
-            </div>
-
-            <section className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => onGoToMyPageTab?.("regions")}
-                  className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:border-blue-200 shadow-sm cursor-pointer"
-                  aria-label="관심 지역으로 돌아가기"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
-                      <MapPin className="w-5 h-5 text-blue-500" />
-                    </div>
-                    <h1 className="text-2xl font-extrabold text-[#0F2540]">주변 대피시설</h1>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-1 ml-11">
-                    선택한 관심 지역 주변의 대피시설을 지도와 목록으로 확인할 수 있습니다.
-                  </p>
-                </div>
+            {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
+          </section>
+        ) : (
+          <>
+            <section className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center"><Building2 className="w-5 h-5" /></div>
+                <div><div className="text-[11px] text-slate-400">검색 결과</div><div className="text-2xl font-extrabold text-[#0B2A52]">{filteredShelters.length}<span className="text-sm ml-0.5">개</span></div></div>
               </div>
-
-              <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-center gap-3 lg:max-w-[300px]">
-                <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center shrink-0">
-                  <Building2 className="w-5 h-5 text-blue-500" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-[#0F2540]">위급한 상황에 대비해</p>
-                  <p className="text-[10px] text-slate-500 mt-0.5">가까운 대피시설 위치를 미리 확인해두세요.</p>
-                </div>
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center"><MapPin className="w-5 h-5" /></div>
+                <div><div className="text-[11px] text-slate-400">1km 이내</div><div className="text-2xl font-extrabold text-emerald-600">{oneKmCount}<span className="text-sm ml-0.5">개</span></div></div>
+              </div>
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center"><Navigation className="w-5 h-5" /></div>
+                <div><div className="text-[11px] text-slate-400">가장 가까운 시설</div><div className="text-xl font-extrabold text-[#0B2A52]">{shelters[0] ? formatDistance(shelters[0].distanceM) : "-"}</div></div>
+              </div>
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center"><Home className="w-5 h-5" /></div>
+                <div className="min-w-0"><div className="text-[11px] text-slate-400">현재 기준 지역</div><div className="text-base font-extrabold text-[#0B2A52] truncate">{locationLabel}</div></div>
               </div>
             </section>
 
-            <section className="grid grid-cols-1 lg:grid-cols-[1fr_220px] gap-3">
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                    <Home className="w-5 h-5" />
-                  </div>
-                  <select
-                    value={selectedRegionId ?? ""}
-                    onChange={(e) => setSelectedRegionId(e.target.value)}
-                    disabled={regionsLoading || regions.length === 0}
-                    className="flex-1 min-w-0 outline-none text-sm font-bold text-[#0F2540] bg-transparent cursor-pointer"
-                  >
-                    {regions.map((region) => (
-                      <option key={region.memberRegionId} value={region.memberRegionId}>
-                        {region.regionLabel || "관심지역"} · {region.regionName}
-                      </option>
+            <section className="grid grid-cols-1 xl:grid-cols-[300px_minmax(0,1fr)_320px] gap-4 items-stretch">
+              <aside className="bg-white rounded-[20px] border border-slate-200 shadow-sm p-4 min-h-[650px] flex flex-col">
+                <div>
+                  <h2 className="font-extrabold text-[#0B2A52]">위치 및 검색</h2>
+                  <p className="text-[11px] text-slate-400 mt-1">{regionQuery || locationLabel}</p>
+                </div>
+
+                <div className="mt-4 flex items-center gap-2 border border-slate-200 rounded-xl px-3 h-11 focus-within:border-blue-300">
+                  <Search className="w-4 h-4 text-slate-400" />
+                  <input
+                    value={query}
+                    onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+                    placeholder="시설명, 주소 검색"
+                    className="flex-1 min-w-0 text-xs outline-none"
+                  />
+                </div>
+
+                <div className="mt-4">
+                  <div className="text-xs font-bold text-slate-600 mb-2">검색 반경</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[1, 3, 5].map((km) => (
+                      <button
+                        key={km}
+                        onClick={() => { setRadiusKm(km); setPage(1); }}
+                        className={`h-9 rounded-lg text-xs font-bold cursor-pointer ${radiusKm === km ? "bg-[#0B2A52] text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
+                      >
+                        {km}km
+                      </button>
                     ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-                  <Navigation className="w-4 h-4 text-blue-500" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-[10px] text-slate-400 mb-0.5">검색 반경</p>
-                  <select
-                    value={radiusKm}
-                    onChange={(e) => {
-                      setRadiusKm(Number(e.target.value));
-                      setPage(1);
-                    }}
-                    className="w-full outline-none text-sm font-bold text-[#0F2540] bg-transparent cursor-pointer"
-                  >
-                    <option value={1}>1km</option>
-                    <option value={3}>3km</option>
-                    <option value={5}>5km</option>
-                    <option value={10}>10km</option>
-                  </select>
-                </div>
-              </div>
-            </section>
-
-            {error && (
-              <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-xs text-red-600">
-                {error}
-              </div>
-            )}
-
-            <section className="grid grid-cols-1 xl:grid-cols-[1.05fr_1fr] gap-4 items-stretch">
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 min-h-[610px]">
-                <div className="relative h-full min-h-[584px] rounded-xl overflow-hidden bg-slate-100 border border-slate-100">
-                  <div ref={mapRef} className="absolute inset-0 w-full h-full" />
-
-                  <div className="absolute left-3 top-3 z-10 bg-white/95 border border-slate-200 rounded-xl shadow-sm p-3 text-[10px] text-slate-600 space-y-2 pointer-events-none">
-                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-blue-500" />선택한 지역</div>
-                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-slate-700" />대피시설</div>
-                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-blue-200 ring-1 ring-blue-300" />검색 반경 ({radiusKm}km)</div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!mapInstanceRef.current || !selectedRegion) return;
-                      const center = new window.kakao.maps.LatLng(Number(selectedRegion.latitude), Number(selectedRegion.longitude));
-                      mapInstanceRef.current.panTo(center);
-                      mapInstanceRef.current.setLevel(5);
-                    }}
-                    className="absolute right-3 bottom-3 z-10 w-10 h-10 rounded-xl bg-white border border-slate-200 shadow-md flex items-center justify-center text-slate-600 hover:text-blue-600 cursor-pointer"
-                    title="선택 지역으로 이동"
-                  >
-                    <LocateFixed className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 min-h-[610px] flex flex-col">
-                <div className="flex flex-col gap-3 mb-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-extrabold text-[#0F2540]">
-                        총 {filteredShelters.length}개의 대피시설이 있습니다.
-                      </p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{selectedRegion?.regionLabel || "선택 지역"} 기준 · 반경 {radiusKm}km</p>
-                    </div>
-                    <select
-                      value={sort}
-                      onChange={(e) => setSort(e.target.value)}
-                      className="text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-2.5 py-2 outline-none cursor-pointer bg-white"
-                    >
-                      <option value="distance">거리순</option>
-                      <option value="name">이름순</option>
-                    </select>
-                  </div>
-
-                  <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2.5 focus-within:border-blue-300">
-                    <Search className="w-4 h-4 text-slate-400 shrink-0" />
-                    <input
-                      value={query}
-                      onChange={(e) => {
-                        setQuery(e.target.value);
-                        setPage(1);
-                      }}
-                      placeholder="시설명 또는 주소 검색"
-                      className="flex-1 min-w-0 text-xs outline-none"
-                    />
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-0">
-                  {sheltersLoading ? (
-                    <div className="h-full min-h-[420px] flex items-center justify-center text-xs text-slate-400">주변 대피시설을 불러오는 중...</div>
+                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
+                  <div className="text-xs font-extrabold text-[#0B2A52]">검색 결과 <span className="text-blue-600">{filteredShelters.length}개</span></div>
+                  <button onClick={requestLocation} className="text-[11px] font-bold text-blue-600 cursor-pointer">위치 새로고침</button>
+                </div>
+
+                <div className="mt-2 flex-1 overflow-y-auto min-h-0 divide-y divide-slate-100">
+                  {loading ? (
+                    <div className="py-12 text-center text-xs text-slate-400">대피시설을 불러오는 중...</div>
                   ) : filteredShelters.length === 0 ? (
-                    <div className="h-full min-h-[420px] flex flex-col items-center justify-center text-center">
-                      <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
-                        <Building2 className="w-6 h-6 text-slate-300" />
-                      </div>
-                      <p className="text-sm font-bold text-slate-500">조건에 맞는 대피시설이 없습니다.</p>
-                      <p className="text-[11px] text-slate-400 mt-1">검색 반경을 넓히거나 검색어를 변경해보세요.</p>
-                    </div>
+                    <div className="py-12 text-center text-xs text-slate-400">조건에 맞는 대피시설이 없습니다.</div>
                   ) : (
-                    <div className="divide-y divide-slate-100 border-t border-slate-100">
-                      {visibleShelters.map((shelter, index) => {
-                        const key = shelterKey(shelter);
-                        const active = selectedShelterKey === key;
-
-                        return (
-                          <div
-                            key={key}
-                            onClick={() => moveToShelter(shelter)}
-                            className={`group flex items-center gap-3 py-3 px-1 cursor-pointer transition-colors ${active ? "bg-blue-50/60" : "hover:bg-slate-50"}`}
-                          >
-                            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
-                              <Building2 className="w-5 h-5 text-blue-500" />
-                            </div>
-
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-extrabold text-[#0F2540] truncate">{shelter.name}</p>
-                              <p className="text-[10px] text-slate-400 truncate mt-1">{shelter.address}</p>
-                            </div>
-
-                            <div className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 shrink-0">
-                              <MapPin className="w-3.5 h-3.5 text-blue-500" />
-                              {formatDistance(shelter.distanceM)}
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openKakaoMap(shelter);
-                              }}
-                              className="h-8 px-2.5 rounded-lg border border-blue-100 text-blue-600 text-[10px] font-bold flex items-center gap-1.5 shrink-0 hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all cursor-pointer"
-                            >
-                              <MapIcon className="w-3.5 h-3.5" />
-                              지도보기
-                            </button>
+                    visibleShelters.map((shelter) => {
+                      const key = shelterKey(shelter);
+                      const active = key === selectedKey;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => focusShelter(shelter)}
+                          className={`w-full text-left py-3 px-2 rounded-xl cursor-pointer transition-colors ${active ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="font-extrabold text-xs text-[#0B2A52] line-clamp-1">{shelter.name}</div>
+                            <div className="text-[11px] font-bold text-blue-600 shrink-0">{formatDistance(shelter.distanceM)}</div>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div className="text-[10px] text-slate-400 mt-1 line-clamp-2">{shelter.address}</div>
+                        </button>
+                      );
+                    })
                   )}
                 </div>
 
                 {filteredShelters.length > PAGE_SIZE && (
-                  <div className="pt-4 mt-auto border-t border-slate-100 flex items-center justify-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 disabled:opacity-30 cursor-pointer disabled:cursor-default"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-
-                    {Array.from({ length: totalPages }, (_, i) => i + 1)
-                      .filter((p) => totalPages <= 5 || Math.abs(p - page) <= 2)
-                      .map((p) => (
-                        <button
-                          key={p}
-                          type="button"
-                          onClick={() => setPage(p)}
-                          className={`w-8 h-8 rounded-lg text-xs font-bold cursor-pointer ${p === page ? "bg-blue-500 text-white" : "text-slate-500 hover:bg-slate-100"}`}
-                        >
-                          {p}
-                        </button>
-                      ))}
-
-                    <button
-                      type="button"
-                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={page === totalPages}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 disabled:opacity-30 cursor-pointer disabled:cursor-default"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
+                  <div className="pt-3 mt-2 border-t border-slate-100 flex items-center justify-center gap-2">
+                    <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="w-8 h-8 rounded-lg hover:bg-slate-100 disabled:opacity-30 flex items-center justify-center cursor-pointer"><ChevronLeft className="w-4 h-4" /></button>
+                    <span className="text-xs font-bold text-slate-500">{page} / {totalPages}</span>
+                    <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="w-8 h-8 rounded-lg hover:bg-slate-100 disabled:opacity-30 flex items-center justify-center cursor-pointer"><ChevronRight className="w-4 h-4" /></button>
                   </div>
                 )}
-              </div>
+              </aside>
+
+              <section className="bg-white rounded-[20px] border border-slate-200 shadow-sm p-3 min-h-[650px]">
+                <div className="relative h-full min-h-[624px] rounded-2xl overflow-hidden bg-slate-100">
+                  <div ref={mapRef} className="absolute inset-0" />
+                  <div className="absolute left-3 top-3 z-10 bg-white/95 border border-slate-200 shadow-sm rounded-xl px-3 py-2 text-[11px] font-semibold text-slate-600 flex flex-wrap gap-3 pointer-events-none">
+                    <span className="flex items-center gap-1.5"><i className="w-2.5 h-2.5 rounded-full bg-blue-500" />내 위치</span>
+                    <span className="flex items-center gap-1.5"><i className="w-2.5 h-2.5 rounded-full bg-emerald-500" />대피시설</span>
+                    <span className="flex items-center gap-1.5"><i className="w-2.5 h-2.5 rounded-full bg-red-500" />선택 시설</span>
+                  </div>
+                  <button
+                    onClick={resetToMyLocation}
+                    className="absolute right-4 bottom-4 z-10 w-11 h-11 rounded-xl bg-white border border-slate-200 shadow-md text-blue-600 flex items-center justify-center cursor-pointer hover:bg-blue-50"
+                    title="내 위치로 이동"
+                  >
+                    <LocateFixed className="w-5 h-5" />
+                  </button>
+                </div>
+              </section>
+
+              <aside className="bg-white rounded-[20px] border border-slate-200 shadow-sm p-5 min-h-[650px]">
+                {selectedShelter ? (
+                  <div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold">민방위 대피시설</span>
+                      <span className="text-xs font-bold text-blue-600">{formatDistance(selectedShelter.distanceM)}</span>
+                    </div>
+                    <h2 className="mt-4 text-xl font-extrabold text-[#0B2A52] leading-snug">{selectedShelter.name}</h2>
+                    <p className="mt-2 text-xs text-slate-500 leading-5">{selectedShelter.address}</p>
+
+                    <div className="mt-5 space-y-3 border-t border-slate-100 pt-4">
+                      <div className="flex items-center justify-between gap-3 text-xs"><span className="text-slate-400">거리</span><strong className="text-[#0B2A52]">{formatDistance(selectedShelter.distanceM)}</strong></div>
+                      <div className="flex items-center justify-between gap-3 text-xs"><span className="text-slate-400">수용 인원</span><strong className="text-[#0B2A52]">{selectedShelter.capacity ? `${selectedShelter.capacity}명` : "정보 없음"}</strong></div>
+                      <div className="flex items-center justify-between gap-3 text-xs"><span className="text-slate-400">시설 위치</span><strong className="text-[#0B2A52]">{selectedShelter.floorType || "정보 없음"}</strong></div>
+                    </div>
+
+                    <button
+                      onClick={() => openKakaoRoute(selectedShelter)}
+                      className="mt-6 w-full h-11 rounded-xl bg-[#0B2A52] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer hover:bg-[#173b65]"
+                    >
+                      <Navigation className="w-4 h-4" /> 길찾기
+                    </button>
+
+                    <div className="mt-5 rounded-xl bg-blue-50 border border-blue-100 p-3 text-[11px] text-slate-600 leading-5">
+                      재난 발생 시에는 재난문자·지자체 안내와 현장 통제를 우선 확인해주세요. 실제 출입 가능 여부는 현장 상황에 따라 달라질 수 있습니다.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center">
+                    <Building2 className="w-8 h-8 text-slate-300" />
+                    <p className="mt-3 text-sm font-bold text-slate-500">대피시설을 선택해주세요.</p>
+                  </div>
+                )}
+              </aside>
             </section>
 
-            <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
-              <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-                  <Info className="w-5 h-5 text-blue-500" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-extrabold text-[#0F2540]">대피시설 이용 시 유의사항</h3>
-                  <div className="mt-2 space-y-1.5 text-[11px] text-slate-500 leading-relaxed">
-                    <p>• 재난 발생 시에는 지자체·재난문자 등 최신 안내를 우선 확인해주세요.</p>
-                    <p>• 시설 운영 여부와 실제 출입 가능 여부는 현장 상황에 따라 달라질 수 있습니다.</p>
-                    <p>• 이동 전 주변 도로 통제, 침수, 화재 등 현재 위험요소를 함께 확인해주세요.</p>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </main>
-        </div>
-      </div>
-    </div>
+            {error && (
+              <div className="mt-4 bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-xs text-red-600">{error}</div>
+            )}
+          </>
+        )}
+    </ServicePageLayout>
   );
 }

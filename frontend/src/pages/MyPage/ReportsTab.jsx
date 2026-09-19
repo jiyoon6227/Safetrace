@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MapPin, Camera, ChevronRight, X, Clock, Search, FileText } from "lucide-react";
+import { MapPin, Camera, ChevronRight, X, XCircle, Clock, Search, FileText } from "lucide-react";
 import { authFetch } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import {
@@ -389,9 +389,26 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
                 {detailIncident?.region || reportAddresses[detailReport.reportId] || "주소 확인 중..."}
               </div>
 
+              {detailReport.status === "REJECTED" && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3.5">
+                  <div className="flex items-center gap-2 text-rose-600">
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    <h4 className="text-sm font-extrabold">반려 사유</h4>
+                  </div>
+                  <p className="mt-2 text-[13px] leading-5 text-slate-700 whitespace-pre-wrap">
+                    {detailReport.rejectReason || "반려 사유가 기록되지 않았습니다."}
+                  </p>
+                </div>
+              )}
+
               <div>
                 <h4 className="text-sm font-bold text-[#0F2540] mb-2">처리 타임라인</h4>
-                {!detailReport.incidentId ? (
+                {detailReport.status === "REJECTED" ? (
+                  <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
+                    <XCircle className="w-3.5 h-3.5 shrink-0 text-rose-500" />
+                    담당자 검토 후 반려 처리된 제보입니다.
+                  </div>
+                ) : !detailReport.incidentId ? (
                   <p className="text-xs text-slate-400">아직 담당자 확인 전입니다.</p>
                 ) : detailTimelineLoading ? (
                   <p className="text-xs text-slate-400">불러오는 중...</p>

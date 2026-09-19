@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  RefreshCw, AlertTriangle, Plus, Minus, LocateFixed, Building2, Camera, MapPin, ShieldAlert, ChevronRight, CalendarDays,
+  RefreshCw, AlertTriangle, Plus, Minus, LocateFixed, Building2, Camera, MapPin, ShieldAlert, ChevronRight, CalendarDays, Bell, Wrench,
 } from "lucide-react";
-import { STATUS_LABEL, STATUS_STYLE, markerColorOf, formatTimeAgo, STATIC_NOTICES, REPORT_DISASTER_TYPES, DISASTER_TYPE_COLOR } from "./constants";
+import { STATUS_LABEL, STATUS_STYLE, markerColorOf, formatTimeAgo, REPORT_DISASTER_TYPES, DISASTER_TYPE_COLOR } from "./constants";
+import { authFetch } from "../../api/client";
 
 export default function DashboardTab({
   error,
@@ -34,6 +35,7 @@ export default function DashboardTab({
   dailyMax,
   typeTotal,
   typeStats,
+  onOpenNotices,
 }) {
   const toggleLayer = (key) => setMapLayers((prev) => ({ ...prev, [key]: !prev[key] }));
 
@@ -42,6 +44,25 @@ export default function DashboardTab({
   const defaultStatsMonth = `${baseToday.getFullYear()}-${String(baseToday.getMonth() + 1).padStart(2, "0")}`;
   const [statsMonth, setStatsMonth] = useState(defaultStatsMonth);
   const [hoveredType, setHoveredType] = useState(null);
+
+  // 메인 공지사항과 같은 SF_NOTICE API를 사용한다.
+  // 대시보드에서는 상단 고정/최신순으로 정렬된 결과 중 4건만 미리보기로 노출.
+  const [dashboardNotices, setDashboardNotices] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+
+    authFetch("/api/notices")
+      .then((data) => {
+        if (!cancelled) setDashboardNotices(Array.isArray(data) ? data.slice(0, 4) : []);
+      })
+      .catch(() => {
+        if (!cancelled) setDashboardNotices([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const statsSummary = useMemo(() => {
     const fallbackTypes = ["침수", "화재", "산사태", "강풍", "폭염", "한파", "기타"];
@@ -474,19 +495,53 @@ export default function DashboardTab({
         <div className="bg-white rounded-2xl border border-slate-200 p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-bold text-[#0F2540] text-sm">주요 공지사항</h3>
-            <button className="text-xs font-semibold text-sky-600 hover:underline cursor-pointer">전체보기 →</button>
+            <button
+              type="button"
+              onClick={() => onOpenNotices?.()}
+              className="text-xs font-semibold text-sky-600 hover:underline cursor-pointer"
+            >
+              전체보기 →
+            </button>
           </div>
-          <ul className="space-y-3">
-            {STATIC_NOTICES.map((n) => (
-              <li key={n.title} className="flex items-start gap-2.5">
-                <n.icon className={`w-4 h-4 mt-0.5 shrink-0 ${n.tone}`} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-slate-600 leading-snug truncate">{n.title}</p>
-                </div>
-                <span className="text-[10px] text-slate-300 shrink-0">{n.date}</span>
-              </li>
-            ))}
-          </ul>
+
+          {dashboardNotices.length === 0 ? (
+            <div className="py-8 text-center text-[11px] text-slate-400">등록된 공지사항이 없습니다.</div>
+          ) : (
+            <ul className="space-y-3">
+              {dashboardNotices.map((notice) => {
+                const Icon = notice.noticeType === "URGENT"
+                  ? AlertTriangle
+                  : notice.noticeType === "MAINTENANCE"
+                    ? Wrench
+                    : Bell;
+                const tone = notice.noticeType === "URGENT"
+                  ? "text-red-500"
+                  : notice.noticeType === "MAINTENANCE"
+                    ? "text-amber-500"
+                    : "text-blue-500";
+
+                return (
+                  <li key={notice.noticeId}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenNotices?.(notice.noticeId)}
+                      className="flex w-full cursor-pointer items-start gap-2.5 text-left group"
+                    >
+                      <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${tone}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs text-slate-600 leading-snug truncate group-hover:text-sky-600">
+                          {notice.isPinned === "Y" ? "[고정] " : ""}{notice.title}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-slate-300 shrink-0">
+                        {formatTimeAgo(notice.createdAt)}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       </div>
     </main>

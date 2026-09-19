@@ -239,10 +239,11 @@ export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenS
 
           <button
             onClick={() => selectTab("info")}
-            className="flex items-center gap-2 font-bold text-[#0F2540] text-base hover:text-sky-600 transition cursor-pointer"
+            className="flex items-center gap-2.5 font-extrabold text-[#0F2540] text-[22px] tracking-tight hover:text-sky-600 transition cursor-pointer"
           >
-            <ShieldAlert className="w-5 h-5 text-amber-500" /> 마이페이지
-          </button>
+            <ShieldAlert className="w-6 h-6 text-amber-500" />
+            마이페이지
+          </button>          
 
           <div className="flex items-center gap-4">
             <button onClick={onBackToHome} className="text-xs font-semibold text-slate-500 hover:text-blue-600 cursor-pointer transition">홈으로</button>

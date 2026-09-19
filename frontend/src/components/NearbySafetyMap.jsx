@@ -102,6 +102,23 @@ function makeMyLocationElement() {
   return marker;
 }
 
+
+const LOCATION_CACHE_KEY = "safetrace:last-location";
+
+function readCachedLocation() {
+  try {
+    const raw = window.sessionStorage.getItem(LOCATION_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const lat = Number(parsed?.lat);
+    const lng = Number(parsed?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { lat, lng };
+  } catch {
+    return null;
+  }
+}
+
 export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
   const compact = mode === "compact";
 
@@ -113,10 +130,12 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState("");
 
-  const [location, setLocation] = useState(null);
-  const [locationLabel, setLocationLabel] = useState("현재 위치 확인 중");
+  const [location, setLocation] = useState(() => readCachedLocation());
+  const [locationLabel, setLocationLabel] = useState(() =>
+    readCachedLocation() ? "이전에 확인한 위치" : "위치를 확인해주세요"
+  );
   const [locationError, setLocationError] = useState("");
-  const [locating, setLocating] = useState(true);
+  const [locating, setLocating] = useState(false);
   const [locationNotice, setLocationNotice] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -223,6 +242,11 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
         };
 
         setLocation(nextLocation);
+        try {
+          window.sessionStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify(nextLocation));
+        } catch {
+          // sessionStorage 사용 불가 환경에서는 위치만 현재 화면에서 사용한다.
+        }
         setLocating(false);
         setLocationNotice("현재 위치를 다시 확인했어요.");
         setRefreshKey((value) => value + 1);
@@ -256,9 +280,6 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
     );
   }, [compact]);
 
-  useEffect(() => {
-    requestLocation();
-  }, [requestLocation]);
 
   /* 위치가 잡히면 실제 Kakao 지도의 중심을 현재 위치로 옮긴다. */
   useEffect(() => {
@@ -269,6 +290,55 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
     mapInstanceRef.current.setLevel(compact ? 5 : 4);
     mapInstanceRef.current.relayout();
   }, [mapReady, location, compact]);
+
+  /*
+   * 전체 안전지도에서는 1km / 3km / 5km 버튼을 누를 때
+   * 단순히 데이터만 필터링하는 게 아니라 지도 화면도 실제 반경에 맞춰 확대/축소한다.
+   *
+   * compact(메인 미리보기) 지도는 기존 화면 크기를 그대로 유지한다.
+   */
+  useEffect(() => {
+    if (
+      compact ||
+      !mapReady ||
+      !location ||
+      !mapInstanceRef.current ||
+      !window.kakao?.maps?.LatLngBounds
+    ) {
+      return;
+    }
+
+    const map = mapInstanceRef.current;
+
+    // 위도 1도 ≈ 111km.
+    // 경도는 위도에 따라 실제 거리가 달라지므로 cos 값을 반영한다.
+    const latDelta = radiusKm / 111;
+    const cosLat = Math.max(
+      Math.cos((location.lat * Math.PI) / 180),
+      0.2
+    );
+    const lngDelta = radiusKm / (111 * cosLat);
+
+    const bounds = new window.kakao.maps.LatLngBounds();
+
+    // 현재 위치를 중심으로 반경 사각 범위를 만들고,
+    // 카카오 지도 setBounds가 이 범위를 모두 보이게 맞춘다.
+    bounds.extend(
+      new window.kakao.maps.LatLng(
+        location.lat - latDelta,
+        location.lng - lngDelta
+      )
+    );
+    bounds.extend(
+      new window.kakao.maps.LatLng(
+        location.lat + latDelta,
+        location.lng + lngDelta
+      )
+    );
+
+    map.relayout();
+    map.setBounds(bounds, 70, 70, 70, 70);
+  }, [compact, mapReady, location, radiusKm]);
 
   const fetchShelters = useCallback(
     async (lat, lng) => {
@@ -300,7 +370,7 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
       for (const guName of queries) {
         try {
           const data = await authFetch(
-            `/api/environment/shelters?guName=${encodeURIComponent(guName)}&lat=${lat}&lng=${lng}&limit=50`
+            `/api/environment/shelters?guName=${encodeURIComponent(guName)}&lat=${lat}&lng=${lng}&limit=100`
           );
           if (Array.isArray(data) && data.length > 0) return data;
         } catch (error) {
@@ -569,13 +639,29 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={onOpenFullMap}
-            className="flex cursor-pointer items-center gap-0.5 rounded-lg px-2 py-1 text-sm font-semibold text-[#0B2A52] transition-all duration-200 hover:-translate-y-0.5 hover:bg-blue-50 hover:text-blue-600 hover:shadow-sm"
-          >
-            더보기 <ChevronRight className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={requestLocation}
+              disabled={locating}
+              className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-blue-100 bg-blue-50 px-3 text-[11px] font-bold text-blue-700 transition-colors hover:border-blue-200 hover:bg-blue-100 disabled:cursor-wait disabled:opacity-70"
+            >
+              {locating ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <LocateFixed className="h-3.5 w-3.5" />
+              )}
+              {locating ? "위치 확인 중" : location ? "내 위치 다시 찾기" : "내 위치 확인"}
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenFullMap}
+              className="flex cursor-pointer items-center gap-0.5 text-sm font-semibold text-[#0B2A52] transition hover:text-blue-600"
+            >
+              더보기 <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         <div className="relative mx-3 mb-3 h-[338px] overflow-hidden rounded-[14px] border border-slate-200 bg-[#eef2f7]">
@@ -597,32 +683,30 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
             </div>
           )}
 
-          {mapReady && location && (
-            <button
-              type="button"
-              onClick={moveToCurrentLocation}
-              className="absolute bottom-14 right-3 z-10 flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl bg-white text-blue-600 shadow-md transition-all duration-200 hover:-translate-y-1 hover:bg-blue-50 hover:shadow-lg active:translate-y-0 active:scale-95"
-              title="내 위치"
-            >
-              <LocateFixed className="h-4 w-4" />
-            </button>
-          )}
-
-          {mapReady && (locating || locationError) && !location && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/72 px-6 backdrop-blur-[1px]">
+          {mapReady && !location && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/70 px-6 backdrop-blur-[1px]">
               <div className="w-full max-w-[300px] rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-xl">
-                <MapPin className="mx-auto h-7 w-7 text-blue-600" />
+                {locating ? (
+                  <RefreshCw className="mx-auto h-7 w-7 animate-spin text-blue-600" />
+                ) : (
+                  <MapPin className="mx-auto h-7 w-7 text-blue-600" />
+                )}
+
                 <p className="mt-2 text-[13px] font-extrabold text-[#0B2A52]">
-                  {locating ? "현재 위치를 확인하고 있어요." : "현재 위치를 확인해주세요."}
+                  {locating ? "현재 위치를 확인하고 있어요." : "내 위치를 확인해주세요."}
                 </p>
-                <p className="mt-1 text-[11px] leading-5 text-slate-500">
-                  {locating ? "주변 안전정보를 준비 중입니다." : locationError}
+
+                <p className={`mt-1 text-[11px] leading-5 ${locationError ? "text-red-500" : "text-slate-500"}`}>
+                  {locating
+                    ? "주변 현장 제보와 대피시설을 불러올 준비를 하고 있어요."
+                    : locationError || "버튼을 누르면 현재 위치 기준으로 주변 안전정보를 보여드려요."}
                 </p>
+
                 {!locating && (
                   <button
                     type="button"
                     onClick={requestLocation}
-                    className="mt-3 h-9 cursor-pointer rounded-lg bg-[#0B2A52] px-4 text-[11px] font-bold text-white transition-all duration-200 hover:bg-[#173b65] hover:shadow-md active:scale-[0.98]"
+                    className="mt-3 h-9 cursor-pointer rounded-lg bg-[#0B2A52] px-4 text-[11px] font-bold text-white transition-colors hover:bg-[#173b65]"
                   >
                     내 위치 확인
                   </button>
@@ -705,14 +789,14 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
             type="button"
             onClick={requestLocation}
             disabled={locating}
-            className="mt-4 flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-blue-100 bg-blue-50 text-xs font-bold text-blue-700 transition-all duration-200 hover:-translate-y-1 hover:border-blue-200 hover:bg-blue-100 hover:shadow-md active:translate-y-0 active:scale-[0.99] disabled:cursor-wait disabled:opacity-70"
+            className="mt-4 flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-blue-100 bg-blue-50 text-xs font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-wait disabled:opacity-70"
           >
             {locating ? (
               <RefreshCw className="h-4 w-4 animate-spin" />
             ) : (
               <LocateFixed className="h-4 w-4" />
             )}
-            {locating ? "위치 확인 중..." : "내 위치 다시 찾기"}
+            {locating ? "위치 확인 중..." : location ? "내 위치 다시 찾기" : "내 위치 확인"}
           </button>
 
           {(locationNotice || locationError) && (
@@ -727,43 +811,72 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="text-[14px] font-extrabold text-[#0B2A52]">지도에 표시할 정보</h3>
+          <h3 className="text-[14px] font-extrabold text-[#0B2A52]">지도에 표시할 항목</h3>
+
           <div className="mt-4 grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => setShowIncidents((value) => !value)}
-              className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-3 text-xs font-bold transition-all duration-200 hover:-translate-y-1 hover:shadow-md active:translate-y-0 active:scale-[0.98] ${
+              className={`flex h-10 cursor-pointer items-center gap-2 rounded-lg border px-3 text-left text-[11px] font-bold transition-colors ${
                 showIncidents
-                  ? "border-red-200 bg-red-50 text-red-600"
+                  ? "border-slate-200 bg-[#F6F8FC] text-[#0B2A52]"
                   : "border-slate-200 bg-white text-slate-400"
-              }`}
+              } hover:border-blue-200 hover:bg-blue-50/40`}
             >
-              <span className="h-3 w-3 rounded-full bg-red-500" /> 현장 상황
+              <span
+                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[9px] font-black ${
+                  showIncidents
+                    ? "border-blue-500 bg-blue-500 text-white"
+                    : "border-slate-300 bg-white text-transparent"
+                }`}
+              >
+                ✓
+              </span>
+
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-500 text-[12px] font-black text-white shadow-sm">
+                !
+              </span>
+
+              <span>현장 제보</span>
             </button>
 
             <button
               type="button"
               onClick={() => setShowShelters((value) => !value)}
-              className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-3 text-xs font-bold transition-all duration-200 hover:-translate-y-1 hover:shadow-md active:translate-y-0 active:scale-[0.98] ${
+              className={`flex h-10 cursor-pointer items-center gap-2 rounded-lg border px-3 text-left text-[11px] font-bold transition-colors ${
                 showShelters
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  ? "border-slate-200 bg-[#F6F8FC] text-[#0B2A52]"
                   : "border-slate-200 bg-white text-slate-400"
-              }`}
+              } hover:border-blue-200 hover:bg-blue-50/40`}
             >
-              <span className="h-3 w-3 rounded-full bg-emerald-500" /> 대피시설
+              <span
+                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[9px] font-black ${
+                  showShelters
+                    ? "border-blue-500 bg-blue-500 text-white"
+                    : "border-slate-300 bg-white text-transparent"
+                }`}
+              >
+                ✓
+              </span>
+
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[12px] font-black text-white shadow-sm">
+                ⌂
+              </span>
+
+              <span>대피시설</span>
             </button>
           </div>
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="text-[14px] font-extrabold text-[#0B2A52]">검색 반경</h3>
+          <h3 className="text-[14px] font-extrabold text-[#0B2A52]">검색 반경 설정</h3>
           <div className="mt-3 grid grid-cols-3 gap-2">
             {[1, 3, 5].map((radius) => (
               <button
                 key={radius}
                 type="button"
                 onClick={() => setRadiusKm(radius)}
-                className={`h-10 cursor-pointer rounded-xl text-xs font-extrabold transition-all duration-200 hover:-translate-y-1 hover:shadow-md active:translate-y-0 active:scale-[0.98] ${
+                className={`h-10 cursor-pointer rounded-xl text-xs font-extrabold transition-colors hover:border-blue-300 hover:bg-blue-50 ${
                   radiusKm === radius
                     ? "bg-blue-600 text-white"
                     : "border border-slate-200 bg-white text-slate-600"
@@ -778,14 +891,14 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
             <div>
-              <h3 className="text-[14px] font-extrabold text-[#0B2A52]">주변 정보</h3>
+              <h3 className="text-[14px] font-extrabold text-[#0B2A52]">주변 정보 목록</h3>
               <p className="mt-0.5 text-[10px] text-slate-400">총 {visibleItems.length}건</p>
             </div>
             <button
               type="button"
               onClick={refreshNearbyData}
               disabled={dataLoading}
-              className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-500 transition-all duration-200 hover:-translate-y-1 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 hover:shadow-md active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
+              className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-500 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-wait disabled:opacity-60"
               title="주변 정보 새로고침"
             >
               <RefreshCw
@@ -812,7 +925,7 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
                   key={item.key}
                   type="button"
                   onClick={() => moveToItem(item)}
-                  className={`flex w-full cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-3 text-left transition-all duration-150 last:border-0 hover:-translate-y-[2px] hover:bg-blue-50/70 hover:shadow-sm hover:z-10 ${
+                  className={`flex w-full cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-3 text-left last:border-0 transition-colors hover:bg-blue-50/60 ${
                     selectedItem?.key === item.key ? "bg-blue-50/70" : "bg-white"
                   }`}
                 >
@@ -871,7 +984,7 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
             <button
               type="button"
               onClick={moveToCurrentLocation}
-              className="absolute bottom-5 right-5 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl bg-white text-blue-600 shadow-lg transition-all duration-200 hover:-translate-y-0.5 hover:bg-blue-50 hover:shadow-xl active:translate-y-0 active:scale-95"
+              className="absolute bottom-5 right-5 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl bg-white text-blue-600 shadow-lg hover:bg-blue-50"
               title="내 위치"
             >
               <LocateFixed className="h-5 w-5" />
@@ -894,7 +1007,7 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
                   <button
                     type="button"
                     onClick={requestLocation}
-                    className="mt-4 h-10 cursor-pointer rounded-xl bg-[#0B2A52] px-5 text-xs font-bold text-white transition-all duration-200 hover:-translate-y-1 hover:bg-[#173b65] hover:shadow-lg active:translate-y-0 active:scale-[0.98]"
+                    className="mt-4 h-10 rounded-xl bg-[#0B2A52] px-5 text-xs font-bold text-white"
                   >
                     내 위치 확인
                   </button>
@@ -936,14 +1049,14 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap }) {
             <button
               type="button"
               onClick={() => openDirections(selectedItem)}
-              className="flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#0B2A52] px-5 text-xs font-bold text-white transition-all duration-200 hover:-translate-y-1 hover:bg-[#173b65] hover:shadow-lg active:translate-y-0 active:scale-[0.98]"
+              className="flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#0B2A52] px-5 text-xs font-bold text-white hover:bg-[#173b65]"
             >
               <Navigation className="h-4 w-4" /> 길찾기
             </button>
           </div>
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-xs text-slate-500 shadow-sm">
-            지도 마커나 왼쪽 목록을 선택하면 위치 정보를 확인할 수 있습니다.
+            지도 마커나 왼쪽 목록을 클릭하면 아래에서 위치 정보를 확인할 수 있습니다.
           </div>
         )}
       </section>

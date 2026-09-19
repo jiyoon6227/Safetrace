@@ -6,6 +6,7 @@
 -- ============================================
 
 -- 1. 기존 테이블/시퀀스 전부 삭제 (재실행 시 충돌 방지, FK 있는 테이블부터 역순으로 삭제)
+DROP TABLE SF_NOTICE CASCADE CONSTRAINTS;
 DROP TABLE SF_NOTIFICATION CASCADE CONSTRAINTS;
 DROP TABLE SF_SAFETY_CHECK CASCADE CONSTRAINTS;
 DROP TABLE SF_FAMILY_RELATION CASCADE CONSTRAINTS;
@@ -29,10 +30,11 @@ DROP SEQUENCE SEQ_SF_REPORT_PHOTO;
 DROP SEQUENCE SEQ_SF_FAMILY_RELATION;
 DROP SEQUENCE SEQ_SF_SAFETY_CHECK;
 DROP SEQUENCE SEQ_SF_NOTIFICATION;
+DROP SEQUENCE SEQ_SF_NOTICE;
 
 -- 1-1. 부서 테이블============================================
 --      STAFF 소속 부서. 화면 표시/필터용이며 자동배정 로직에는 쓰지 않음
---      회원가입으로 만들어지지 않고 DB에 직접 시딩 (STAFF/ADMIN 계정 자체가 direct insert이므로)
+--      회원가입으로 만들어지지 않고 DB에 직접 시딩 (STAFF 계정 자체가 direct insert이므로)
 CREATE TABLE SF_DEPARTMENT (
     DEPARTMENT_ID   NUMBER          PRIMARY KEY,   -- 부서 PK (SEQ_SF_DEPARTMENT로 채번)
     NAME            VARCHAR2(50)    NOT NULL        -- 부서명 (예: 재난안전과, 소방본부)
@@ -55,17 +57,18 @@ CREATE TABLE SF_MEMBER (
     PROFILE_IMAGE_URL         VARCHAR2(500),                      -- 프로필 이미지 경로
     ADDRESS                   VARCHAR2(200),                      -- 주소 (시/군/구 수준, 배송 등 실사용 목적 아님)
     ADDRESS_DETAIL            VARCHAR2(200),                      -- 상세주소
-    ROLE                      VARCHAR2(20)    DEFAULT 'USER' NOT NULL,  -- 권한 구분: USER(시민) / STAFF(담당 직원) / ADMIN(관리자)
-    DEPARTMENT_ID              NUMBER          REFERENCES SF_DEPARTMENT(DEPARTMENT_ID),  -- 소속 부서 FK (STAFF/ADMIN만 사용, 시민은 NULL)
+    ROLE                      VARCHAR2(20)    DEFAULT 'USER' NOT NULL,  -- 권한 구분: USER(시민) / STAFF(담당 직원)
+    DEPARTMENT_ID              NUMBER          REFERENCES SF_DEPARTMENT(DEPARTMENT_ID),  -- 소속 부서 FK (STAFF만 사용, 시민은 NULL)
     EMAIL_NOTIFY_ENABLED      CHAR(1)         DEFAULT 'Y' NOT NULL,  -- 가족 안전확인 이메일 알림 수신 여부 (Y/N)
     DISASTER_NOTIFY_ENABLED   CHAR(1)         DEFAULT 'Y' NOT NULL,  -- 관심지역 재난 알림 수신 여부 (Y/N)
     REPORT_NOTIFY_ENABLED     CHAR(1)         DEFAULT 'Y' NOT NULL,  -- 내 제보 상태변경 알림 수신 여부 (Y/N)
     IS_WITHDRAWN              CHAR(1)         DEFAULT 'N' NOT NULL,  -- 탈퇴 여부 (Y/N) - 소프트 삭제, 실제 행은 안 지움
     WITHDRAWN_AT               TIMESTAMP,                          -- 탈퇴 처리 일시 (미탈퇴 시 NULL)
-    CREATED_AT                TIMESTAMP       DEFAULT SYSTIMESTAMP  -- 가입일시
+    CREATED_AT                TIMESTAMP       DEFAULT SYSTIMESTAMP, -- 가입일시
+    CONSTRAINT CK_SF_MEMBER_ROLE CHECK (ROLE IN ('USER', 'STAFF'))
 );
 
-COMMENT ON TABLE SF_MEMBER IS '회원 (시민 USER / 담당직원 STAFF / 관리자 ADMIN 통합 테이블)';
+COMMENT ON TABLE SF_MEMBER IS '회원 (시민 USER / 담당직원 STAFF 통합 테이블)';
 COMMENT ON COLUMN SF_MEMBER.MEMBER_ID IS '회원 PK (SEQ_SF_MEMBER로 채번)';
 COMMENT ON COLUMN SF_MEMBER.LOGIN_ID IS '로그인 아이디, 중복 불가';
 COMMENT ON COLUMN SF_MEMBER.PASSWORD IS 'BCrypt 등으로 암호화된 비밀번호';
@@ -75,8 +78,8 @@ COMMENT ON COLUMN SF_MEMBER.PHONE IS '전화번호';
 COMMENT ON COLUMN SF_MEMBER.PROFILE_IMAGE_URL IS '프로필 이미지 경로';
 COMMENT ON COLUMN SF_MEMBER.ADDRESS IS '주소 (시/군/구 수준, 배송 등 실사용 목적 아님)';
 COMMENT ON COLUMN SF_MEMBER.ADDRESS_DETAIL IS '상세주소';
-COMMENT ON COLUMN SF_MEMBER.ROLE IS '권한 구분: USER(시민) / STAFF(담당 직원) / ADMIN(관리자)';
-COMMENT ON COLUMN SF_MEMBER.DEPARTMENT_ID IS '소속 부서 FK (STAFF/ADMIN만 사용, 시민은 NULL)';
+COMMENT ON COLUMN SF_MEMBER.ROLE IS '권한 구분: USER(시민) / STAFF(담당 직원)';
+COMMENT ON COLUMN SF_MEMBER.DEPARTMENT_ID IS '소속 부서 FK (STAFF만 사용, 시민은 NULL)';
 COMMENT ON COLUMN SF_MEMBER.EMAIL_NOTIFY_ENABLED IS '가족 안전확인 이메일 알림 수신 여부 (Y/N)';
 COMMENT ON COLUMN SF_MEMBER.DISASTER_NOTIFY_ENABLED IS '관심지역 재난 알림 수신 여부 (Y/N)';
 COMMENT ON COLUMN SF_MEMBER.REPORT_NOTIFY_ENABLED IS '내 제보 상태변경 알림 수신 여부 (Y/N)';
@@ -311,6 +314,38 @@ COMMENT ON COLUMN SF_NOTIFICATION.CONTENT IS '알림 내용';
 COMMENT ON COLUMN SF_NOTIFICATION.INCIDENT_ID IS '관련 사건 FK (없으면 NULL)';
 COMMENT ON COLUMN SF_NOTIFICATION.CREATED_AT IS '알림 생성일시';
 
+
+-- 6-2. 공지사항 테이블============================================
+--      메인 헤더 "공지사항"에서 비로그인 사용자도 조회 가능.
+--      작성/수정/삭제는 STAFF만 가능하고, 상세 진입 시 VIEW_COUNT를 +1 한다.
+CREATE TABLE SF_NOTICE (
+    NOTICE_ID         NUMBER          PRIMARY KEY,  -- 공지 PK (SEQ_SF_NOTICE로 채번)
+    TITLE             VARCHAR2(200)   NOT NULL,     -- 공지 제목
+    CONTENT           VARCHAR2(2000)  NOT NULL,     -- 공지 내용
+    NOTICE_TYPE       VARCHAR2(20)    DEFAULT 'NORMAL' NOT NULL,  -- NORMAL(안내) / URGENT(긴급) / MAINTENANCE(점검)
+    IS_PINNED         CHAR(1)         DEFAULT 'N' NOT NULL,       -- 상단 고정 여부 (Y/N)
+    VIEW_COUNT        NUMBER          DEFAULT 0 NOT NULL,         -- 상세 조회수
+    NOTICE_IMAGE_URL  VARCHAR2(500),                              -- 공지 이미지 URL (없으면 NULL)
+    WRITER_ID         NUMBER          NOT NULL REFERENCES SF_MEMBER(MEMBER_ID),  -- 작성 STAFF FK
+    CREATED_AT        TIMESTAMP       DEFAULT SYSTIMESTAMP,       -- 작성일시
+    UPDATED_AT        TIMESTAMP       DEFAULT SYSTIMESTAMP,       -- 최종 수정일시
+    CONSTRAINT CK_SF_NOTICE_TYPE CHECK (NOTICE_TYPE IN ('NORMAL', 'URGENT', 'MAINTENANCE')),
+    CONSTRAINT CK_SF_NOTICE_PINNED CHECK (IS_PINNED IN ('Y', 'N')),
+    CONSTRAINT CK_SF_NOTICE_VIEW_COUNT CHECK (VIEW_COUNT >= 0)
+);
+
+COMMENT ON TABLE SF_NOTICE IS '공지사항 - 비로그인 포함 전체 공개, STAFF 작성/수정/삭제';
+COMMENT ON COLUMN SF_NOTICE.NOTICE_ID IS '공지 PK (SEQ_SF_NOTICE로 채번)';
+COMMENT ON COLUMN SF_NOTICE.TITLE IS '공지 제목';
+COMMENT ON COLUMN SF_NOTICE.CONTENT IS '공지 내용';
+COMMENT ON COLUMN SF_NOTICE.NOTICE_TYPE IS '공지 유형: NORMAL(안내) / URGENT(긴급) / MAINTENANCE(점검)';
+COMMENT ON COLUMN SF_NOTICE.IS_PINNED IS '상단 고정 여부 (Y/N)';
+COMMENT ON COLUMN SF_NOTICE.VIEW_COUNT IS '조회수 - 상세 조회 시마다 +1';
+COMMENT ON COLUMN SF_NOTICE.NOTICE_IMAGE_URL IS '첨부 이미지 URL (/uploads/파일명, 없으면 NULL)';
+COMMENT ON COLUMN SF_NOTICE.WRITER_ID IS '공지 작성 STAFF 회원 FK';
+COMMENT ON COLUMN SF_NOTICE.CREATED_AT IS '작성일시';
+COMMENT ON COLUMN SF_NOTICE.UPDATED_AT IS '최종 수정일시';
+
 -- 지역+상태로 사건 목록 조회할 때 자주 쓰이므로 복합 인덱스 생성
 CREATE INDEX IDX_SF_INCIDENT_REGION_STATUS ON SF_INCIDENT(REGION, STATUS);
 -- 재난유형+시간순으로 제보 조회/통계 낼 때 자주 쓰이므로 복합 인덱스 생성
@@ -323,6 +358,10 @@ CREATE INDEX IDX_SF_SAFETY_REQUESTER ON SF_SAFETY_CHECK(REQUESTER_ID);
 CREATE INDEX IDX_SF_MEMBER_REGION_MEMBER ON SF_MEMBER_REGION(MEMBER_ID);
 -- 특정 회원의 최근 알림을 시간순으로 조회할 때 자주 쓰이므로 복합 인덱스 생성
 CREATE INDEX IDX_SF_NOTIFICATION_MEMBER_TIME ON SF_NOTIFICATION(MEMBER_ID, CREATED_AT);
+-- 공지 목록: 고정 여부 우선 + 최신순 조회
+CREATE INDEX IDX_SF_NOTICE_PINNED_TIME ON SF_NOTICE(IS_PINNED, CREATED_AT);
+-- 공지 유형 필터용
+CREATE INDEX IDX_SF_NOTICE_TYPE_TIME ON SF_NOTICE(NOTICE_TYPE, CREATED_AT);
 
 -- 7. 시퀀스 생성 (각 테이블 PK 채번용)============================================
 CREATE SEQUENCE SEQ_SF_MEMBER START WITH 1 INCREMENT BY 1 NOCACHE;
@@ -336,6 +375,7 @@ CREATE SEQUENCE SEQ_SF_REPORT_PHOTO START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_FAMILY_RELATION START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_SAFETY_CHECK START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_NOTIFICATION START WITH 1 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_SF_NOTICE START WITH 1 INCREMENT BY 1 NOCACHE;
 
 -- 더미 데이터 --
 -- 부서 시딩 (회원가입으로 안 만들어지므로 여기서 직접 넣음)
@@ -348,3 +388,26 @@ INSERT INTO SF_DEPARTMENT (DEPARTMENT_ID, NAME) VALUES (SEQ_SF_DEPARTMENT.NEXTVA
 INSERT INTO SF_MEMBER (MEMBER_ID, LOGIN_ID, PASSWORD, NAME, EMAIL, ROLE, DEPARTMENT_ID)
 VALUES (SEQ_SF_MEMBER.NEXTVAL, 's', '$2a$10$3G6nByOWnMaAmupkwHj5felIP08YE9eT8lN7Wf2z1wgTgR4sBarfq', '곽지윤', 'test123@example.com', 'STAFF', 1);
 COMMIT;
+
+-- 공지사항 더미 데이터 (작성자: 위 STAFF 계정 = MEMBER_ID 1)
+INSERT INTO SF_NOTICE (NOTICE_ID, TITLE, CONTENT, NOTICE_TYPE, IS_PINNED, WRITER_ID)
+VALUES (SEQ_SF_NOTICE.NEXTVAL, '세이프트레이스 서비스 오픈 안내',
+        '세이프트레이스 재난 상황관리 서비스가 오픈되었습니다. 주요 기능과 이용 방법을 확인해 주세요.',
+        'NORMAL', 'Y', 1);
+
+INSERT INTO SF_NOTICE (NOTICE_ID, TITLE, CONTENT, NOTICE_TYPE, IS_PINNED, WRITER_ID)
+VALUES (SEQ_SF_NOTICE.NEXTVAL, '호우 시 하천변 및 지하차도 접근 자제 안내',
+        '집중호우 시 하천변, 지하차도, 저지대 등 침수 위험 지역 접근을 자제하고 현장 안내와 재난문자를 우선 확인해 주세요.',
+        'URGENT', 'Y', 1);
+
+INSERT INTO SF_NOTICE (NOTICE_ID, TITLE, CONTENT, NOTICE_TYPE, IS_PINNED, WRITER_ID)
+VALUES (SEQ_SF_NOTICE.NEXTVAL, '시스템 정기 점검 안내',
+        '보다 안정적인 서비스 제공을 위해 정기 점검을 진행합니다. 점검 시간 동안 일부 기능 이용이 제한될 수 있습니다.',
+        'MAINTENANCE', 'N', 1);
+
+INSERT INTO SF_NOTICE (NOTICE_ID, TITLE, CONTENT, NOTICE_TYPE, IS_PINNED, WRITER_ID)
+VALUES (SEQ_SF_NOTICE.NEXTVAL, '재난 행동요령 메뉴 이용 안내',
+        '메인 메뉴의 행동요령에서 재난 유형별 사전 대비 및 발생 시 행동수칙을 확인할 수 있습니다.',
+        'NORMAL', 'N', 1);
+COMMIT;
+

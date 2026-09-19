@@ -68,6 +68,9 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/incidents/region/**", "/api/incidents/nearby", "/api/incidents/*/timeline").permitAll()
                 .requestMatchers("/api/environment/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/notices", "/api/notices/**").permitAll()  // 공지 목록/상세는 비로그인 공개
+                .requestMatchers("/api/ai/briefing", "/api/ai/chat").permitAll()
+                .requestMatchers("/error").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/incidents/*").permitAll()
                 .requestMatchers("/api/safety-checks/token/**").permitAll()  // 이메일 링크 - 로그인 없이 응답 가능
                 .requestMatchers("/ws/**").permitAll()
