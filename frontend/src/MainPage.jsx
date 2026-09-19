@@ -328,7 +328,7 @@ function pickPriorityIncident(incidents) {
 
 export default function MainPage() {
   const currentUser = getCurrentUser();
-  const isStaff = currentUser?.role === "STAFF" || currentUser?.role === "ADMIN";
+  const isStaff = currentUser?.role === "STAFF";
 
   const [tab, setTab] = useState("nearby");
   // 이메일 안전확인 링크(?safetyCheckToken=xxx)로 들어온 거면 그 응답 화면부터 바로 보여줌
@@ -1587,14 +1587,14 @@ export default function MainPage() {
   <>
     {isStaff && (
   <button onClick={() => goTo("staff")} className="hidden sm:flex items-center px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100 cursor-pointer">
-    {currentUser?.role === "ADMIN" ? "관리자 대시보드" : "담당자 대시보드"}
+    담당자 대시보드
   </button>
 )}
     <div className="relative hidden sm:block" ref={profileMenuRef}>
       <button onClick={() => setProfileMenuOpen((v) => !v)} className="flex items-center gap-2 font-bold text-sm cursor-pointer">
         <div className="w-9 h-9 rounded-full bg-[#0B2A52] text-white flex items-center justify-center overflow-hidden shrink-0">
           {myProfile?.profileImageUrl ? (
-            <img src={`http://localhost:8080${myProfile.profileImageUrl}`} alt="" className="w-full h-full object-cover" />
+            <img src={myProfile.profileImageUrl} alt="" className="w-full h-full object-cover" />
           ) : (
             <Users className="w-4 h-4" />
           )}
@@ -2276,7 +2276,7 @@ export default function MainPage() {
                       <div className="flex gap-3 items-center">
                         <div className="w-[58px] h-[48px] rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
                           {photoUrl ? (
-                            <img src={`http://localhost:8080${photoUrl}`} alt="" className="w-full h-full object-cover" />
+                            <img src={photoUrl} alt="" className="w-full h-full object-cover" />
                           ) : (
                             <DisasterIcon className="w-5 h-5 text-blue-500" />
                           )}
@@ -2584,7 +2584,7 @@ export default function MainPage() {
                         >
                           <div className="w-16 h-16 rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
                             {report.photoUrl ? (
-                              <img src={`http://localhost:8080${report.photoUrl}`} alt="" className="w-full h-full object-cover" />
+                              <img src={report.photoUrl} alt="" className="w-full h-full object-cover" />
                             ) : (
                               <DisasterIcon className="w-6 h-6 text-blue-500" />
                             )}
@@ -2622,7 +2622,7 @@ export default function MainPage() {
                         >
                           <div className="w-16 h-16 rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
                             {photoUrl ? (
-                              <img src={`http://localhost:8080${photoUrl}`} alt="" className="w-full h-full object-cover" />
+                              <img src={photoUrl} alt="" className="w-full h-full object-cover" />
                             ) : (
                               <DisasterIcon className="w-6 h-6 text-blue-500" />
                             )}
@@ -2682,7 +2682,7 @@ export default function MainPage() {
                       <div className="flex gap-4 p-4">
                         <div className="w-24 h-24 rounded-lg overflow-hidden bg-white/60 flex items-center justify-center shrink-0">
                           {detailPendingReport.photoUrl ? (
-                            <img src={`http://localhost:8080${detailPendingReport.photoUrl}`} alt="" className="w-full h-full object-cover" />
+                            <img src={detailPendingReport.photoUrl} alt="" className="w-full h-full object-cover" />
                           ) : (
                             <DetailDisasterIcon className="w-8 h-8 text-slate-400" />
                           )}
@@ -2732,7 +2732,7 @@ export default function MainPage() {
                         <div className="flex gap-4 p-4">
                           <div className="w-24 h-24 rounded-lg overflow-hidden bg-white/60 flex items-center justify-center shrink-0">
                             {detailPhotoUrl ? (
-                              <img src={`http://localhost:8080${detailPhotoUrl}`} alt="" className="w-full h-full object-cover" />
+                              <img src={detailPhotoUrl} alt="" className="w-full h-full object-cover" />
                             ) : (
                               <DetailDisasterIcon className="w-8 h-8 text-slate-400" />
                             )}

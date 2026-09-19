@@ -54,18 +54,28 @@
 
     <update id="linkIncident">
         UPDATE SF_REPORT
-        SET INCIDENT_ID = #{incidentId}, STATUS = 'LINKED'
+        SET INCIDENT_ID = #{incidentId},
+            STATUS = 'LINKED'
         WHERE REPORT_ID = #{reportId}
+          AND INCIDENT_ID IS NULL
+          AND STATUS IN ('RECEIVED', 'REVIEWING')
     </update>
 
     <update id="markReviewing">
-        UPDATE SF_REPORT SET STATUS = 'REVIEWING' WHERE REPORT_ID = #{reportId}
+        UPDATE SF_REPORT
+        SET STATUS = 'REVIEWING'
+        WHERE REPORT_ID = #{reportId}
+          AND INCIDENT_ID IS NULL
+          AND STATUS = 'RECEIVED'
     </update>
 
     <update id="reject">
         UPDATE SF_REPORT
-        SET STATUS = 'REJECTED', REJECT_REASON = #{reason}
+        SET STATUS = 'REJECTED',
+            REJECT_REASON = #{reason}
         WHERE REPORT_ID = #{reportId}
+          AND INCIDENT_ID IS NULL
+          AND STATUS IN ('RECEIVED', 'REVIEWING')
     </update>
 
     <!-- STAFF 화면 - 특정 Incident에 묶인 제보 목록 (마찬가지로 신고자 이름까지 조인) -->

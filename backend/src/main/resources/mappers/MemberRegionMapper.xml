@@ -39,9 +39,12 @@
 
     <!-- 재난 알림 매칭용 - 모든 회원의 대표 관심지역 (Incident 생성 시 반경 매칭 대상) -->
     <select id="findAllPrimary" resultType="com.safetrace.domain.MemberRegion">
-        SELECT MEMBER_REGION_ID, MEMBER_ID, REGION_CODE, REGION_NAME, LATITUDE, LONGITUDE, REGION_LABEL, IS_PRIMARY, CREATED_AT
-        FROM SF_MEMBER_REGION
-        WHERE IS_PRIMARY = 'Y'
+        SELECT r.MEMBER_REGION_ID, r.MEMBER_ID, r.REGION_CODE, r.REGION_NAME,
+               r.LATITUDE, r.LONGITUDE, r.REGION_LABEL, r.IS_PRIMARY, r.CREATED_AT
+        FROM SF_MEMBER_REGION r
+        JOIN SF_MEMBER m ON m.MEMBER_ID = r.MEMBER_ID
+        WHERE r.IS_PRIMARY = 'Y'
+          AND m.IS_WITHDRAWN = 'N'
     </select>
 
 </mapper>

@@ -18,7 +18,15 @@ public class MemberRegionService {
         return memberRegionMapper.findByMemberId(memberId);
     }
 
+    // 관심지역 추가.
+    // 새 지역을 대표지역으로 등록하는 경우 기존 대표지역을 먼저 해제해서
+    // 한 회원에게 대표지역이 여러 개 생기지 않도록 한다.
+    @Transactional
     public void addRegion(Long memberId, String regionName, Double latitude, Double longitude, String regionLabel, boolean isPrimary) {
+        if (isPrimary) {
+            memberRegionMapper.clearPrimary(memberId);
+        }
+
         MemberRegion region = new MemberRegion();
         region.setMemberId(memberId);
         region.setRegionName(regionName);

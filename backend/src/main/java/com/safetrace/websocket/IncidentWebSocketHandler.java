@@ -10,29 +10,26 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 접속한 모든 클라이언트(STAFF 상황판 + 시민 화면)에게
- * Incident 변경사항을 실시간으로 broadcast 한다.
- * 세션을 Map으로 관리해서 연결이 끊기면 정리(cleanup)하는 구조.
+ * Incident 변경사항 실시간 알림.
+ * 접속 자체는 JwtWebSocketHandshakeInterceptor를 통과한 로그인 사용자만 가능하고,
+ * WebSocket payload에는 화면 즉시 갱신에 필요한 필드만 넣는다.
  */
 @Component
 @RequiredArgsConstructor
 public class IncidentWebSocketHandler extends TextWebSocketHandler {
 
-    // new ObjectMapper()를 직접 만들면 LocalDateTime(createdAt 등) 직렬화 방법을
-    // 몰라서 broadcast가 매번 조용히 실패함. 스프링이 이미 날짜 타입까지
-    // 처리하도록 구성해둔 ObjectMapper 빈을 그대로 주입받아 씀.
     private final ObjectMapper objectMapper;
-
-    // 세션ID -> 세션 객체. 동시 접속자 관리용
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         sessions.put(session.getId(), session);
+        send(session, Map.of("eventType", "SOCKET_CONNECTED"));
     }
 
     @Override
@@ -41,47 +38,56 @@ public class IncidentWebSocketHandler extends TextWebSocketHandler {
     }
 
     public void broadcastIncidentCreated(Incident incident) {
-        broadcast(Map.of(
-                "eventType", "INCIDENT_CREATED",
-                "incident", incident
-        ));
+        broadcast("INCIDENT_CREATED", incident, null);
     }
 
     public void broadcastStatusChanged(Incident incident, String memo) {
-        broadcast(Map.of(
-                "eventType", "STATUS_CHANGED",
-                "incident", incident,
-                "memo", memo == null ? "" : memo
-        ));
+        broadcast("STATUS_CHANGED", incident, memo == null ? "" : memo);
     }
 
     public void broadcastStaffAssigned(Incident incident) {
-        broadcast(Map.of(
-                "eventType", "STAFF_ASSIGNED",
-                "incident", incident
-        ));
+        broadcast("STAFF_ASSIGNED", incident, null);
     }
 
     public void broadcastIncidentUpdated(Incident incident) {
-        broadcast(Map.of(
-                "eventType", "INCIDENT_UPDATED",
-                "incident", incident
-        ));
+        broadcast("INCIDENT_UPDATED", incident, null);
     }
 
-    private void broadcast(Object payload) {
+    private void broadcast(String eventType, Incident incident, String memo) {
+        Map<String, Object> safeIncident = new LinkedHashMap<>();
+        safeIncident.put("incidentId", incident.getIncidentId());
+        safeIncident.put("title", incident.getTitle());
+        safeIncident.put("disasterType", incident.getDisasterType());
+        safeIncident.put("severity", incident.getSeverity());
+        safeIncident.put("status", incident.getStatus());
+        safeIncident.put("region", incident.getRegion());
+        safeIncident.put("assignedStaffId", incident.getAssignedStaffId());
+        safeIncident.put("assignedStaffName", incident.getAssignedStaffName());
+        safeIncident.put("closeReason", incident.getCloseReason());
+        safeIncident.put("updatedAt", incident.getUpdatedAt());
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("eventType", eventType);
+        payload.put("incident", safeIncident);
+        if (memo != null) {
+            payload.put("memo", memo);
+        }
+
+        for (WebSocketSession session : sessions.values()) {
+            send(session, payload);
+        }
+    }
+
+    private void send(WebSocketSession session, Object payload) {
+        if (!session.isOpen()) return;
+
         try {
             String json = objectMapper.writeValueAsString(payload);
-            TextMessage message = new TextMessage(json);
-
-            for (WebSocketSession session : sessions.values()) {
-                if (session.isOpen()) {
-                    session.sendMessage(message);
-                }
+            synchronized (session) {
+                session.sendMessage(new TextMessage(json));
             }
         } catch (IOException e) {
-            // 실무에서는 로깅 프레임워크로 대체. 지금은 최소 처리
-            System.err.println("WebSocket broadcast 실패: " + e.getMessage());
+            System.err.println("Incident WebSocket 전송 실패: " + e.getMessage());
         }
     }
 }

@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:8080";
+const BASE_URL = "";
 
 // 토큰은 서명/만료시간이 멀쩡해도 서버(DB) 쪽에서 무효가 될 수 있음
 // (회원 탈퇴, DB 초기화 등으로 더 이상 존재하지 않는 회원). 그런 경우 백엔드는 401을 준다.
@@ -88,9 +88,15 @@ function decodeJwtPayload(token) {
 export function getCurrentUser() {
   const token = localStorage.getItem("token");
   if (!token) return null;
+
   try {
     const payload = decodeJwtPayload(token);
-    return { memberId: Number(payload.sub), role: payload.role, name: payload.name };
+
+    return {
+      memberId: Number(payload.sub),
+      role: payload.role,
+      name: payload.name,
+    };
   } catch {
     return null;
   }
@@ -101,9 +107,13 @@ export function getCurrentUser() {
 export function getTokenExpiryMs() {
   const token = localStorage.getItem("token");
   if (!token) return null;
+
   try {
     const payload = decodeJwtPayload(token);
-    return payload.exp ? payload.exp * 1000 : null; // JWT의 exp는 "초" 단위라 1000 곱해서 ms로 변환
+
+    return payload.exp
+      ? payload.exp * 1000
+      : null;
   } catch {
     return null;
   }
@@ -113,9 +123,16 @@ export function getTokenExpiryMs() {
 // 만료시간이 새로 늘어난 토큰을 발급받고, localStorage에 있는 기존 토큰을 그걸로 교체함.
 // 실패(401 등)하면 authFetch가 알아서 토큰 삭제 + "auth:invalid" 이벤트까지 처리해줌.
 export async function refreshToken() {
-  const data = await authFetch("/api/auth/refresh", { method: "POST" });
-  localStorage.setItem("token", data.token); // 만료시간 갱신된 새 토큰으로 교체
-  window.dispatchEvent(new Event("auth:refreshed")); // 필요하면 다른 컴포넌트도 이 이벤트로 감지 가능
+  const data = await authFetch("/api/auth/refresh", {
+    method: "POST",
+  });
+
+  localStorage.setItem("token", data.token);
+
+  window.dispatchEvent(
+    new Event("auth:refreshed")
+  );
+
   return data.token;
 }
 
@@ -125,10 +142,19 @@ export function getNotifications() {
   return authFetch("/api/notifications");
 }
 
-export function deleteNotification(notificationId) {
-  return authFetch(`/api/notifications/${notificationId}`, { method: "DELETE" });
+export function deleteNotification(
+  notificationId
+) {
+  return authFetch(
+    `/api/notifications/${notificationId}`,
+    {
+      method: "DELETE",
+    }
+  );
 }
 
 export function deleteAllNotifications() {
-  return authFetch("/api/notifications", { method: "DELETE" });
+  return authFetch("/api/notifications", {
+    method: "DELETE",
+  });
 }

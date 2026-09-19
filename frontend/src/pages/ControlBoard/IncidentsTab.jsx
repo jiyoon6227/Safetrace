@@ -637,10 +637,10 @@ export default function IncidentsTab({
                           <button
                             key={report.reportId}
                             type="button"
-                            onClick={() => setViewingPhotoUrl(`http://localhost:8080${report.photoUrl}`)}
+                            onClick={() => setViewingPhotoUrl(report.photoUrl)}
                             className="overflow-hidden rounded-lg border border-slate-200 hover:shadow-md hover:-translate-y-0.5 transition cursor-pointer group"
                           >
-                            <img src={`http://localhost:8080${report.photoUrl}`} alt="제보 첨부" className="w-full h-24 object-cover transition-transform duration-200 group-hover:scale-[1.03]" />
+                            <img src={report.photoUrl} alt="제보 첨부" className="w-full h-24 object-cover transition-transform duration-200 group-hover:scale-[1.03]" />
                           </button>
                         ))}
                       </div>
@@ -679,11 +679,11 @@ export default function IncidentsTab({
                           <button
                             key={url + index}
                             type="button"
-                            onClick={() => setViewingPhotoUrl(`http://localhost:8080${url}`)}
+                            onClick={() => setViewingPhotoUrl(url)}
                             className="overflow-hidden rounded-lg border border-slate-200 hover:shadow-md hover:-translate-y-0.5 transition cursor-pointer group"
                           >
                             <img
-                              src={`http://localhost:8080${url}`}
+                              src={url}
                               alt={`현장 확인 사진 ${index + 1}`}
                               className="w-full h-24 object-cover transition-transform duration-200 group-hover:scale-[1.03]"
                             />

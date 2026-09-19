@@ -349,7 +349,7 @@ export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenS
             <div className="flex items-center gap-3 relative">
               <div className="w-14 h-14 rounded-full bg-white/10 border-2 border-white/20 overflow-hidden flex items-center justify-center shrink-0">
                 {member?.profileImageUrl ? (
-                  <img src={`http://localhost:8080${member.profileImageUrl}`} alt="프로필" className="w-full h-full object-cover" />
+                  <img src={member.profileImageUrl} alt="프로필" className="w-full h-full object-cover" />
                 ) : (
                   <User className="w-6 h-6 text-slate-300" />
                 )}

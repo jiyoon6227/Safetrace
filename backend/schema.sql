@@ -5,7 +5,7 @@
 -- PK는 IDENTITY가 아닌 SEQUENCE 방식으로 채번함.
 -- ============================================
 
--- 1. 기존 테이블/시퀀스 전부 삭제 (재실행 시 충돌 방지, FK 있는 테이블부터 역순으로 삭제)
+-- 1. 기존 테이블/시퀀스/인덱스 전부 삭제 (재실행 시 충돌 방지, FK 있는 테이블부터 역순으로 삭제)
 DROP TABLE SF_NOTICE CASCADE CONSTRAINTS;
 DROP TABLE SF_NOTIFICATION CASCADE CONSTRAINTS;
 DROP TABLE SF_SAFETY_CHECK CASCADE CONSTRAINTS;
@@ -47,9 +47,13 @@ COMMENT ON COLUMN SF_DEPARTMENT.NAME IS '부서명 (예: 재난안전과, 소방
 -- 2. 회원 테이블============================================
 --    시민(USER)과 담당 직원(STAFF)을 같은 테이블에서 ROLE로 구분
 --    마이페이지(내 정보관리/알림설정/탈퇴)용 컬럼까지 포함
+--    LOGIN_ID는 UNIQUE 제약을 걸지 않는다 - 탈퇴(소프트 삭제)해도 행이 안 지워지는데,
+--    UNIQUE를 걸면 탈퇴한 아이디를 영영 재사용할 수 없게 되기 때문.
+--    대신 테이블 생성 뒤 "미탈퇴 회원 사이에서만" 유일하게 강제하는 함수기반 유니크 인덱스를 별도로 만든다
+--    (아래 UX_SF_MEMBER_LOGIN_ID_ACTIVE 참고).
 CREATE TABLE SF_MEMBER (
     MEMBER_ID                 NUMBER          PRIMARY KEY,        -- 회원 PK (SEQ_SF_MEMBER로 채번)
-    LOGIN_ID                  VARCHAR2(50)    NOT NULL UNIQUE,    -- 로그인 아이디, 중복 불가
+    LOGIN_ID                  VARCHAR2(50)    NOT NULL,           -- 로그인 아이디 (유일성은 함수기반 인덱스로 보장 - 미탈퇴 회원끼리만 중복 불가)
     PASSWORD                  VARCHAR2(200)   NOT NULL,           -- BCrypt 등으로 암호화된 비밀번호
     NAME                      VARCHAR2(50)    NOT NULL,           -- 회원 이름
     EMAIL                     VARCHAR2(100),                      -- 안전확인 메일 발송용 이메일
@@ -70,7 +74,7 @@ CREATE TABLE SF_MEMBER (
 
 COMMENT ON TABLE SF_MEMBER IS '회원 (시민 USER / 담당직원 STAFF 통합 테이블)';
 COMMENT ON COLUMN SF_MEMBER.MEMBER_ID IS '회원 PK (SEQ_SF_MEMBER로 채번)';
-COMMENT ON COLUMN SF_MEMBER.LOGIN_ID IS '로그인 아이디, 중복 불가';
+COMMENT ON COLUMN SF_MEMBER.LOGIN_ID IS '로그인 아이디 - 미탈퇴 회원 사이에서만 유일(함수기반 인덱스로 보장), 탈퇴한 아이디는 재사용 가능';
 COMMENT ON COLUMN SF_MEMBER.PASSWORD IS 'BCrypt 등으로 암호화된 비밀번호';
 COMMENT ON COLUMN SF_MEMBER.NAME IS '회원 이름';
 COMMENT ON COLUMN SF_MEMBER.EMAIL IS '안전확인 메일 발송용 이메일';
@@ -363,6 +367,15 @@ CREATE INDEX IDX_SF_NOTICE_PINNED_TIME ON SF_NOTICE(IS_PINNED, CREATED_AT);
 -- 공지 유형 필터용
 CREATE INDEX IDX_SF_NOTICE_TYPE_TIME ON SF_NOTICE(NOTICE_TYPE, CREATED_AT);
 
+-- ★ 신규: LOGIN_ID를 "미탈퇴 회원 사이에서만" 유일하게 강제하는 함수기반 유니크 인덱스=========
+--   Oracle은 인덱스 표현식이 NULL이면 그 행을 유니크 검사 대상에서 아예 빼준다.
+--   그래서 IS_WITHDRAWN='Y'인 행은 표현식이 NULL이 되어 검사 대상에서 빠지고,
+--   IS_WITHDRAWN='N'인 행끼리만 LOGIN_ID 중복이 막힌다.
+--   → 탈퇴한 아이디를 다른 사람(또는 본인)이 즉시 재사용해서 재가입할 수 있음.
+--   → 탈퇴 계정의 LOGIN_ID 원본 값도 그대로 보존되어 감사/문의 대응 시 조회 가능.
+CREATE UNIQUE INDEX UX_SF_MEMBER_LOGIN_ID_ACTIVE
+    ON SF_MEMBER (CASE WHEN IS_WITHDRAWN = 'N' THEN LOGIN_ID END);
+
 -- 7. 시퀀스 생성 (각 테이블 PK 채번용)============================================
 CREATE SEQUENCE SEQ_SF_MEMBER START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_DEPARTMENT START WITH 1 INCREMENT BY 1 NOCACHE;
@@ -410,4 +423,3 @@ VALUES (SEQ_SF_NOTICE.NEXTVAL, '재난 행동요령 메뉴 이용 안내',
         '메인 메뉴의 행동요령에서 재난 유형별 사전 대비 및 발생 시 행동수칙을 확인할 수 있습니다.',
         'NORMAL', 'N', 1);
 COMMIT;
-

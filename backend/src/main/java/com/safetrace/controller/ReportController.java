@@ -30,14 +30,14 @@ public class ReportController {
 
     // STAFF 전용 - 아직 사건에 연결 안 된 제보 목록 (제보 관리 탭)
     @GetMapping
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public List<Report> getUnlinked() {
         return reportService.getUnlinkedReports();
     }
 
     // STAFF 전용 - 사건전환 여부와 무관하게 전체 제보 목록 (전환된 제보도 이력으로 계속 조회)
     @GetMapping("/all")
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public List<Report> getAll() {
         return reportService.getAllReports();
     }
@@ -52,7 +52,7 @@ public class ReportController {
 
     // STAFF 전용 - 이 제보와 관련 있을 만한 기존 Incident 후보 조회 (중복탐지 재사용)
     @GetMapping("/{reportId}/candidates")
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public List<Incident> getCandidates(@PathVariable Long reportId) {
         Report report = reportService.getById(reportId);
         return incidentService.findRelatedIncidents(
@@ -62,14 +62,14 @@ public class ReportController {
     // STAFF 전용 - 제보를 실제로 특정 Incident에 연결 (제보 병합 실행)
     // body 예시: { "incidentId": 42 }
     @PatchMapping("/{reportId}/link")
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public Report link(@PathVariable Long reportId, @RequestBody Map<String, Long> body) {
         return reportService.linkToIncident(reportId, body.get("incidentId"));
     }
 
     // STAFF 전용 - 제보를 검토 중으로 표시
     @PatchMapping("/{reportId}/review")
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public Report review(@PathVariable Long reportId) {
         return reportService.markReviewing(reportId);
     }
@@ -77,14 +77,14 @@ public class ReportController {
     // STAFF 전용 - 제보 반려 (원본은 삭제하지 않고 상태/사유만 기록)
     // body 예시: { "reason": "중복 제보로 확인됨" }
     @PatchMapping("/{reportId}/reject")
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public Report reject(@PathVariable Long reportId, @RequestBody Map<String, String> body) {
         return reportService.reject(reportId, body.get("reason"));
     }
 
     // STAFF 전용 - 제보에 등록된 사진 전체 목록 (0번째 = 대표)
     @GetMapping("/{reportId}/photos")
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public List<String> getPhotos(@PathVariable Long reportId) {
         return reportService.getPhotoUrls(reportId);
     }

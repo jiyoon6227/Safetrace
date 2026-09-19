@@ -70,8 +70,16 @@
 
     <update id="assignStaff">
         UPDATE SF_INCIDENT
-        SET ASSIGNED_STAFF_ID = #{staffId}, UPDATED_AT = SYSTIMESTAMP
+        SET ASSIGNED_STAFF_ID = #{staffId},
+            UPDATED_AT = SYSTIMESTAMP
         WHERE INCIDENT_ID = #{incidentId}
+          AND EXISTS (
+              SELECT 1
+              FROM SF_MEMBER m
+              WHERE m.MEMBER_ID = #{staffId}
+                AND m.ROLE = 'STAFF'
+                AND m.IS_WITHDRAWN = 'N'
+          )
     </update>
 
     <update id="closeIncident">

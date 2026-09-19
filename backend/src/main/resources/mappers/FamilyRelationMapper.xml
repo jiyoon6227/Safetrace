@@ -18,6 +18,7 @@
         FROM SF_FAMILY_RELATION r
         JOIN SF_MEMBER m ON r.FAMILY_MEMBER_ID = m.MEMBER_ID
         WHERE r.MEMBER_ID = #{memberId}
+          AND m.IS_WITHDRAWN = 'N'
         ORDER BY r.CREATED_AT DESC
     </select>
 
@@ -30,6 +31,7 @@
         JOIN SF_MEMBER m ON r.MEMBER_ID = m.MEMBER_ID
         WHERE r.FAMILY_MEMBER_ID = #{memberId}
           AND r.STATUS = 'PENDING'
+          AND m.IS_WITHDRAWN = 'N'
         ORDER BY r.CREATED_AT DESC
     </select>
 
@@ -46,6 +48,7 @@
         JOIN SF_MEMBER m ON r.FAMILY_MEMBER_ID = m.MEMBER_ID
         WHERE r.MEMBER_ID = #{memberId}
           AND r.STATUS = 'ACCEPTED'
+          AND m.IS_WITHDRAWN = 'N'
         UNION ALL
         SELECT r.RELATION_ID, r.FAMILY_MEMBER_ID AS MEMBER_ID, r.MEMBER_ID AS FAMILY_MEMBER_ID,
                r.RELATION_TYPE, r.STATUS, r.CREATED_AT,
@@ -55,6 +58,7 @@
         JOIN SF_MEMBER m ON r.MEMBER_ID = m.MEMBER_ID
         WHERE r.FAMILY_MEMBER_ID = #{memberId}
           AND r.STATUS = 'ACCEPTED'
+          AND m.IS_WITHDRAWN = 'N'
         ORDER BY FAMILY_MEMBER_NAME ASC
     </select>
 

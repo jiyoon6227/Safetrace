@@ -91,7 +91,7 @@ export default function LinkedReportsModal({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setViewingPhotoUrl(`http://localhost:8080${report.photoUrl}`);
+                            setViewingPhotoUrl(report.photoUrl);
                           }}
                           className="relative inline-flex w-8 h-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 hover:bg-blue-50 hover:text-blue-600 transition cursor-pointer"
                           aria-label={`제보 #R-${report.reportId} 첨부 사진 보기`}

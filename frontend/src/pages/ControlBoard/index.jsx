@@ -1698,7 +1698,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
           <div className="px-3 py-4 border-t border-white/10 flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center overflow-hidden shrink-0">
               {member?.profileImageUrl ? (
-                <img src={`http://localhost:8080${member.profileImageUrl}`} alt="프로필" className="w-full h-full object-cover" />
+                <img src={member.profileImageUrl} alt="프로필" className="w-full h-full object-cover" />
               ) : (
                 <User className="w-4 h-4 text-slate-300" />
               )}
@@ -1778,7 +1778,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
               >
                 <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
                   {member?.profileImageUrl ? (
-                    <img src={`http://localhost:8080${member.profileImageUrl}`} alt="프로필" className="w-full h-full object-cover" />
+                    <img src={member.profileImageUrl} alt="프로필" className="w-full h-full object-cover" />
                   ) : (
                     <User className="w-4 h-4 text-slate-400" />
                   )}

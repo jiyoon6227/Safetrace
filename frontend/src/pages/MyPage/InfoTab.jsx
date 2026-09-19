@@ -103,7 +103,7 @@ export default function InfoTab({
           <div className="flex items-center gap-4 mb-5">
             <div className="w-20 h-20 rounded-full bg-gradient-to-br from-sky-100 to-indigo-100 overflow-hidden flex items-center justify-center shrink-0 border-2 border-slate-200">
               {draft.profileImageUrl ? (
-                <img src={`http://localhost:8080${draft.profileImageUrl}`} alt="프로필" className="w-full h-full object-cover" />
+                <img src={draft.profileImageUrl} alt="프로필" className="w-full h-full object-cover" />
               ) : (
                 <User className="w-8 h-8 text-sky-400" />
               )}

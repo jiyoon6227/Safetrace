@@ -1,6 +1,8 @@
 package com.safetrace.service;
 
+import com.safetrace.domain.Incident;
 import com.safetrace.domain.Report;
+import com.safetrace.mapper.IncidentMapper;
 import com.safetrace.mapper.ReportMapper;
 import com.safetrace.websocket.ReportWebSocketHandler;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +18,7 @@ import java.util.List;
 public class ReportService {
 
     private final ReportMapper reportMapper;
+    private final IncidentMapper incidentMapper;
     private final ReportWebSocketHandler reportWebSocketHandler;
 
     // 제보 사진은 최대 5장까지 - 전부 SF_REPORT_PHOTO 한 테이블에서만 관리
@@ -48,11 +51,7 @@ public class ReportService {
     }
 
     public Report getById(Long reportId) {
-        Report report = reportMapper.findById(reportId);
-        if (report == null) {
-            throw new IllegalArgumentException("존재하지 않는 제보입니다: " + reportId);
-        }
-        return report;
+        return getReportOrThrow(reportId);
     }
 
     // STAFF 제보 관리 탭 - 아직 사건에 연결되지 않은 제보 목록
@@ -73,7 +72,29 @@ public class ReportService {
     // 제보 병합의 실제 실행 단계: 후보로 찾은 Incident에 이 제보를 연결
     @Transactional
     public Report linkToIncident(Long reportId, Long incidentId) {
-        reportMapper.linkIncident(reportId, incidentId);
+        Report report = getReportOrThrow(reportId);
+
+        if (incidentId == null) {
+            throw new IllegalArgumentException("연결할 사건을 선택해주세요.");
+        }
+
+        // 접수/검토중인 제보만 사건으로 연결할 수 있다.
+        // 이미 LINKED/REJECTED 된 제보를 API 직접 호출로 다시 변경하는 것을 차단한다.
+        requireProcessableReport(report, "사건 연결");
+
+        Incident incident = incidentMapper.findById(incidentId);
+        if (incident == null) {
+            throw new IllegalArgumentException("존재하지 않는 사건입니다: " + incidentId);
+        }
+        if ("CLOSED".equals(incident.getStatus())) {
+            throw new IllegalStateException("종료된 사건에는 새 제보를 연결할 수 없습니다.");
+        }
+
+        int affected = reportMapper.linkIncident(reportId, incidentId);
+        if (affected != 1) {
+            throw new IllegalStateException("이미 다른 담당자가 처리한 제보입니다. 목록을 새로고침해주세요.");
+        }
+
         Report updated = reportMapper.findById(reportId);
         broadcastAfterCommit(() -> reportWebSocketHandler.broadcastReportLinked(updated));
         return updated;
@@ -82,7 +103,17 @@ public class ReportService {
     // 담당자가 제보를 검토 중으로 표시
     @Transactional
     public Report markReviewing(Long reportId) {
-        reportMapper.markReviewing(reportId);
+        Report report = getReportOrThrow(reportId);
+
+        if (!"RECEIVED".equals(report.getStatus()) || report.getIncidentId() != null) {
+            throw new IllegalStateException("접수 상태의 미처리 제보만 검토중으로 변경할 수 있습니다.");
+        }
+
+        int affected = reportMapper.markReviewing(reportId);
+        if (affected != 1) {
+            throw new IllegalStateException("이미 다른 담당자가 처리한 제보입니다. 목록을 새로고침해주세요.");
+        }
+
         Report updated = reportMapper.findById(reportId);
         broadcastAfterCommit(() -> reportWebSocketHandler.broadcastReportReviewing(updated));
         return updated;
@@ -94,10 +125,46 @@ public class ReportService {
         if (reason == null || reason.isBlank()) {
             throw new IllegalArgumentException("반려 사유를 입력해주세요.");
         }
-        reportMapper.reject(reportId, reason);
+
+        Report report = getReportOrThrow(reportId);
+        requireProcessableReport(report, "반려");
+
+        int affected = reportMapper.reject(reportId, reason.trim());
+        if (affected != 1) {
+            throw new IllegalStateException("이미 다른 담당자가 처리한 제보입니다. 목록을 새로고침해주세요.");
+        }
+
         Report updated = reportMapper.findById(reportId);
         broadcastAfterCommit(() -> reportWebSocketHandler.broadcastReportRejected(updated));
         return updated;
+    }
+
+    private Report getReportOrThrow(Long reportId) {
+        if (reportId == null) {
+            throw new IllegalArgumentException("제보 번호가 없습니다.");
+        }
+
+        Report report = reportMapper.findById(reportId);
+        if (report == null) {
+            throw new IllegalArgumentException("존재하지 않는 제보입니다: " + reportId);
+        }
+        return report;
+    }
+
+    /**
+     * 아직 최종 처리되지 않은 제보만 사건 연결/반려할 수 있다.
+     * UI에서 버튼을 숨기는 것만으로는 API 직접 호출을 막을 수 없으므로 서버에서 강제한다.
+     */
+    private void requireProcessableReport(Report report, String actionName) {
+        boolean allowedStatus =
+                "RECEIVED".equals(report.getStatus())
+                || "REVIEWING".equals(report.getStatus());
+
+        if (!allowedStatus || report.getIncidentId() != null) {
+            throw new IllegalStateException(
+                    "이미 처리된 제보는 " + actionName + " 처리할 수 없습니다."
+            );
+        }
     }
 
     private void broadcastAfterCommit(Runnable action) {

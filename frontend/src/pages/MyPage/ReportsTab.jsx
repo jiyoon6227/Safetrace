@@ -210,12 +210,12 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
                         <div className="flex items-center gap-3 min-w-0">
                           <button
                             type="button"
-                            onClick={() => r.photoUrl && setPreviewPhotoUrl(`http://localhost:8080${r.photoUrl}`)}
+                            onClick={() => r.photoUrl && setPreviewPhotoUrl(r.photoUrl)}
                             className="w-14 h-14 rounded-lg bg-slate-100 overflow-hidden flex items-center justify-center shrink-0 cursor-pointer"
                             aria-label="사진 확대"
                           >
                             {r.photoUrl ? (
-                              <img src={`http://localhost:8080${r.photoUrl}`} alt="" className="w-full h-full object-cover" />
+                              <img src={r.photoUrl} alt="" className="w-full h-full object-cover" />
                             ) : (
                               <DisasterIcon className="w-5 h-5 text-blue-500" />
                             )}
@@ -368,10 +368,10 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
 
               {detailReport.photoUrl && (
                 <img
-                  src={`http://localhost:8080${detailReport.photoUrl}`}
+                  src={detailReport.photoUrl}
                   alt=""
                   className="w-full h-44 object-cover rounded-xl cursor-pointer"
-                  onClick={() => setPreviewPhotoUrl(`http://localhost:8080${detailReport.photoUrl}`)}
+                  onClick={() => setPreviewPhotoUrl(detailReport.photoUrl)}
                 />
               )}
 

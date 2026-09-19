@@ -398,7 +398,7 @@ export default function ReportsTab({
               <div>
                 <div className="h-[205px] rounded-lg overflow-hidden bg-slate-100">
                   {selectedReport.photoUrl ? (
-                    <img src={`http://localhost:8080${selectedReport.photoUrl}`} alt="제보 첨부" className="w-full h-full object-cover" />
+                    <img src={selectedReport.photoUrl} alt="제보 첨부" className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-300"><ImageIcon className="w-10 h-10" /></div>
                   )}
@@ -409,10 +409,10 @@ export default function ReportsTab({
                       <button
                         key={url + index}
                         type="button"
-                        onClick={() => setViewingPhotoUrl(`http://localhost:8080${url}`)}
+                        onClick={() => setViewingPhotoUrl(url)}
                         className="h-12 rounded-md overflow-hidden border border-slate-200 hover:shadow-md transition cursor-pointer"
                       >
-                        <img src={`http://localhost:8080${url}`} alt={`추가 사진 ${index + 2}`} className="w-full h-full object-cover" />
+                        <img src={url} alt={`추가 사진 ${index + 2}`} className="w-full h-full object-cover" />
                       </button>
                     ))}
                   </div>

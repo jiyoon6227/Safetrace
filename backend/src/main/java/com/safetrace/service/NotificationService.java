@@ -61,7 +61,9 @@ public class NotificationService {
             }
 
             Member member = memberMapper.findById(region.getMemberId());
-            if (member == null || !"Y".equals(member.getDisasterNotifyEnabled())) {
+            if (member == null
+                    || "Y".equals(member.getIsWithdrawn())
+                    || !"Y".equals(member.getDisasterNotifyEnabled())) {
                 continue;
             }
 
@@ -106,7 +108,9 @@ public class NotificationService {
 
         for (Long memberId : reporterIds) {
             Member member = memberMapper.findById(memberId);
-            if (member == null || !"Y".equals(member.getReportNotifyEnabled())) {
+            if (member == null
+                    || "Y".equals(member.getIsWithdrawn())
+                    || !"Y".equals(member.getReportNotifyEnabled())) {
                 continue;
             }
 

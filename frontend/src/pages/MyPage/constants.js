@@ -1,7 +1,23 @@
 import {
-  ShieldAlert, User, Users, Bell, MapPin, Camera, CheckCircle2, AlertTriangle,
-  Home, Heart, Clock, Flame, Droplets, Mountain, Wind, Thermometer, Snowflake,
-  FileText, Building2,
+  ShieldAlert,
+  User,
+  Users,
+  Bell,
+  MapPin,
+  Camera,
+  CheckCircle2,
+  AlertTriangle,
+  Home,
+  Heart,
+  Clock,
+  Flame,
+  Droplets,
+  Mountain,
+  Wind,
+  Thermometer,
+  Snowflake,
+  FileText,
+  Building2,
 } from "lucide-react";
 
 export const TABS = [
@@ -13,7 +29,13 @@ export const TABS = [
   { key: "notify", label: "알림", icon: Bell },
 ];
 
-export const RELATION_TYPES = ["배우자", "자녀", "부모님", "형제자매", "가족"];
+export const RELATION_TYPES = [
+  "배우자",
+  "자녀",
+  "부모님",
+  "형제자매",
+  "가족",
+];
 
 export const REGION_LABELS = [
   { value: "우리집", icon: Home },
@@ -28,7 +50,11 @@ export const formatPhoneNumber = (value) => {
 
   if (digits.startsWith("02")) {
     if (digits.length <= 2) return digits;
-    if (digits.length <= 5) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+
+    if (digits.length <= 5) {
+      return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+    }
+
     if (digits.length <= 9) {
       return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`;
     }
@@ -37,6 +63,7 @@ export const formatPhoneNumber = (value) => {
   }
 
   if (digits.length <= 3) return digits;
+
   if (digits.length <= 7) {
     return `${digits.slice(0, 3)}-${digits.slice(3)}`;
   }
@@ -47,7 +74,6 @@ export const formatPhoneNumber = (value) => {
 export const ROLE_LABEL = {
   USER: "시민 사용자",
   STAFF: "담당 직원",
-  ADMIN: "관리자",
 };
 
 export const formatDateTime = (iso) => {
@@ -144,15 +170,21 @@ export const notificationTime = (iso) => {
 
   if (min < 1) return "방금 전";
 
-  if (min < 60) return `${min}분 전`;
+  if (min < 60) {
+    return `${min}분 전`;
+  }
 
   const hour = Math.floor(min / 60);
 
-  if (hour < 24) return `${hour}시간 전`;
+  if (hour < 24) {
+    return `${hour}시간 전`;
+  }
 
   const day = Math.floor(hour / 24);
 
-  if (day < 7) return `${day}일 전`;
+  if (day < 7) {
+    return `${day}일 전`;
+  }
 
   return d.toLocaleDateString("ko-KR", {
     month: "numeric",
@@ -229,9 +261,7 @@ export const buildNotificationItems = ({
 
       title: `${r.regionLabel || "관심지역"}이 등록되어 있습니다.`,
 
-      desc:
-        r.regionName ||
-        "관심지역 알림 대상 지역입니다.",
+      desc: r.regionName || "관심지역 알림 대상 지역입니다.",
 
       createdAt: r.createdAt || null,
     });
@@ -250,8 +280,7 @@ export const buildNotificationItems = ({
       desc: n.content,
       createdAt: n.createdAt,
 
-      incidentId:
-        n.incidentId || null,
+      incidentId: n.incidentId || null,
     });
   });
 

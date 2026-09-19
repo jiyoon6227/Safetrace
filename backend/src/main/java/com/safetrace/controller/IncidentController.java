@@ -31,7 +31,7 @@ public class IncidentController {
     // 생성한 담당자를 자동으로 배정 - 상태 변경 화면에서 따로 "담당자 지정" 안 해도
     // 사건이 만들어지는 시점에 이미 담당자가 붙어있게 하기 위함
     @PostMapping
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public Incident create(@RequestBody Incident incident, Authentication authentication) {
         incident.setAssignedStaffId(currentMemberId(authentication));
         return incidentService.createIncident(incident);
@@ -54,7 +54,7 @@ public class IncidentController {
 
     // STAFF 전용 - 전체 Incident 목록 (대시보드용)
     @GetMapping
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public List<Incident> getAll() {
         return incidentService.getAllIncidents();
     }
@@ -68,7 +68,7 @@ public class IncidentController {
     // 대시보드 "오늘 해결 완료" 카드용 - date 생략하면 오늘. 어제 값도 같이 조회해 전날 대비 추이(trend)에 씀
     // 예: /api/incidents/stats/closed-count?date=2026-09-13
     @GetMapping("/stats/closed-count")
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public int getClosedCount(@RequestParam(required = false) String date) {
         java.time.LocalDate target = (date != null) ? java.time.LocalDate.parse(date) : java.time.LocalDate.now();
         return incidentService.countClosedOn(target);
@@ -82,7 +82,7 @@ public class IncidentController {
 
     // STAFF 전용 - 이 Incident에 묶인 제보 목록 (사건 상세 패널의 "연결된 제보")
     @GetMapping("/{incidentId}/reports")
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public List<Report> getLinkedReports(@PathVariable Long incidentId) {
         return reportService.getReportsByIncidentId(incidentId);
     }
@@ -90,14 +90,14 @@ public class IncidentController {
     // STAFF 전용 - 사건 상세정보 수정 (제목/유형/위험도/위치/현장사진)
     // STATUS/담당자는 여기서 안 바꿈 - 각자 전용 API(assign, status)를 써야 함
     @PatchMapping("/{incidentId}")
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public Incident updateDetails(@PathVariable Long incidentId, @RequestBody Incident incident) {
         return incidentService.updateIncidentDetails(incidentId, incident);
     }
 
     // STAFF 전용 - 담당자 배정
     @PatchMapping("/{incidentId}/assign")
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public Incident assign(@PathVariable Long incidentId, @RequestBody Map<String, Long> body) {
         return incidentService.assignStaff(incidentId, body.get("staffId"));
     }
@@ -105,7 +105,7 @@ public class IncidentController {
     // STAFF 전용 - 상태 전이 (Workflow 핵심 API)
     // body 예시: { "status": "RESPONDING", "memo": "현장 도착, 도로 통제 시작" }
     @PatchMapping("/{incidentId}/status")
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public Incident changeStatus(@PathVariable Long incidentId,
                                   @RequestBody Map<String, String> body,
                                   Authentication authentication) {
@@ -124,14 +124,14 @@ public class IncidentController {
     // STAFF 전용 - 현장 사진 추가 (등록 순서대로 SF_INCIDENT_PHOTO에 쌓임. 최대 5장)
     // body 예시: { "photoUrl": "/uploads/xxx.jpg" }
     @PostMapping("/{incidentId}/photos")
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public Incident addPhoto(@PathVariable Long incidentId, @RequestBody Map<String, String> body) {
         return incidentService.addIncidentPhoto(incidentId, body.get("photoUrl"));
     }
 
     // STAFF 전용 - 등록된 현장 사진 전체 목록 (0번째 = 대표)
     @GetMapping("/{incidentId}/photos")
-    @PreAuthorize("hasRole('STAFF') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     public List<String> getPhotos(@PathVariable Long incidentId) {
         return incidentService.getPhotoUrls(incidentId);
     }

@@ -3,7 +3,9 @@ package com.safetrace.service;
 import com.safetrace.domain.Incident;
 import com.safetrace.domain.IncidentLog;
 import com.safetrace.domain.IncidentStatus;
+import com.safetrace.domain.Member;
 import com.safetrace.mapper.IncidentMapper;
+import com.safetrace.mapper.MemberMapper;
 import com.safetrace.util.GeoUtils;
 import com.safetrace.websocket.IncidentWebSocketHandler;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +22,7 @@ import java.util.stream.Collectors;
 public class IncidentService {
 
     private final IncidentMapper incidentMapper;
+    private final MemberMapper memberMapper;
     private final IncidentWebSocketHandler webSocketHandler;
     private final NotificationService notificationService;
 
@@ -37,6 +40,16 @@ public class IncidentService {
      */
     @Transactional
     public Incident createIncident(Incident incident) {
+        if (incident == null) {
+            throw new IllegalArgumentException("사건 정보가 없습니다.");
+        }
+
+        if (incident.getAssignedStaffId() == null) {
+            throw new IllegalArgumentException("사건 생성 시 담당자 정보가 필요합니다.");
+        }
+
+        requireActiveStaff(incident.getAssignedStaffId(), "사건 담당자");
+
         incidentMapper.insertIncident(incident);
 
         // 사진은 컬럼이 아니라 SF_INCIDENT_PHOTO에만 저장 - 생성 시 첨부했으면 0번째(대표)로 넣음
@@ -75,8 +88,22 @@ public class IncidentService {
             throw new IllegalArgumentException("존재하지 않는 Incident 입니다: " + incidentId);
         }
 
-        IncidentStatus current = IncidentStatus.valueOf(incident.getStatus());
-        IncidentStatus target = IncidentStatus.valueOf(targetStatusStr);
+        if (targetStatusStr == null || targetStatusStr.isBlank()) {
+            throw new IllegalArgumentException("변경할 사건 상태를 입력해주세요.");
+        }
+
+        // 컨트롤러에서 STAFF 권한을 막고 있어도 서비스 계층에서도 한 번 더 검증한다.
+        // 탈퇴/권한변경 직후의 오래된 토큰 등으로 상태 변경이 시도되는 경우를 방어한다.
+        requireActiveStaff(staffId, "상태 변경 담당자");
+
+        IncidentStatus current;
+        IncidentStatus target;
+        try {
+            current = IncidentStatus.valueOf(incident.getStatus());
+            target = IncidentStatus.valueOf(targetStatusStr.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("올바르지 않은 사건 상태입니다.");
+        }
 
         if (!current.canTransitionTo(target)) {
             throw new IllegalStateException(
@@ -89,6 +116,10 @@ public class IncidentService {
         if (incident.getAssignedStaffId() == null) {
             throw new IllegalStateException("담당자가 배정되지 않아 상태를 전환할 수 없습니다. 먼저 담당자를 배정해주세요.");
         }
+
+        // 이미 배정된 담당자가 탈퇴했거나 STAFF 권한이 아닌 상태라면
+        // 다른 정상 STAFF를 다시 배정한 뒤 진행하도록 막는다.
+        requireActiveStaff(incident.getAssignedStaffId(), "현재 배정 담당자");
 
         if (target == IncidentStatus.CLOSED && (memo == null || memo.isBlank())) {
             throw new IllegalStateException("종료 처리에는 조치내역(종료사유)이 필요합니다.");
@@ -141,10 +172,47 @@ public class IncidentService {
 
     @Transactional
     public Incident assignStaff(Long incidentId, Long staffId) {
-        incidentMapper.assignStaff(incidentId, staffId);
+        Incident incident = incidentMapper.findById(incidentId);
+        if (incident == null) {
+            throw new IllegalArgumentException("존재하지 않는 Incident 입니다: " + incidentId);
+        }
+
+        requireActiveStaff(staffId, "배정할 담당자");
+
+        int affected = incidentMapper.assignStaff(incidentId, staffId);
+        if (affected != 1) {
+            throw new IllegalStateException("담당자 배정에 실패했습니다. 담당자 상태를 다시 확인해주세요.");
+        }
+
         Incident updated = incidentMapper.findById(incidentId);
         broadcastAfterCommit(() -> webSocketHandler.broadcastStaffAssigned(updated));
         return updated;
+    }
+
+    /**
+     * 사건 생성/배정/상태변경에 사용하는 STAFF 검증.
+     * MEMBER_ID만 존재한다고 담당자로 인정하지 않고,
+     * 현재 미탈퇴 상태이며 ROLE=STAFF인 회원만 허용한다.
+     */
+    private Member requireActiveStaff(Long memberId, String targetLabel) {
+        if (memberId == null) {
+            throw new IllegalArgumentException(targetLabel + " 정보가 없습니다.");
+        }
+
+        Member member = memberMapper.findById(memberId);
+        if (member == null) {
+            throw new IllegalArgumentException(targetLabel + "가 존재하지 않습니다.");
+        }
+
+        if ("Y".equals(member.getIsWithdrawn())) {
+            throw new IllegalArgumentException(targetLabel + "는 탈퇴한 회원입니다.");
+        }
+
+        if (!"STAFF".equals(member.getRole())) {
+            throw new IllegalArgumentException(targetLabel + "는 STAFF 계정이어야 합니다.");
+        }
+
+        return member;
     }
 
     private void broadcastAfterCommit(Runnable action) {

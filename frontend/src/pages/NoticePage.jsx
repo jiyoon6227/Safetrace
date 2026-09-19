@@ -217,7 +217,7 @@ function NoticeFormModal({ initialNotice, onClose, onSaved }) {
             <label className="mb-1.5 block text-xs font-bold text-slate-600">첨부 이미지 (선택 · 1장)</label>
             {imageUrl ? (
               <div className="relative h-52 overflow-hidden rounded-md border border-slate-200 bg-slate-50">
-                <img src={`http://localhost:8080${imageUrl}`} alt="공지 첨부" className="h-full w-full object-contain" />
+                <img src={imageUrl} alt="공지 첨부" className="h-full w-full object-contain" />
                 <button type="button" onClick={() => setImageUrl("")} className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-slate-900/70 text-white">
                   <X className="h-4 w-4" />
                 </button>
@@ -530,7 +530,7 @@ export default function NoticePage({ onBackToHome, onNavigate, initialNoticeId =
 
                   {selectedNotice.noticeImageUrl && (
                     <div className="border-b border-slate-200 bg-[#FAFAFA] px-3 py-3">
-                      <img src={`http://localhost:8080${selectedNotice.noticeImageUrl}`} alt="공지 첨부" className="mx-auto max-h-[520px] max-w-full object-contain" />
+                      <img src={selectedNotice.noticeImageUrl} alt="공지 첨부" className="mx-auto max-h-[520px] max-w-full object-contain" />
                     </div>
                   )}
 

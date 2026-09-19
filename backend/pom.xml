@@ -33,7 +33,7 @@
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
-        <!-- 로그인/권한 (USER/STAFF/ADMIN 분리) -->
+        <!-- 로그인/권한 (USER/STAFF 분리) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>

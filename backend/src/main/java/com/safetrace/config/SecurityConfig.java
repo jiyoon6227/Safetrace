@@ -73,6 +73,7 @@ public class SecurityConfig {
                 .requestMatchers("/error").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/incidents/*").permitAll()
                 .requestMatchers("/api/safety-checks/token/**").permitAll()  // 이메일 링크 - 로그인 없이 응답 가능
+                // WebSocket HTTP Upgrade는 통과시키되 실제 접속은 JwtWebSocketHandshakeInterceptor가 JWT를 검증함
                 .requestMatchers("/ws/**").permitAll()
                 .requestMatchers("/uploads/**").permitAll()
                 .anyRequest().authenticated()

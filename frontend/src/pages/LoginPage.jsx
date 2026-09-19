@@ -14,7 +14,7 @@ function FindIdModal({ onClose }) {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8080/api/auth/find-id", {
+      const res = await fetch("/api/auth/find-id", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email }),
@@ -109,7 +109,7 @@ function FindPasswordModal({ onClose }) {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8080/api/auth/password/send-code", {
+      const res = await fetch("/api/auth/password/send-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ loginId, email }),
@@ -131,7 +131,7 @@ function FindPasswordModal({ onClose }) {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8080/api/auth/email/verify-code", {
+      const res = await fetch("/api/auth/email/verify-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, code }),
@@ -157,7 +157,7 @@ function FindPasswordModal({ onClose }) {
     }
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8080/api/auth/password/reset", {
+      const res = await fetch("/api/auth/password/reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ loginId, email, newPassword }),
@@ -315,7 +315,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, onSearch, init
   const [showFindPassword, setShowFindPassword] = useState(false);
 
   const doLogin = async (id, pw) => {
-    const res = await fetch("http://localhost:8080/api/auth/login", {
+    const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ loginId: id, password: pw }),
@@ -359,7 +359,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, onSearch, init
     setSendingCode(true);
     setEmailNotice("");
     try {
-      const res = await fetch("http://localhost:8080/api/auth/email/send-code", {
+      const res = await fetch("/api/auth/email/send-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -382,7 +382,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, onSearch, init
     setVerifyingCode(true);
     setEmailNotice("");
     try {
-      const res = await fetch("http://localhost:8080/api/auth/email/verify-code", {
+      const res = await fetch("/api/auth/email/verify-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, code: verificationCode }),
@@ -423,7 +423,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, onSearch, init
 
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8080/api/auth/signup", {
+      const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ loginId, password, name, email: email.trim() }),
