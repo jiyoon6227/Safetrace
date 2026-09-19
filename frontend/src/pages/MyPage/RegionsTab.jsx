@@ -337,11 +337,13 @@ export default function RegionsTab({ regions = [], onChanged, member, onOpenShel
               authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(regionQuery)}&limit=20`)
                 .then((data) => {
                   if (data.length > 0 || !regionFallback) return data;
-                  return authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(regionFallback)}&limit=20`);
+                  return authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(regionFallback)}&limit=20`)
+                    .then((fallbackData) => fallbackData.filter(belongsToSido));
                 })
                 .then((data) => {
                   if (data.length > 0 || !regionShortFallback) return data;
-                  return authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(regionShortFallback)}&limit=20`);
+                  return authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(regionShortFallback)}&limit=20`)
+                    .then((fallbackData) => fallbackData.filter(belongsToSido));
                 })
                 .catch(() => []);
 
@@ -370,6 +372,18 @@ export default function RegionsTab({ regions = [], onChanged, member, onOpenShel
               const normalized = (msg.createdAt || "").replace(/\//g, "-").replace(" ", "T");
               const time = new Date(normalized).getTime();
               return Number.isNaN(time) ? 0 : time;
+            };
+
+            // "동구"/"중구"/"서구"처럼 여러 시/도에 동시에 존재하는 구 이름은 gu 단독으로
+            // fallback 검색하면(regionFallback) 행안부 API가 부분일치로 다른 시/도의 같은 이름 구
+            // (예: 부산 동구, 인천 동구)나 심지어 "일산동구"처럼 이름에 "동구"가 우연히 포함된
+            // 완전히 다른 구까지 같이 돌려주는 문제가 있음. 그래서 fallback 결과는 실제로
+            // msg.region 안에 우리 시/도 이름(정식명 또는 약칭)이 들어있는 것만 남기도록 다시 거른다.
+            // (regionQuery 1차 시도는 이미 "시도+구"로 물어봤으니 안전하지만, 혹시 몰라 똑같이 적용)
+            const shortSido = SIDO_SHORT_NAME[sido];
+            const belongsToSido = (msg) => {
+              const region = msg.region || "";
+              return region.includes(sido) || (!!shortSido && region.includes(shortSido));
             };
 
             Promise.all([fetchDistrictMessages(), fetchSidoWideMessages()])

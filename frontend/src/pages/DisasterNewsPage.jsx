@@ -254,17 +254,28 @@ export default function DisasterNewsPage({
             // (예전 방식) 당진시처럼 자체 발송 문자가 있는 지역은 시/도 전체 문자가 계속 안 보임
             // -> 구 단위 fallback 체인 결과 + 시/도 전체 결과를 병렬로 가져와서 합친다.
 
+            // "동구"/"중구"/"서구"처럼 여러 시/도에 동시에 존재하는 구 이름은 gu 단독으로
+            // fallback 조회하면(regionFallback/regionShortFallback) 행안부 API가 부분일치로
+            // 다른 시/도의 같은 이름 구(예: 부산 동구, 인천 동구)나 "일산동구"처럼 이름에 "동구"가
+            // 우연히 포함된 완전히 다른 구까지 같이 돌려주는 문제가 있음. fallback 결과는 실제로
+            // msg.region 안에 우리 시/도 이름(정식명 또는 약칭)이 들어있는 것만 남기도록 거른다.
+            const shortSido = SIDO_SHORT_NAME[sido];
+            const belongsToSido = (msg) => {
+              const region = msg.region || "";
+              return region.includes(sido) || (!!shortSido && region.includes(shortSido));
+            };
+
             // 1차: 부산광역시 서구
             let districtData = await authFetch(buildHistoryUrl(regionQuery));
 
             // 2차: 서구
             if (!districtData?.length && regionFallback) {
-              districtData = await authFetch(buildHistoryUrl(regionFallback));
+              districtData = await authFetch(buildHistoryUrl(regionFallback)).then((data) => data.filter(belongsToSido));
             }
 
             // 3차: 부산 서구
             if (!districtData?.length && regionShortFallback) {
-              districtData = await authFetch(buildHistoryUrl(regionShortFallback));
+              districtData = await authFetch(buildHistoryUrl(regionShortFallback)).then((data) => data.filter(belongsToSido));
             }
 
             // 시/도 전체 발송 문자는 구 단위 결과 유무와 상관없이 항상 별도로 조회
