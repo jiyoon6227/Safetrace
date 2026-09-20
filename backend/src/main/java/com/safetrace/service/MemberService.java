@@ -2,6 +2,7 @@ package com.safetrace.service;
 
 import com.safetrace.config.JwtTokenProvider;
 import com.safetrace.domain.Member;
+import com.safetrace.dto.FamilyMemberSearchResponse;
 import com.safetrace.mapper.MemberMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -44,6 +45,7 @@ public class MemberService {
         member.setRole("USER");
 
         memberMapper.insert(member);
+        emailVerificationService.clearVerified(email);
     }
 
     public boolean isEmailTaken(String email) {
@@ -109,10 +111,15 @@ public class MemberService {
     }
 
     // 가족 등록용 회원 검색 - 로그인ID 부분일치, 본인은 결과에서 제외
-    public List<Member> searchMembers(String loginId, Long excludeMemberId) {
+    // 화면에 필요한 최소 정보만 DTO로 반환해 개인정보 노출을 막는다.
+    public List<FamilyMemberSearchResponse> searchMembers(String loginId, Long excludeMemberId) {
         return memberMapper.searchByLoginId(loginId).stream()
                 .filter(m -> !m.getMemberId().equals(excludeMemberId))
-                .peek(m -> m.setPassword(null))
+                .map(m -> new FamilyMemberSearchResponse(
+                        m.getMemberId(),
+                        m.getLoginId(),
+                        m.getName()
+                ))
                 .collect(Collectors.toList());
     }
 
@@ -152,5 +159,6 @@ public class MemberService {
             throw new IllegalArgumentException("이메일 인증을 먼저 완료해주세요.");
         }
         memberMapper.updatePassword(member.getMemberId(), passwordEncoder.encode(newPassword));
+        emailVerificationService.clearVerified(email);
     }
 }

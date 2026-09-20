@@ -58,3 +58,8 @@ publicdata:
 # 재난안전데이터공유플랫폼(safetydata.go.kr) 인증키 - 긴급재난문자 전용 (위와 별개 발급)
 safetydata:
   service-key: "YOUR_SAFETYDATA_GO_KR_SERVICE_KEY"
+
+# Groq AI
+groq:
+  api-key: "YOUR_GROQ_API_KEY"
+  model: qwen/qwen3.8-27b

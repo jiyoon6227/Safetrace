@@ -22,6 +22,7 @@ public class EmailVerificationService {
     private final Set<String> verifiedEmails = ConcurrentHashMap.newKeySet();
 
     public void sendCode(String email) {
+        verifiedEmails.remove(email); // 새 인증 시작 시 기존 인증 완료 상태 초기화
         String code = String.format("%06d", new SecureRandom().nextInt(1_000_000));
         codes.put(email, new CodeEntry(code, LocalDateTime.now().plusMinutes(5)));
         mailService.sendVerificationCode(email, code);
@@ -43,6 +44,13 @@ public class EmailVerificationService {
     // 회원가입 시점에 실제로 인증된 이메일인지 다시 한번 확인용
     public boolean isVerified(String email) {
         return email != null && verifiedEmails.contains(email);
+    }
+
+    // 인증 완료 상태는 회원가입/비밀번호 재설정 성공 후 1회만 사용하고 제거
+    public void clearVerified(String email) {
+        if (email != null) {
+            verifiedEmails.remove(email);
+        }
     }
 
     private record CodeEntry(String code, LocalDateTime expiresAt) {}

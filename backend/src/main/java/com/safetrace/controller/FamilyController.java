@@ -1,7 +1,7 @@
 package com.safetrace.controller;
 
 import com.safetrace.domain.FamilyRelation;
-import com.safetrace.domain.Member;
+import com.safetrace.dto.FamilyMemberSearchResponse;
 import com.safetrace.service.FamilyRelationService;
 import com.safetrace.service.MemberService;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +21,7 @@ public class FamilyController {
 
     // 가족 등록할 상대방 검색 - 로그인ID 부분일치
     @GetMapping("/search")
-    public List<Member> search(@RequestParam String loginId, Authentication authentication) {
+    public List<FamilyMemberSearchResponse> search(@RequestParam String loginId, Authentication authentication) {
         Long memberId = (Long) authentication.getPrincipal();
         return memberService.searchMembers(loginId, memberId);
     }
