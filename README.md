@@ -30,7 +30,7 @@ SafeTrace는 단순히 재난 정보를 보여주는 데서 끝나지 않고, �
 - 공지사항 등록 / 수정 / 삭제
 - 통계·보고 화면 확인
 
-> 권한은 `USER`, `STAFF` 두 종류만 사용합니다.
+> 권한은 `USER`, `STAFF` 두 종류를 사용합니다.
 
 ---
 
@@ -67,7 +67,8 @@ REVIEWING
 - Spring Security + JWT 인증
 - USER / STAFF 권한 분리
 - 이메일 인증코드 기반 회원가입
-- 비밀번호 변경
+- 비밀번호 변경 및 재설정
+- 이메일 인증 상태 재사용 방지
 - 회원탈퇴(Soft Delete)
 - 탈퇴 회원의 로그인 아이디 재사용 가능
   - 활성 회원만 대상으로 하는 Oracle 함수 기반 UNIQUE INDEX 적용
@@ -82,6 +83,7 @@ REVIEWING
 - 사건 생성 및 담당 STAFF 배정
 - 사건 상태 변경 및 처리 이력 관리
 - 종료 사건 관리
+- 동일 제보의 중복 처리 방지
 
 ### 실시간 처리
 - WebSocket 기반 실시간 갱신
@@ -98,6 +100,7 @@ REVIEWING
 - 이메일 링크 토큰으로 비로그인 응답 가능
 - 토큰 만료 및 재사용 방지
 - 탈퇴 회원은 현재 가족 목록에서 제외
+- 가족 검색 API 응답을 전용 DTO로 제한해 불필요한 개인정보 노출 최소화
 
 ### 관심지역 / 알림
 - 관심지역 다중 등록
@@ -125,6 +128,7 @@ Groq API를 이용합니다.
 - 날씨 + 주변 진행 사건 + 재난문자 + 대피시설 정보를 종합해 요약
 - 자유질문
 - 필요한 경우 SafeTrace 내부 데이터와 공공안전 데이터를 조회해 답변
+- 서버 단위 일일 토큰 사용량 안전 한도 적용
 
 ### 공지사항
 - 비로그인 사용자 포함 조회 가능
@@ -152,6 +156,8 @@ Groq API를 이용합니다.
 - Spring Mail
 - Bean Validation
 - Lombok
+- JUnit 5
+- Mockito
 
 ### Frontend
 - React 19
@@ -206,19 +212,26 @@ safe/
    ├─ application.yml.example
    ├─ schema.sql
    ├─ 백엔드_실행가이드.md
-   └─ src/main/
-      ├─ java/com/safetrace/
-      │  ├─ ai/
-      │  ├─ config/
-      │  ├─ controller/
-      │  ├─ domain/
-      │  ├─ external/
-      │  ├─ mapper/
-      │  ├─ service/
-      │  ├─ util/
-      │  └─ websocket/
-      └─ resources/
-         └─ mappers/
+   └─ src/
+      ├─ main/
+      │  ├─ java/com/safetrace/
+      │  │  ├─ ai/
+      │  │  ├─ config/
+      │  │  ├─ controller/
+      │  │  ├─ domain/
+      │  │  ├─ dto/
+      │  │  ├─ external/
+      │  │  ├─ mapper/
+      │  │  ├─ service/
+      │  │  ├─ util/
+      │  │  └─ websocket/
+      │  └─ resources/
+      │     └─ mappers/
+      └─ test/
+         └─ java/com/safetrace/service/
+            ├─ IncidentServiceTest.java
+            ├─ MemberServiceTest.java
+            └─ ReportServiceTest.java
 ```
 
 ---
@@ -273,7 +286,37 @@ http://localhost:5173
 
 ---
 
-## 7. 빌드
+## 7. 테스트
+
+JUnit 5와 Mockito를 이용해 핵심 비즈니스 로직에 대한 단위 테스트를 작성했습니다.
+
+### 테스트 항목
+- 사건 상태 전이 규칙 검증
+  - 허용되지 않은 단계 건너뛰기 방지
+  - 사건 종료 시 조치내역 필수 검증
+- 회원가입 / 비밀번호 재설정 시 이메일 인증 상태 검증
+- 동일 제보를 여러 담당자가 동시에 처리할 때 중복 연결 방지
+
+실행:
+
+```bash
+cd backend
+mvn clean test
+```
+
+현재 테스트 결과:
+
+```text
+Tests run: 6
+Failures: 0
+Errors: 0
+Skipped: 0
+BUILD SUCCESS
+```
+
+---
+
+## 8. 빌드
 
 ### Frontend
 
@@ -307,23 +350,27 @@ backend/target/safetrace-backend-0.0.1-SNAPSHOT.jar
 
 ---
 
-## 8. 보안 / 데이터 정합성 처리
+## 9. 보안 / 데이터 정합성 처리
 
 - 실제 `application.yml` Git 추적 제외
+- Maven UTF-8 인코딩 명시
 - JWT 기반 REST API 인증
 - WebSocket Handshake JWT 검증
 - USER / STAFF 권한 분리
 - 탈퇴 회원 접근 차단
 - 활성 회원 기준 로그인 아이디 유일성 보장
+- 이메일 인증 성공 상태 재사용 방지
+- 가족 검색 API 응답 데이터 최소화
 - 가족 안전확인 대상 서버 검증
 - 담당자 배정 시 활성 STAFF 여부 서버 검증
-- 제보 상태 전이 서버 검증
+- 사건 상태 전이 서버 검증
+- 사건 종료 시 조치내역 필수 검증
 - 제보 UPDATE 쿼리에 상태 조건 적용
 - 회원당 대표 관심지역 1개 DB 레벨 보장
 
 ---
 
-## 9. 현재 상태
+## 10. 현재 상태
 
 ### 완료
 - 핵심 USER / STAFF 기능
@@ -335,6 +382,7 @@ backend/target/safetrace-backend-0.0.1-SNAPSHOT.jar
 - 공공데이터 연동
 - AI 안전 브리핑 / 자유질문
 - 공지사항
+- JUnit / Mockito 핵심 로직 테스트
 - 프론트 Production Build 성공
 - 백엔드 Maven Package 성공
 
@@ -351,7 +399,7 @@ backend/target/safetrace-backend-0.0.1-SNAPSHOT.jar
 
 ---
 
-## 10. 프로젝트 차별점
+## 11. 프로젝트 차별점
 
 기존의 단순 재난정보 조회 서비스와 달리 SafeTrace는 **시민 제보 이후의 대응 과정 자체를 추적**하는 데 초점을 두었습니다.
 
