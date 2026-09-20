@@ -18,15 +18,51 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class GroqService {
 
+    private static final Logger log = LoggerFactory.getLogger(GroqService.class);
+
     private static final URI CHAT_URI = URI.create("https://api.groq.com/openai/v1/chat/completions");
+
+    // Groq 무료 티어 일일 토큰 한도(200,000)를 실수로/장난으로 다 써버리는 걸 막기 위한
+    // 자체 안전장치. "질문 개수"로 추정하면 질문 길이에 따라 오차가 크므로, Groq가 응답마다
+    // 실제로 돌려주는 usage.total_tokens를 그대로 누적 집계해서 판단한다 — 추정이 아니라 실측.
+    // 200,000 전부가 아니라 180,000에서 끊는 이유: 마지막 한 번의 호출이 얼마나 토큰을 쓸지는
+    // 호출 전엔 알 수 없어서, 그 한 번이 남은 여유를 넘겨버릴 상황에 대비한 안전 여유분(20,000).
+    private static final long DAILY_TOKEN_SAFETY_LIMIT = 180_000L;
+    private final AtomicLong dailyTokensUsed = new AtomicLong(0);
+    private volatile LocalDate dailyCountDate = LocalDate.now();
+
+    private static final String QUOTA_EXCEEDED_MESSAGE =
+            "오늘 AI 안전 도우미 사용량이 많아 잠시 후 다시 이용해주세요. "
+                    + "재난문자·대피시설 등 공식 정보는 다른 메뉴에서 바로 확인하실 수 있습니다.";
+
+    /** callGroq()가 Groq를 실제로 부르는 걸 막기 위해 스스로 던지는 신호용 예외. */
+    private static final class DailyQuotaExceededException extends RuntimeException {
+    }
+
+    private void resetDailyCounterIfNewDay() {
+        LocalDate today = LocalDate.now();
+        if (!today.equals(dailyCountDate)) {
+            synchronized (this) {
+                if (!today.equals(dailyCountDate)) {
+                    dailyCountDate = today;
+                    dailyTokensUsed.set(0);
+                }
+            }
+        }
+    }
 
     // "대구 재난문자"처럼 지역명이 질문에 직접 들어오거나,
     // "공주시는?"처럼 직전 지역 질문의 의도를 이어받는 짧은 후속 질문은
@@ -116,8 +152,12 @@ public class GroqService {
                 message("user", prompt)
         );
 
-        JsonNode response = callGroq(messages, List.of());
-        return cleanAnswer(extractContent(response));
+        try {
+            JsonNode response = callGroq(messages, List.of());
+            return cleanAnswer(extractContent(response));
+        } catch (DailyQuotaExceededException e) {
+            return QUOTA_EXCEEDED_MESSAGE;
+        }
     }
 
     /**
@@ -176,63 +216,69 @@ public class GroqService {
             return aiToolFunctions.getAirQuality(explicitRegion);
         }
 
-        // 날씨/대피시설/지역 안전상황은 새 지역 데이터를 서버에서 먼저 조회한 뒤
-        // 그 데이터만 Groq가 설명하도록 한다.
-        if (explicitRegion != null && regionalIntent != RegionalIntent.NONE) {
-            String regionalData = aiToolFunctions.getRegionalSafetyData(explicitRegion);
+        // 여기서부터는 실제로 Groq를 호출하는 경로다. callGroq()가 호출 전에 오늘 누적 토큰을
+        // 스스로 확인해서, 한도를 넘었으면 DailyQuotaExceededException을 던진다.
+        try {
+            // 날씨/대피시설/지역 안전상황은 새 지역 데이터를 서버에서 먼저 조회한 뒤
+            // 그 데이터만 Groq가 설명하도록 한다.
+            if (explicitRegion != null && regionalIntent != RegionalIntent.NONE) {
+                String regionalData = aiToolFunctions.getRegionalSafetyData(explicitRegion);
 
-            messages.add(1, message(
-                    "system",
-                    "[이번 질문에 대해 서버가 방금 새로 조회한 SafeTrace 지역 데이터]\n"
-                            + regionalData
-                            + "\n반드시 위 데이터만 이번 지역 질문의 사실 근거로 사용하세요. "
-                            + "직전 대화의 다른 지역 데이터는 이번 답변에 재사용하지 마세요."
-            ));
+                messages.add(1, message(
+                        "system",
+                        "[이번 질문에 대해 서버가 방금 새로 조회한 SafeTrace 지역 데이터]\n"
+                                + regionalData
+                                + "\n반드시 위 데이터만 이번 지역 질문의 사실 근거로 사용하세요. "
+                                + "직전 대화의 다른 지역 데이터는 이번 답변에 재사용하지 마세요."
+                ));
+
+                messages.add(message("user", truncate(question, 1200)));
+                JsonNode forcedResponse = callGroq(messages, List.of());
+                return cleanAnswer(extractContent(forcedResponse));
+            }
 
             messages.add(message("user", truncate(question, 1200)));
-            JsonNode forcedResponse = callGroq(messages, List.of());
-            return cleanAnswer(extractContent(forcedResponse));
+
+            JsonNode firstResponse = callGroq(messages, toolDefinitions());
+            JsonNode assistantMessage = firstResponse.path("choices").path(0).path("message");
+            JsonNode toolCalls = assistantMessage.path("tool_calls");
+
+            if (!toolCalls.isArray() || toolCalls.isEmpty()) {
+                return cleanAnswer(assistantMessage.path("content").asText(""));
+            }
+
+            // 모델이 반환한 assistant tool_call 메시지를 그대로 대화에 추가
+            Map<String, Object> assistantMap = objectMapper.convertValue(
+                    assistantMessage,
+                    new TypeReference<Map<String, Object>>() {}
+            );
+            messages.add(assistantMap);
+
+            // 현재 도구는 하나의 질문을 한 번의 종합 조회로 해결하도록 설계되어 있다.
+            // 모델이 여러 개를 요청하더라도 최대 2개까지만 실행해 호출 폭주를 막는다.
+            int executed = 0;
+            for (JsonNode toolCall : toolCalls) {
+                if (executed >= 2) break;
+
+                String toolCallId = toolCall.path("id").asText();
+                String functionName = toolCall.path("function").path("name").asText();
+                String arguments = toolCall.path("function").path("arguments").asText("{}");
+                String toolResult = executeTool(functionName, arguments);
+
+                Map<String, Object> toolMessage = new LinkedHashMap<>();
+                toolMessage.put("role", "tool");
+                toolMessage.put("tool_call_id", toolCallId);
+                toolMessage.put("content", toolResult);
+                messages.add(toolMessage);
+                executed++;
+            }
+
+            // 2차 호출에서는 tools를 다시 보내지 않는다. 추가 Tool Calling 루프를 막아 최대 2회로 고정한다.
+            JsonNode finalResponse = callGroq(messages, List.of());
+            return cleanAnswer(extractContent(finalResponse));
+        } catch (DailyQuotaExceededException e) {
+            return QUOTA_EXCEEDED_MESSAGE;
         }
-
-        messages.add(message("user", truncate(question, 1200)));
-
-        JsonNode firstResponse = callGroq(messages, toolDefinitions());
-        JsonNode assistantMessage = firstResponse.path("choices").path(0).path("message");
-        JsonNode toolCalls = assistantMessage.path("tool_calls");
-
-        if (!toolCalls.isArray() || toolCalls.isEmpty()) {
-            return cleanAnswer(assistantMessage.path("content").asText(""));
-        }
-
-        // 모델이 반환한 assistant tool_call 메시지를 그대로 대화에 추가
-        Map<String, Object> assistantMap = objectMapper.convertValue(
-                assistantMessage,
-                new TypeReference<Map<String, Object>>() {}
-        );
-        messages.add(assistantMap);
-
-        // 현재 도구는 하나의 질문을 한 번의 종합 조회로 해결하도록 설계되어 있다.
-        // 모델이 여러 개를 요청하더라도 최대 2개까지만 실행해 호출 폭주를 막는다.
-        int executed = 0;
-        for (JsonNode toolCall : toolCalls) {
-            if (executed >= 2) break;
-
-            String toolCallId = toolCall.path("id").asText();
-            String functionName = toolCall.path("function").path("name").asText();
-            String arguments = toolCall.path("function").path("arguments").asText("{}");
-            String toolResult = executeTool(functionName, arguments);
-
-            Map<String, Object> toolMessage = new LinkedHashMap<>();
-            toolMessage.put("role", "tool");
-            toolMessage.put("tool_call_id", toolCallId);
-            toolMessage.put("content", toolResult);
-            messages.add(toolMessage);
-            executed++;
-        }
-
-        // 2차 호출에서는 tools를 다시 보내지 않는다. 추가 Tool Calling 루프를 막아 최대 2회로 고정한다.
-        JsonNode finalResponse = callGroq(messages, List.of());
-        return cleanAnswer(extractContent(finalResponse));
     }
 
     private String buildSystemPrompt(
@@ -573,6 +619,14 @@ public class GroqService {
     }
 
     private JsonNode callGroq(List<Map<String, Object>> messages, List<Map<String, Object>> tools) {
+        resetDailyCounterIfNewDay();
+
+        if (dailyTokensUsed.get() >= DAILY_TOKEN_SAFETY_LIMIT) {
+            log.warn("[GroqService] 일일 토큰 안전한도({}) 도달 - Groq 호출을 막음. 오늘 누적: {}",
+                    DAILY_TOKEN_SAFETY_LIMIT, dailyTokensUsed.get());
+            throw new DailyQuotaExceededException();
+        }
+
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("messages", messages);
@@ -615,7 +669,9 @@ public class GroqService {
                 );
             }
 
-            return objectMapper.readTree(response.body());
+            JsonNode root = objectMapper.readTree(response.body());
+            recordTokenUsage(root);
+            return root;
         } catch (HttpTimeoutException e) {
             throw new ResponseStatusException(
                     HttpStatus.GATEWAY_TIMEOUT,
@@ -626,6 +682,26 @@ public class GroqService {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "AI 요청이 중단되었습니다.");
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 서비스 연결에 실패했습니다.");
+        }
+    }
+
+    /**
+     * Groq 응답의 usage.total_tokens(그 호출에서 실제로 쓴 토큰 수)를 오늘 누적치에 더한다.
+     * OpenAI 호환 API라 모든 응답에 usage 필드가 오지만, 혹시 없거나 파싱 실패해도
+     * 0으로 처리하고 넘어간다(집계가 안 될 뿐 요청 자체는 이미 끝난 뒤라 실패시킬 이유가 없음).
+     */
+    private void recordTokenUsage(JsonNode response) {
+        long usedThisCall = response.path("usage").path("total_tokens").asLong(0);
+        if (usedThisCall <= 0) {
+            return;
+        }
+
+        long total = dailyTokensUsed.addAndGet(usedThisCall);
+        long eightyPercent = (long) (DAILY_TOKEN_SAFETY_LIMIT * 0.8);
+
+        if (total >= eightyPercent && total - usedThisCall < eightyPercent) {
+            log.info("[GroqService] 오늘 누적 토큰 사용량이 안전한도의 80%를 넘었습니다: {} / {}",
+                    total, DAILY_TOKEN_SAFETY_LIMIT);
         }
     }
 
