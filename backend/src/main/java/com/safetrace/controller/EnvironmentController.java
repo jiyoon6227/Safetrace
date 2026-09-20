@@ -90,7 +90,12 @@ public class EnvironmentController {
     public List<Map<String, Object>> getNationwideDisasterMessages(
             @RequestParam(defaultValue = "100") int limit
     ) {
-        return disasterMessageService.getRecentMessagesNationwide(limit);
+        try {
+            return disasterMessageService.getRecentMessagesNationwide(limit);
+        } catch (DisasterMessageService.DisasterMessageApiException e) {
+            // 쿼터 초과/인증 오류 등 외부 API 실패 - 대시보드가 500으로 죽는 대신 빈 목록으로 응답.
+            return List.of();
+        }
     }
 
     /**
@@ -102,7 +107,11 @@ public class EnvironmentController {
             @RequestParam String rgnNm,
             @RequestParam(defaultValue = "5") int limit
     ) {
-        return disasterMessageService.getRecentMessages(rgnNm, limit);
+        try {
+            return disasterMessageService.getRecentMessages(rgnNm, limit);
+        } catch (DisasterMessageService.DisasterMessageApiException e) {
+            return List.of();
+        }
     }
 
     /**
@@ -123,6 +132,10 @@ public class EnvironmentController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam(defaultValue = "500") int limit
     ) {
-        return disasterMessageService.getMessagesByPeriod(rgnNm, startDate, endDate, limit);
+        try {
+            return disasterMessageService.getMessagesByPeriod(rgnNm, startDate, endDate, limit);
+        } catch (DisasterMessageService.DisasterMessageApiException e) {
+            return List.of();
+        }
     }
 }

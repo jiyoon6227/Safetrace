@@ -188,6 +188,9 @@ public class AirQualityService {
             Integer pm10Avg = pm10Count > 0 ? (int) Math.round(pm10Sum / pm10Count) : null;
             Integer pm25Avg = pm25Count > 0 ? (int) Math.round(pm25Sum / pm25Count) : null;
 
+            log.info("[AirQuality] 조회 성공: sido={}, 측정소 {}건, pm10Avg={}, pm25Avg={}",
+                    sidoFullName, items.size(), pm10Avg, pm25Avg);
+
             Map<String, Object> result = new HashMap<>();
             result.put("available", true);
             result.put("pm10", pm10Avg);

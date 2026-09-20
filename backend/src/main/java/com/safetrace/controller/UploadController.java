@@ -24,6 +24,14 @@ public class UploadController {
     @Value("${app.upload-dir}")
     private String uploadDir;
 
+    // 재난 제보/사건 등록용 사진 업로드라 이미지만 받는다. 이게 없으면 .html/.js/.exe 등
+    // 어떤 파일이든 올려서 /uploads/**(WebConfig에서 정적 리소스로 그대로 서빙)를 통해
+    // 우리 도메인에서 그대로 열리게 만들 수 있다 - 확장자와 실제 Content-Type을 둘 다 검사한다.
+    private static final java.util.Set<String> ALLOWED_EXTENSIONS =
+            java.util.Set.of(".jpg", ".jpeg", ".png", ".gif", ".webp");
+    private static final java.util.Set<String> ALLOWED_CONTENT_TYPES =
+            java.util.Set.of("image/jpeg", "image/png", "image/gif", "image/webp");
+
     @PostMapping
     public Map<String, String> upload(@RequestParam("file") MultipartFile file) throws IOException {
         if (file.isEmpty()) {
@@ -32,8 +40,18 @@ public class UploadController {
 
         String original = file.getOriginalFilename();
         String ext = (original != null && original.contains("."))
-                ? original.substring(original.lastIndexOf('.'))
+                ? original.substring(original.lastIndexOf('.')).toLowerCase()
                 : "";
+
+        if (!ALLOWED_EXTENSIONS.contains(ext)) {
+            throw new IllegalArgumentException("이미지 파일(jpg, jpeg, png, gif, webp)만 업로드할 수 있습니다.");
+        }
+
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType.toLowerCase())) {
+            throw new IllegalArgumentException("이미지 파일만 업로드할 수 있습니다.");
+        }
+
         String savedName = UUID.randomUUID() + ext;
 
         Path dirPath = Path.of(uploadDir).toAbsolutePath();

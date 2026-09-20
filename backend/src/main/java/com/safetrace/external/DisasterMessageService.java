@@ -2,6 +2,8 @@ package com.safetrace.external;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -43,6 +45,8 @@ import java.util.regex.Pattern;
 @Service
 public class DisasterMessageService {
 
+    private static final Logger log = LoggerFactory.getLogger(DisasterMessageService.class);
+
     private static final String BASE_URL = "https://www.safetydata.go.kr/V2/api/DSSP-IF-00247";
     private static final Duration CACHE_TTL = Duration.ofMinutes(30);
 
@@ -50,7 +54,10 @@ public class DisasterMessageService {
     private static final int PAGE_SIZE = 100;
 
     // 비정상 응답 등으로 무한 반복되는 것을 막기 위한 안전장치.
-    private static final int MAX_PAGES = 100;
+    // 48시간(마이페이지) / 사용자가 고른 기간(더보기) 조회라 실제로 수백 페이지까지 갈 일이 없다.
+    // 예전 100은 쿼터 초과 상황에서 fallback 3단계(정식명→약칭→하위지역)와 겹치면
+    // 질문 한 번에 API 호출을 순식간에 수백 건까지 태울 수 있어 5로 낮춘다.
+    private static final int MAX_PAGES = 5;
 
     private static final DateTimeFormatter API_DATE_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -83,6 +90,17 @@ public class DisasterMessageService {
     ) {
         boolean isExpired() {
             return Instant.now().isAfter(fetchedAt.plus(CACHE_TTL));
+        }
+    }
+
+    /**
+     * "진짜로 문자가 없는 것"과 "호출 자체가 실패한 것"(쿼터초과/인증오류/타임아웃 등)을
+     * 구분하기 위한 예외. 이게 나오면 절대 빈 결과로 캐시하지 말고, fallback(정식명→약칭→
+     * 하위지역) 재시도도 즉시 중단해야 한다 — 안 그러면 한 번의 실패가 쿼터를 3~4배로 더 태운다.
+     */
+    public static final class DisasterMessageApiException extends RuntimeException {
+        public DisasterMessageApiException(String message) {
+            super(message);
         }
     }
 
@@ -336,7 +354,9 @@ public class DisasterMessageService {
 
             if (response.statusCode() < 200
                     || response.statusCode() >= 300) {
-                return List.of();
+                log.warn("[DisasterMessage] HTTP {} 응답: region={}, url={}",
+                        response.statusCode(), rgnNm, url);
+                throw new DisasterMessageApiException("HTTP " + response.statusCode());
             }
 
             JsonNode root = objectMapper.readTree(response.body());
@@ -348,7 +368,17 @@ public class DisasterMessageService {
             String resultCode = header.path("resultCode").asText("");
 
             if (!resultCode.isEmpty() && !"00".equals(resultCode)) {
-                return List.of();
+                log.warn("[DisasterMessage] resultCode={}, resultMsg={}, region={}, url={}",
+                        resultCode, header.path("resultMsg").asText(), rgnNm, url);
+
+                // "03"(NODATA)은 조회 자체는 성공했고 그 기간·지역에 문자가 없다는 뜻.
+                // 그 외(22=쿼터초과, 30=키오류 등)는 호출 자체가 실패한 것이므로 구분해서 던진다.
+                if ("03".equals(resultCode)) {
+                    return List.of();
+                }
+
+                throw new DisasterMessageApiException(
+                        "resultCode=" + resultCode + " " + header.path("resultMsg").asText());
             }
 
             JsonNode bodyNode = root.has("body")
@@ -386,14 +416,17 @@ public class DisasterMessageService {
             return messages;
 
         } catch (HttpTimeoutException e) {
-            return List.of();
+            log.warn("[DisasterMessage] 타임아웃: region={}, url={}", rgnNm, url);
+            throw new DisasterMessageApiException("타임아웃");
 
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
 
-            return List.of();
+            log.warn("[DisasterMessage] 호출 실패: region={}, 원인={}: {}", rgnNm,
+                    e.getClass().getName(), e.getMessage(), e);
+            throw new DisasterMessageApiException(e.getClass().getSimpleName());
         }
     }
 

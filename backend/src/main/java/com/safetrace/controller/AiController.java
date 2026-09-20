@@ -40,7 +40,14 @@ public class AiController {
     ) {
         Map<String, Object> weather = weatherService.getCurrentWeather(lat, lng);
         List<Incident> incidents = incidentService.getActiveIncidentsNearby(lat, lng, 3.0);
-        List<Map<String, Object>> disasterMessages = disasterMessageService.getRecentMessages(region, 5);
+        List<Map<String, Object>> disasterMessages;
+        try {
+            disasterMessages = disasterMessageService.getRecentMessages(region, 5);
+        } catch (DisasterMessageService.DisasterMessageApiException e) {
+            // 쿼터 초과 등으로 재난문자만 못 가져온 경우, 브리핑 전체를 500으로 죽이지 않고
+            // 날씨/사건/대피시설만으로 요약을 만든다.
+            disasterMessages = List.of();
+        }
         List<Map<String, Object>> shelters = shelterService.getNearbyShelters(region, lat, lng, 3);
 
         String summary = groqService.generateBriefing(region, weather, incidents, disasterMessages, shelters);

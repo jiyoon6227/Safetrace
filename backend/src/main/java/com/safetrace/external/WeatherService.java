@@ -93,6 +93,10 @@ public class WeatherService {
             result.put("hourlyRainfall", values.get("RN1"));  // 1시간 강수량(mm), "강수없음"일 수 있음
             result.put("baseDate", baseDate);
             result.put("baseTime", baseTime);
+            // AI 답변에서 "몇 시 기준 데이터인지"를 모델이 직접 20260920/2200을 가공하다 실수하지 않도록,
+            // 여기서 미리 사람이 읽기 좋은 형태로 만들어서 넘긴다.
+            result.put("observedAt", baseDateTime.format(
+                    DateTimeFormatter.ofPattern("M월 d일 HH:mm")) + " 관측 기준");
             return result;
         } catch (HttpTimeoutException e) {
             return Map.of("available", false, "message", "날씨 서버 응답이 지연되고 있습니다.");

@@ -1052,7 +1052,6 @@ export default function MainPage() {
       const changedId = data?.incident?.incidentId;
       if (!changedId) return;
 
-      console.log("WS 수신:", changedId, "추적중인 사건:", Object.keys(incidentInfoRef.current));
 
       getNotifications().then(setDbNotifications).catch(() => {});
 
