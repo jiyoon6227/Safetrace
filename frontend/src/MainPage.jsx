@@ -1625,7 +1625,7 @@ export default function MainPage() {
   <>
     {isStaff && (
   <button onClick={() => goTo("staff")} className="hidden sm:flex items-center px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100 cursor-pointer">
-    담당자 대시보드
+    담당자 화면
   </button>
 )}
     <div className="relative hidden sm:block" ref={profileMenuRef}>
