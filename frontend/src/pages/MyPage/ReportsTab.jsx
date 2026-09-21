@@ -325,7 +325,7 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
       {/* 첨부사진 확대 미리보기 모달 */}
       {previewPhotoUrl && (
         <div
-          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4"
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] px-4"
           onClick={() => setPreviewPhotoUrl(null)}
         >
           <div className="relative max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
