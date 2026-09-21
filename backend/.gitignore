@@ -1,6 +1,7 @@
-# 실제 DB 비밀번호/JWT 시크릿이 담긴 설정 파일 - 절대 커밋하지 않음
-# 대신 application.yml.example을 커밋하고, 이 파일은 로컬에서만 만들어서 씀
+# 실제 환경 설정 파일 - Git에 올리지 않음
 application.yml
+application-local.yml
+application-prod.yml
 
 target/
 *.class
