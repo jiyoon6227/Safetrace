@@ -335,6 +335,7 @@ export default function RegionsTab({ regions = [], onChanged, member, onOpenShel
             // 시/도 전체 문자가 계속 묻혀서 안 보이는 문제) -> 병렬로 둘 다 가져와서 합치는 걸로 변경.
             const fetchDistrictMessages = () =>
               authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(regionQuery)}&limit=20`)
+                .then((data) => data.filter(belongsToSido))
                 .then((data) => {
                   if (data.length > 0 || !regionFallback) return data;
                   return authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(regionFallback)}&limit=20`)

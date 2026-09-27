@@ -4,271 +4,311 @@
 
 SafeTrace는 단순히 재난 정보를 보여주는 데서 끝나지 않고, 시민 제보가 접수된 이후 **검토 → 사건 연결/생성 → 담당자 배정 → 대응 → 종료**까지의 처리 흐름을 추적할 수 있도록 구성했습니다.
 
+| 항목 | 내용 |
+|---|---|
+| **프로젝트 유형** | 개인 프로젝트 (기획 · 설계 · 개발 · 배포) |
+| **개발 기간** | 2026.09 · 약 2주 |
+| **개발 인원** | 1명 |
+| **Live Service** | https://safetrace.kr |
+| **GitHub** | https://github.com/jiyoon6227/Safetrace |
+
 ---
 
-## 1. 프로젝트 핵심
+## 목차
 
-### 시민(USER)
-- 회원가입 / 로그인 / 이메일 인증
-- 재난·안전 현장 제보 및 사진 첨부
-- 내 제보 처리 상태 확인
-- 관심지역 등록 및 대표 관심지역 설정
-- 가족 등록 / 수락 / 삭제
-- 가족 안전확인 요청 및 응답
-- 프로필 / 비밀번호 / 알림 설정 / 회원탈퇴
-- 공지사항, 재난문자, 대피시설, 날씨·대기질 등 공공안전정보 조회
-- AI 안전 브리핑 및 자유질문
+- [프로젝트 소개](#프로젝트-소개)
+- [배포 및 테스트 계정](#배포-및-테스트-계정)
+- [주요 기능](#주요-기능)
+- [핵심 처리 흐름](#핵심-처리-흐름)
+- [기술 스택](#기술-스택)
+- [외부 연동 API](#외부-연동-api)
+- [프로젝트 구조](#프로젝트-구조)
+- [로컬 실행 방법](#로컬-실행-방법)
+- [테스트](#테스트)
+- [보안 및 데이터 정합성](#보안-및-데이터-정합성)
+- [배포 구조](#배포-구조)
+- [주요 문제 해결](#주요-문제-해결)
+- [향후 개선](#향후-개선)
 
-### 담당자(STAFF)
-- 관제 대시보드
-- 시민 제보 검토
-- 제보 검토중 / 반려 / 사건 연결 처리
-- 사건 생성 및 담당자 배정
-- 사건 상태 변경 및 처리 이력 관리
-- 연결 제보 확인
-- 공공정보 확인
-- 공지사항 등록 / 수정 / 삭제
-- 통계·보고 화면 확인
+---
+
+## 프로젝트 소개
+
+기존 재난 서비스가 **정보 제공 또는 신고 접수**에 집중되어 있다는 점에서 출발해,
+SafeTrace는 **제보 이후의 처리 과정 자체를 시민이 확인할 수 있는 서비스**를 목표로 설계했습니다.
+
+```text
+시민 현장 제보
+      ↓
+담당자 검토
+      ↓
+기존 사건 연결 / 신규 사건 생성
+      ↓
+담당자 배정
+      ↓
+대응 및 복구
+      ↓
+처리 이력 기록
+      ↓
+종료
+```
+
+### 사용자 역할
+
+- **USER(시민)** — 현장 제보, 처리상태 확인, 관심지역·공공안전정보 조회, 가족 안전확인
+- **STAFF(담당자)** — 제보 검토, 사건 연결/생성, 담당자 배정, 상태 변경 및 처리 이력 관리
 
 > 권한은 `USER`, `STAFF` 두 종류를 사용합니다.
 
 ---
 
-## 2. 주요 처리 흐름
+## 배포 및 테스트 계정
+
+### Live Service
+
+- **URL**: https://safetrace.kr
+- **GitHub**: https://github.com/jiyoon6227/Safetrace
+
+### Demo Account
+
+`backend/schema.sql` 실행 시 아래 테스트 계정이 생성됩니다.
+
+| 구분 | ID | PW | 용도 |
+|---|---|---|---|
+| **STAFF** | `staff` | `1234` | 담당자 관제·제보 검토·사건 처리 |
+| **USER 1** | `user1` | `1234` | 시민 제보·관심지역·가족 안전확인 |
+| **USER 2** | `user2` | `1234` | 가족 안전확인 상호 테스트 |
+
+> `user1`과 `user2`는 테스트 데이터에서 가족 관계가 `ACCEPTED` 상태로 연결되어 있어 가족 안전확인 기능을 바로 확인할 수 있습니다.
+>
+> 테스트 계정은 시연용 계정이며 실제 개인정보를 사용하지 않습니다.
+
+---
+
+## 주요 기능
+
+### 시민(USER)
+
+- 회원가입 / 로그인 / 이메일 인증
+- 재난·안전 현장 제보 및 다중 사진 첨부
+- 내 제보 처리 상태 확인
+- 관심지역 다중 등록 및 대표 관심지역 설정
+- 관심지역 기반 재난 알림
+- 가족 등록 요청 / 수락 / 삭제
+- 가족 안전확인 요청 / 응답
+- 이메일 링크를 통한 비로그인 안전확인 응답
+- 공지사항 조회
+- 재난문자 / 대피시설 / 날씨 / 기상특보 / 대기질 / 자외선 지수 조회
+- 지도 기반 사건·대피시설 확인
+- AI 안전 브리핑 및 자유질문
+- 프로필 / 비밀번호 / 알림 설정 / 회원탈퇴
+
+### 담당자(STAFF)
+
+- 관제 대시보드
+- 시민 제보 목록 및 상세 조회
+- 제보 검토중 / 반려 처리
+- 주변 기존 사건 후보 조회
+- 기존 사건 연결 / 신규 사건 생성
+- 사건 담당자 배정
+- 사건 상태 단계별 변경
+- 상태 변경 이력 및 처리 메모 관리
+- 연결된 제보 및 현장 사진 확인
+- 공공안전정보 조회
+- 공지사항 등록 / 수정 / 삭제
+- 통계·보고 화면 조회
+
+---
+
+## 핵심 처리 흐름
+
+### 1. 시민 제보 → 사건 관리
 
 ```text
-시민 제보
-   ↓
+시민 제보 등록
+    ↓
 RECEIVED
-   ↓
+    ↓
 담당자 검토
-   ↓
+    ↓
 REVIEWING
-   ├─ 기존 사건 연결 → LINKED
-   ├─ 신규 사건 생성 → LINKED
-   └─ 반려 → REJECTED
-
-사건
-   ↓
-담당자 배정
-   ↓
-상태 변경 및 처리 이력 저장
-   ↓
-종료
+    ├─ 기존 사건 연결 → LINKED
+    ├─ 신규 사건 생성 → LINKED
+    └─ 반려 → REJECTED
 ```
 
-서버에서 허용된 상태 전이와 담당자 권한을 검증하며, 제보 처리 UPDATE에도 현재 상태 조건을 적용해 잘못된 중복 처리를 방지합니다.
+- 제보와 실제 대응 단위인 `Incident`를 분리해 여러 제보를 하나의 사건에 연결할 수 있도록 설계했습니다.
+- 동일 재난 유형, 최근 시간대, 거리 조건을 기준으로 주변 사건 후보를 조회해 담당자에게 제시합니다.
+- 이미 처리된 제보는 현재 상태 조건을 포함한 UPDATE로 중복 처리를 차단합니다.
+
+### 2. 사건 상태 전이
+
+```text
+접수 → 확인중 → 대응중 → 복구중 → 종료
+```
+
+- 상태 변경 규칙을 서버에서 검증합니다.
+- 단계를 건너뛰는 변경을 차단합니다.
+- 상태가 변경될 때마다 `SF_INCIDENT_LOG`에 이력을 누적합니다.
+- 종료 단계에서는 처리 내역을 남기도록 검증합니다.
+
+### 3. 가족 안전확인
+
+```text
+가족 관계 요청
+   ↓
+상대방 수락(ACCEPTED)
+   ↓
+안전확인 요청
+   ↓
+로그인 응답 또는 이메일 토큰 응답
+   ↓
+SAFE / HELP
+```
+
+- 수락된 가족에게만 안전확인 요청이 가능합니다.
+- 이메일 응답 링크는 UUID 기반 토큰, 만료시간, 응답시간을 이용해 재사용을 방지합니다.
+- 응답 결과는 WebSocket으로 요청자 화면에 실시간 반영합니다.
 
 ---
 
-## 3. 주요 기능
+## 기술 스택
 
-### 인증 / 회원
-- Spring Security + JWT 인증
-- USER / STAFF 권한 분리
-- 이메일 인증코드 기반 회원가입
-- 비밀번호 변경 및 재설정
-- 이메일 인증 상태 재사용 방지
-- 회원탈퇴(Soft Delete)
-- 탈퇴 회원의 로그인 아이디 재사용 가능
-  - 활성 회원만 대상으로 하는 Oracle 함수 기반 UNIQUE INDEX 적용
-- JWT 만료 / 무효 토큰 처리
-
-### 시민 제보 / 사건 관리
-- 현장 제보 등록
-- 다중 사진 업로드
-- 위도·경도 및 주소 저장
-- 거리 기반 주변 사건 조회
-- 제보 검토 / 반려 / 사건 연결
-- 사건 생성 및 담당 STAFF 배정
-- 사건 상태 변경 및 처리 이력 관리
-- 종료 사건 관리
-- 동일 제보의 중복 처리 방지
-
-### 실시간 처리
-- WebSocket 기반 실시간 갱신
-- 사건 상태 변경
-- 제보 상태 변경
-- 가족 안전확인 요청 / 응답
-- WebSocket Handshake 시 JWT 검증
-- 연결 종료 시 자동 재연결 처리
-
-### 가족 안전확인
-- 가족 등록 요청 / 수락 / 삭제
-- `ACCEPTED` 상태의 가족에게만 안전확인 요청 가능
-- 로그인 상태에서 안전확인 응답
-- 이메일 링크 토큰으로 비로그인 응답 가능
-- 토큰 만료 및 재사용 방지
-- 탈퇴 회원은 현재 가족 목록에서 제외
-- 가족 검색 API 응답을 전용 DTO로 제한해 불필요한 개인정보 노출 최소화
-
-### 관심지역 / 알림
-- 관심지역 다중 등록
-- 회원당 대표 관심지역 1개 제한
-- 관심지역 기반 재난 알림
-- 내 제보 상태 변경 알림
-- 알림 조회 / 삭제
-- 탈퇴 회원에게 신규 알림 생성 방지
-
-### 공공 안전정보
-공공 API를 이용해 실제 데이터를 조회합니다.
-
-- 기상청 현재 날씨
-- 기상특보
-- 대기질
-- 자외선 지수
-- 민방위 대피시설
-- 전국 / 지역별 재난문자
-- 기간별 재난문자 조회
-
-### AI 안전 도우미
-Groq API를 이용합니다.
-
-- 현재 위치 기반 AI 안전 브리핑
-- 날씨 + 주변 진행 사건 + 재난문자 + 대피시설 정보를 종합해 요약
-- 자유질문
-- 필요한 경우 SafeTrace 내부 데이터와 공공안전 데이터를 조회해 답변
-- 서버 단위 일일 토큰 사용량 안전 한도 적용
-
-### 공지사항
-- 비로그인 사용자 포함 조회 가능
-- STAFF 등록 / 수정 / 삭제
-- 공지 유형
-  - 일반
-  - 긴급
-  - 점검
-- 상단 고정
-- 조회수
-- 이미지 첨부
+| 분류 | 기술 |
+|---|---|
+| **Language** | Java 21, JavaScript |
+| **Backend** | Spring Boot 3.3.4, Spring Security, JWT, MyBatis, WebSocket |
+| **Frontend** | React 19, Vite 8, Tailwind CSS 4, lucide-react |
+| **Database** | Oracle DB |
+| **Build / Test** | Maven, JUnit 5, Mockito |
+| **Infra** | GCP VM, Nginx, HTTPS |
+| **Mail** | Spring Mail, Gmail SMTP |
+| **AI** | Groq API |
+| **Map** | Kakao Maps JavaScript SDK |
 
 ---
 
-## 4. 기술 스택
+## 외부 연동 API
 
-### Backend
-- Java 21
-- Spring Boot 3.3.4
-- Spring Security
-- JWT (`jjwt 0.12.6`)
-- MyBatis
-- Oracle DB
-- WebSocket
-- Spring Mail
-- Bean Validation
-- Lombok
-- JUnit 5
-- Mockito
+| API | 용도 |
+|---|---|
+| **행정안전부 재난안전데이터공유플랫폼** | 전국·지역별 긴급재난문자 및 기간별 재난문자 조회 |
+| **기상청 단기예보 / 특보 API** | 현재 날씨 및 기상특보 조회 |
+| **기상청 생활기상지수 API** | 자외선 지수 조회 |
+| **AirKorea** | 미세먼지·초미세먼지 등 대기질 조회 |
+| **민방위 대피시설 공공데이터** | 지역·현재 위치 기반 대피시설 조회 |
+| **Kakao Maps** | 사건·대피시설 지도 표시, 주소↔좌표 변환, MarkerClusterer |
+| **Daum Postcode** | 주소 검색 |
+| **Groq API** | 공공안전정보 + 내부 사건 데이터를 결합한 AI 안전 브리핑 및 질의응답 |
+| **Gmail SMTP** | 이메일 인증 및 가족 안전확인 링크 발송 |
 
-### Frontend
-- React 19
-- JavaScript
-- Vite 8
-- Tailwind CSS 4
-- lucide-react
-
-### External / Open API
-- 공공데이터포털
-- 기상청
-- 에어코리아
-- 재난문자 / 민방위 대피시설 관련 공공데이터
-- Groq API
+> API Key, JWT Secret, DB 접속 비밀번호, Gmail 앱 비밀번호 등 민감정보는 환경변수 또는 Git 추적 제외 설정파일로 관리합니다.
 
 ---
 
-## 5. 프로젝트 구조
+## 프로젝트 구조
 
 ```text
 safe/
 ├─ frontend/
 │  ├─ src/
-│  │  ├─ api/
-│  │  │  ├─ client.js
-│  │  │  └─ socket.js
+│  │  ├─ api/                  # REST / WebSocket 클라이언트
 │  │  ├─ components/
 │  │  ├─ data/
 │  │  ├─ hooks/
 │  │  ├─ pages/
-│  │  │  ├─ ControlBoard/
+│  │  │  ├─ ControlBoard/      # STAFF 관제 화면
 │  │  │  ├─ MyPage/
-│  │  │  ├─ LoginPage.jsx
-│  │  │  ├─ NoticePage.jsx
-│  │  │  ├─ PublicDisasterPage.jsx
 │  │  │  ├─ ReportForm.jsx
 │  │  │  ├─ ReportPage.jsx
 │  │  │  ├─ SafetyCheckResponsePage.jsx
-│  │  │  ├─ SafetyGuidePage.jsx
 │  │  │  ├─ SafetyMapPage.jsx
-│  │  │  ├─ SearchPage.jsx
-│  │  │  └─ ShelterPage.jsx
+│  │  │  ├─ ShelterPage.jsx
+│  │  │  └─ NoticePage.jsx
 │  │  ├─ MainPage.jsx
-│  │  ├─ main.jsx
-│  │  └─ index.css
+│  │  └─ main.jsx
 │  ├─ index.html
 │  ├─ package.json
 │  └─ vite.config.js
 │
 └─ backend/
-   ├─ pom.xml
-   ├─ application.yml.example
    ├─ schema.sql
-   ├─ 백엔드_실행가이드.md
+   ├─ pom.xml
    └─ src/
       ├─ main/
       │  ├─ java/com/safetrace/
-      │  │  ├─ ai/
-      │  │  ├─ config/
+      │  │  ├─ ai/             # AI Tool Function
+      │  │  ├─ config/         # Security / JWT / WebSocket
       │  │  ├─ controller/
       │  │  ├─ domain/
       │  │  ├─ dto/
-      │  │  ├─ external/
+      │  │  ├─ external/       # 날씨·재난문자·대기질·대피시설 API
       │  │  ├─ mapper/
       │  │  ├─ service/
-      │  │  ├─ util/
       │  │  └─ websocket/
       │  └─ resources/
+      │     ├─ application.yml
+      │     ├─ application-local.yml
+      │     ├─ application-prod.yml
       │     └─ mappers/
       └─ test/
          └─ java/com/safetrace/service/
-            ├─ IncidentServiceTest.java
-            ├─ MemberServiceTest.java
-            └─ ReportServiceTest.java
 ```
 
 ---
 
-## 6. 로컬 실행
+## 로컬 실행 방법
 
-### 6-1. Oracle DB 준비
+### 요구 사항
 
-`backend/schema.sql`을 실행해 테이블, 시퀀스, 인덱스 및 테스트 데이터를 생성합니다.
+- JDK 21
+- Maven 3.x
+- Node.js / npm
+- Oracle Database
+- 기능별 외부 API Key
 
-### 6-2. Backend 설정
+### 1. DB 초기화
 
-`backend/application.yml.example`을 참고해 로컬의 `backend/application.yml`을 작성합니다.
+`backend/schema.sql`을 실행합니다.
+
+```text
+테이블 생성
+→ 시퀀스 생성
+→ 인덱스 생성
+→ 배포/시연용 테스트 데이터 생성
+```
+
+### 2. Backend 설정
+
+프로젝트는 `local`, `prod` 프로필을 분리해 사용합니다.
 
 주요 설정값:
-- Oracle DB 접속 정보
-- JWT Secret
-- Gmail / SMTP 정보
-- 공공데이터 API Key
-- Groq API Key
 
-실제 `backend/application.yml`은 `.gitignore`에 포함되어 GitHub에 업로드되지 않도록 관리합니다.
+```text
+Oracle DB 접속 정보
+JWT_SECRET
+GMAIL_APP_PASSWORD
+공공데이터 API Key
+재난안전데이터 API Key
+GROQ_API_KEY
+```
 
-### 6-3. Backend 실행
+민감정보는 GitHub에 커밋하지 않습니다.
+
+### 3. Backend 실행
 
 ```bash
 cd backend
 mvn spring-boot:run
 ```
 
-기본 포트:
+로컬 기본 포트:
 
 ```text
 http://localhost:8080
 ```
 
-### 6-4. Frontend 실행
+### 4. Frontend 실행
 
 ```bash
 cd frontend
@@ -282,139 +322,124 @@ npm run dev
 http://localhost:5173
 ```
 
-개발 환경에서는 Vite Proxy가 `/api`, `/uploads` 요청을 Spring Boot `8080`으로 전달합니다.
+Vite 개발 서버는 `/api`, `/uploads`, `/ws` 요청을 Spring Boot `8080`으로 Proxy합니다.
 
 ---
 
-## 7. 테스트
+## 테스트
 
-JUnit 5와 Mockito를 이용해 핵심 비즈니스 로직에 대한 단위 테스트를 작성했습니다.
+JUnit 5와 Mockito를 사용해 핵심 비즈니스 로직에 대한 단위 테스트를 작성했습니다.
 
-### 테스트 항목
-- 사건 상태 전이 규칙 검증
-  - 허용되지 않은 단계 건너뛰기 방지
-  - 사건 종료 시 조치내역 필수 검증
-- 회원가입 / 비밀번호 재설정 시 이메일 인증 상태 검증
-- 동일 제보를 여러 담당자가 동시에 처리할 때 중복 연결 방지
+현재 테스트 클래스:
 
-실행:
+- `IncidentServiceTest`
+- `ReportServiceTest`
+- `MemberServiceTest`
+
+주요 검증 항목:
+
+- 사건 상태 전이 규칙
+- 허용되지 않은 단계 건너뛰기 차단
+- 사건 종료 시 처리내역 검증
+- 회원가입 / 비밀번호 재설정의 이메일 인증 상태 검증
+- 동일 제보 중복 처리 방지
+
+현재 소스 기준 `@Test` **6건**이 구성되어 있습니다.
 
 ```bash
 cd backend
 mvn clean test
 ```
 
-현재 테스트 결과:
+---
 
-```text
-Tests run: 6
-Failures: 0
-Errors: 0
-Skipped: 0
-BUILD SUCCESS
-```
+## 보안 및 데이터 정합성
+
+- BCrypt 비밀번호 암호화
+- Spring Security + JWT 인증
+- `USER` / `STAFF` 권한 분리
+- `@EnableMethodSecurity` 기반 STAFF 전용 API 접근제어
+- REST API 무효 인증 요청에 HTTP 401 반환
+- WebSocket Handshake 단계 JWT 검증
+- Local / Production 허용 Origin 분리
+- 회원탈퇴 Soft Delete
+- 활성 회원 사이에서만 LOGIN_ID 중복을 막는 Oracle 함수 기반 UNIQUE INDEX
+- 회원당 대표 관심지역 1개를 DB UNIQUE INDEX로 보장
+- 제보 처리 UPDATE에 현재 상태 조건 적용
+- 사건 상태 전이 규칙 서버 검증
+- 가족 안전확인 요청 대상 서버 검증
+- 이메일 응답 토큰 만료 및 재사용 방지
+- AI API 일일 토큰 사용량 안전한도 적용
 
 ---
 
-## 8. 빌드
-
-### Frontend
-
-```bash
-cd frontend
-npm run build
-```
-
-성공 시:
+## 배포 구조
 
 ```text
-frontend/dist/
+사용자 브라우저
+      ↓ HTTPS
+   safetrace.kr
+      ↓
+     Nginx
+   ├─ React 정적 파일
+   ├─ /api     → Spring Boot
+   ├─ /uploads → Spring Boot
+   └─ /ws      → WebSocket
+      ↓
+Spring Boot (prod)
+      ↓
+   Oracle DB
 ```
 
-생성
-
-### Backend
-
-```bash
-cd backend
-mvn clean package
-```
-
-성공 시:
-
-```text
-backend/target/safetrace-backend-0.0.1-SNAPSHOT.jar
-```
-
-생성
+- **Cloud**: GCP VM
+- **Reverse Proxy**: Nginx
+- **Domain**: `safetrace.kr`
+- **HTTPS 적용**
+- 운영 Backend 프로필 분리
+- 운영 Frontend URL을 환경설정으로 분리해 CORS / WebSocket Origin에 공통 적용
 
 ---
 
-## 9. 보안 / 데이터 정합성 처리
+## 주요 문제 해결
 
-- 실제 `application.yml` Git 추적 제외
-- Maven UTF-8 인코딩 명시
-- JWT 기반 REST API 인증
-- WebSocket Handshake JWT 검증
-- USER / STAFF 권한 분리
-- 탈퇴 회원 접근 차단
-- 활성 회원 기준 로그인 아이디 유일성 보장
-- 이메일 인증 성공 상태 재사용 방지
-- 가족 검색 API 응답 데이터 최소화
-- 가족 안전확인 대상 서버 검증
-- 담당자 배정 시 활성 STAFF 여부 서버 검증
-- 사건 상태 전이 서버 검증
-- 사건 종료 시 조치내역 필수 검증
-- 제보 UPDATE 쿼리에 상태 조건 적용
-- 회원당 대표 관심지역 1개 DB 레벨 보장
+### 1. 운영 환경 CORS / WebSocket Origin 분리
 
----
+**문제**  
+로컬 주소 기준으로 허용 Origin이 고정되어 운영 도메인에서 REST API / WebSocket 연결 문제가 발생할 수 있었습니다.
 
-## 10. 현재 상태
-
-### 완료
-- 핵심 USER / STAFF 기능
-- 인증 / 권한
-- 제보 / 사건 Workflow
-- 가족 안전확인
-- 관심지역 / 알림
-- WebSocket 실시간 반영
-- 공공데이터 연동
-- AI 안전 브리핑 / 자유질문
-- 공지사항
-- JUnit / Mockito 핵심 로직 테스트
-- 프론트 Production Build 성공
-- 백엔드 Maven Package 성공
-
-### 실제 배포 시 추가 예정
-- GCP VM 배포
-- 실제 외부 IP / 도메인 확정 후 CORS 설정
-- HTTPS 적용
-- WebSocket `wss://` 배포 환경 대응
-- Reverse Proxy 설정
-
-### 현재 미적용
-- Redis 캐싱
-- Resilience4j Circuit Breaker
-
----
-
-## 11. 프로젝트 차별점
-
-기존의 단순 재난정보 조회 서비스와 달리 SafeTrace는 **시민 제보 이후의 대응 과정 자체를 추적**하는 데 초점을 두었습니다.
+**해결**  
+`app.frontend-base-url`을 `local`, `prod` 프로필로 분리하고 `SecurityConfig`, `WebSocketConfig`에서 동일 설정값을 사용하도록 변경했습니다.
 
 ```text
-공공 안전정보
-     +
-시민 현장 제보
-     +
-담당자 대응 Workflow
-     +
-가족 안전확인
-     +
-실시간 상태 반영
-     +
-AI 안전 도우미
+local → http://localhost:5173
+prod  → https://safetrace.kr
 ```
 
-이를 하나의 서비스 안에서 연결해 시민은 자신의 제보가 어떻게 처리되고 있는지 확인하고, 담당자는 제보를 실제 사건 단위로 관리할 수 있도록 구현했습니다.
+### 2. 동일 지역명 재난문자 혼입 방지
+
+**문제**  
+`동구`, `중구`, `서구`처럼 여러 지역에 동일한 행정구역명이 존재해 지역 조회 시 다른 시·도의 데이터가 섞일 수 있었습니다.
+
+**해결**  
+시·도 + 구 단위 조회를 우선 적용하고 fallback 결과에도 시·도 일치 여부를 추가 검증해 선택 지역의 재난문자만 노출하도록 개선했습니다.
+
+### 3. 제보 중복 처리 방지
+
+담당자가 같은 제보를 동시에 처리하더라도 이미 상태가 변경된 제보는 다시 연결되지 않도록 UPDATE 조건에 현재 상태를 포함해 처리했습니다.
+
+---
+
+## 향후 개선
+
+- Redis 캐싱 적용
+- Resilience4j Circuit Breaker / Retry 적용
+- 외부 API 장애 상황에 대한 Fallback 고도화
+- WebSocket 및 대량 제보 부하 테스트
+- 재난 유형별 중복 사건 탐지 거리·시간 기준 세분화
+- CI/CD 자동 배포 구성
+
+---
+
+## License
+
+개인 포트폴리오 프로젝트

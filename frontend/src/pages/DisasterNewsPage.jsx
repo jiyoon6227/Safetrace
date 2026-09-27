@@ -266,7 +266,7 @@ export default function DisasterNewsPage({
             };
 
             // 1차: 부산광역시 서구
-            let districtData = await authFetch(buildHistoryUrl(regionQuery));
+            let districtData = await authFetch(buildHistoryUrl(regionQuery)).then((data) => data.filter(belongsToSido));
 
             // 2차: 서구
             if (!districtData?.length && regionFallback) {
