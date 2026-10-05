@@ -342,7 +342,7 @@ fallback 결과 시·도 재검증
 | 분류 | 기술 |
 |---|---|
 | **Language** | Java 21, JavaScript |
-| **Backend** | Spring Boot, Spring Security, JWT, MyBatis, WebSocket |
+| **Backend** | Spring Boot 3.3.4, Spring Security, JWT, MyBatis, WebSocket |
 | **Frontend** | React, Vite, Tailwind CSS, lucide-react |
 | **Database** | Oracle DB |
 | **Build&nbsp;/&nbsp;Test** | Maven, JUnit 5, Mockito |
@@ -480,7 +480,7 @@ Spring Boot (prod)
 
 ### 1. DB 초기화
 
-`backend/schema.sql`을 실행합니다.
+`backend/schema.sql`을 실행합니다. **기존 `SF_` 테이블 · 시퀀스는 삭제 후 다시 생성됩니다.**
 
 ```text
 테이블 생성
@@ -488,6 +488,8 @@ Spring Boot (prod)
 → 인덱스 생성
 → 배포/시연용 테스트 데이터 생성
 ```
+
+> 테스트 데이터의 시각은 실행 시점 기준(예: 40분 전)으로 들어가므로, 시연 전에 다시 실행하면 대시보드의 "오늘" 집계가 채워진 상태로 확인할 수 있습니다.
 
 ### 2. Backend 설정
 
