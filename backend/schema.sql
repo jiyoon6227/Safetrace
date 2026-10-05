@@ -1,7 +1,7 @@
 -- ============================================
 -- SafeTrace DB 전체 초기화 + 계정 + 테스트 데이터
--- 이 파일 전체를 통째로 선택해서 한 번에 실행(F5)하면 끝.
--- Postman 필요 없음 - 비밀번호는 미리 암호화해서 넣어놨음.
+-- SQL Developer에서 스크립트 실행(F5)으로 전체 실행
+-- 데모 계정 비밀번호는 README 참고 (BCrypt 해시로 저장)
 -- PK는 IDENTITY가 아닌 SEQUENCE 방식으로 채번함.
 -- ============================================
 
@@ -244,6 +244,14 @@ COMMENT ON COLUMN SF_REPORT_PHOTO.CREATED_AT IS '등록일시';
 ALTER TABLE SF_INCIDENT
     ADD CONSTRAINT FK_INCIDENT_SOURCE_REPORT FOREIGN KEY (SOURCE_REPORT_ID) REFERENCES SF_REPORT(REPORT_ID);
 
+-- 4-3. 상태 · 코드값 CHECK 제약 (코드의 enum / 상수 값과 동일하게 유지)
+ALTER TABLE SF_INCIDENT ADD CONSTRAINT CK_SF_INCIDENT_STATUS CHECK (STATUS IN ('RECEIVED', 'CONFIRMING', 'RESPONDING', 'RECOVERING', 'CLOSED'));
+ALTER TABLE SF_INCIDENT ADD CONSTRAINT CK_SF_INCIDENT_SEVERITY CHECK (SEVERITY IN ('LOW', 'MEDIUM', 'HIGH'));
+ALTER TABLE SF_REPORT ADD CONSTRAINT CK_SF_REPORT_STATUS CHECK (STATUS IN ('RECEIVED', 'REVIEWING', 'LINKED', 'REJECTED'));
+ALTER TABLE SF_FAMILY_RELATION ADD CONSTRAINT CK_SF_FAMILY_STATUS CHECK (STATUS IN ('PENDING', 'ACCEPTED'));
+ALTER TABLE SF_SAFETY_CHECK ADD CONSTRAINT CK_SF_SAFETY_STATUS CHECK (STATUS IN ('PENDING', 'SAFE', 'HELP'));
+ALTER TABLE SF_NOTIFICATION ADD CONSTRAINT CK_SF_NOTIFICATION_TYPE CHECK (TYPE IN ('DISASTER', 'REPORT'));
+
 -- 5. 가족 관계 테이블============================================
 --    "가족 안전확인" 기능용. 한쪽이 등록 요청하면 상대방이 수락(ACCEPTED)해야 실제 연결됨
 --    그룹 개념 없이 1:1 관계로 관리 (지금 규모에는 이게 더 단순하고 충분함)
@@ -366,7 +374,7 @@ CREATE INDEX IDX_SF_NOTICE_PINNED_TIME ON SF_NOTICE(IS_PINNED, CREATED_AT);
 -- 공지 유형 필터용
 CREATE INDEX IDX_SF_NOTICE_TYPE_TIME ON SF_NOTICE(NOTICE_TYPE, CREATED_AT);
 
--- ★ 신규: LOGIN_ID를 "미탈퇴 회원 사이에서만" 유일하게 강제하는 함수기반 유니크 인덱스=========
+-- LOGIN_ID를 "미탈퇴 회원 사이에서만" 유일하게 강제하는 함수기반 유니크 인덱스
 --   Oracle은 인덱스 표현식이 NULL이면 그 행을 유니크 검사 대상에서 아예 빼준다.
 --   그래서 IS_WITHDRAWN='Y'인 행은 표현식이 NULL이 되어 검사 대상에서 빠지고,
 --   IS_WITHDRAWN='N'인 행끼리만 LOGIN_ID 중복이 막힌다.
@@ -470,7 +478,7 @@ VALUES (SEQ_SF_REPORT.NEXTVAL, 2, '도로꺼짐', '도로 일부가 내려앉아
 
 -- 사건에 연결 완료
 INSERT INTO SF_REPORT (REPORT_ID, MEMBER_ID, DISASTER_TYPE, CONTENT, LATITUDE, LONGITUDE, ADDRESS, INCIDENT_ID, STATUS, REPORTER_PHONE, CREATED_AT)
-VALUES (SEQ_SF_REPORT.NEXTVAL, 3, '화재', '상가 건물에서 연기가 많이 발생하고 있습니다.', 36.815200, 127.108500, '충청남도 천안시 서북구 불당동', 2, 'LINKED', '010-3333-3333', SYSTIMESTAMP - INTERVAL '1' HOUR);
+VALUES (SEQ_SF_REPORT.NEXTVAL, 3, '화재', '상가 건물에서 연기가 많이 발생하고 있습니다.', 36.815200, 127.108500, '충청남도 천안시 서북구 불당동', 2, 'LINKED', '010-3333-3333', SYSTIMESTAMP - INTERVAL '125' MINUTE);
 
 UPDATE SF_INCIDENT SET SOURCE_REPORT_ID = 2 WHERE INCIDENT_ID = 2;
 
@@ -517,5 +525,3 @@ INSERT INTO SF_NOTICE (NOTICE_ID, TITLE, CONTENT, NOTICE_TYPE, IS_PINNED, WRITER
 VALUES (SEQ_SF_NOTICE.NEXTVAL, '재난 행동요령 메뉴 이용 안내', '재난 유형별 사전 대비 및 발생 시 행동요령을 확인할 수 있습니다.', 'NORMAL', 'N', 1);
 
 COMMIT;
-
-
