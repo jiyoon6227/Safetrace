@@ -856,7 +856,17 @@ export default function MainPage() {
       setSelectedSafetyNewsRegionId(extraState.safetyNewsRegionId);
     }
 
-    window.history.pushState({ page: nextPage, ...extraState }, "");
+        window.history.pushState({ page: nextPage, ...extraState }, "");
+  };
+
+  // 메인 히어로 검색 → 통합검색 페이지로 이동
+  const submitHeroSearch = () => {
+    const q = headerSearchQuery.trim();
+    if (!q) {
+      headerSearchInputRef.current?.focus();
+      return;
+    }
+    goTo("search", { searchQuery: q });
   };
 
   // 프로필 드롭다운 바깥을 클릭하면 자동으로 닫힘
@@ -1691,10 +1701,28 @@ export default function MainPage() {
               작은 관심이 더 안전한 일상을 만듭니다.<br />
               세이프트레이스는 언제나 함께합니다.
             </p>
-            <div className="mt-5 bg-white rounded-2xl h-[54px] sm:h-[58px] shadow-xl shadow-black/20 border border-white/80 flex items-center px-4 sm:px-5 w-full max-w-[510px]">
-              <Search className="w-5 h-5 text-[#0B2A52] mr-3 shrink-0" />
-              <input className="w-full min-w-0 outline-none bg-transparent text-sm placeholder:text-slate-400" placeholder="지역, 재난 유형, 키워드를 검색해보세요." />
-            </div>
+           <div className="mt-5 bg-white rounded-2xl h-[54px] sm:h-[58px] shadow-xl shadow-black/20 border border-white/80 flex items-center px-4 sm:px-5 w-full max-w-[510px]">
+  <button
+    type="button"
+    onClick={submitHeroSearch}
+    aria-label="검색"
+    className="mr-3 shrink-0 cursor-pointer"
+  >
+    <Search className="w-5 h-5 text-[#0B2A52]" />
+  </button>
+  <input
+    ref={headerSearchInputRef}
+    value={headerSearchQuery}
+    onChange={(e) => setHeaderSearchQuery(e.target.value)}
+    onKeyDown={(e) => {
+      if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+        submitHeroSearch();
+      }
+    }}
+    className="w-full min-w-0 outline-none bg-transparent text-sm placeholder:text-slate-400"
+    placeholder="지역, 재난 유형, 키워드를 검색해보세요."
+  />
+</div>
           </div>
 
           <div className="w-full bg-white/95 backdrop-blur-[2px] rounded-[22px] shadow-2xl shadow-slate-900/15 p-5 sm:p-6 border border-white/80">
