@@ -1,8 +1,8 @@
-# Safetrace
+# SafeTrace 🛡️
 
 대전·세종·충청권을 중심으로 기획한 **재난·안전 제보 및 상황관리 플랫폼** 개인 프로젝트입니다.
 
-Safetrace는 단순히 재난 정보를 보여주는 데서 끝나지 않고, 시민 제보가 접수된 이후 **검토 → 사건 연결/생성 → 담당자 배정 → 대응 → 종료**까지의 처리 흐름을 추적할 수 있도록 구성했습니다.
+SafeTrace는 단순히 재난 정보를 보여주는 데서 끝나지 않고, 시민 제보가 접수된 이후 **검토 → 사건 연결/생성 → 담당자 배정 → 대응 → 종료**까지의 처리 흐름을 추적할 수 있도록 구성했습니다.
 
 | 항목 | 내용 |
 |---|---|
@@ -35,7 +35,7 @@ Safetrace는 단순히 재난 정보를 보여주는 데서 끝나지 않고, �
 ## 프로젝트 소개
 
 기존 재난 서비스가 **정보 제공 또는 신고 접수**에 집중되어 있다는 점에서 출발해,  
-Safetrace는 **제보 이후의 처리 과정 자체를 시민이 확인할 수 있는 서비스**를 목표로 설계했습니다.
+SafeTrace는 **제보 이후의 처리 과정 자체를 시민이 확인할 수 있는 서비스**를 목표로 설계했습니다.
 
 ```text
 시민 현장 제보
@@ -459,12 +459,14 @@ Spring Boot (prod)
    Oracle DB
 ```
 
-- **Cloud**: GCP VM
-- **Reverse Proxy**: Nginx
-- **Domain**: `safetrace.kr`
+- **Cloud**: GCP Compute Engine Windows VM
+- **Reverse Proxy**: Nginx (`/api`, `/uploads`, `/ws` → `127.0.0.1:8081`)
+- **Database**: Oracle XE (`10.178.0.2:1521/xe`, GCP VM 내부 사설 IP)
+- **Domain**: `https://safetrace.kr`
 - **HTTPS 적용**
-- 운영 Backend 프로필 분리
-- 운영 Frontend URL을 환경설정으로 분리해 CORS / WebSocket Origin에 공통 적용
+- 운영 Backend 프로필(`prod`) 분리
+- 운영 Frontend URL을 환경설정으로 관리해 CORS / WebSocket Origin에 공통 적용
+- 외부 IP가 변경되어도 Nginx의 `127.0.0.1:8081`과 DB 내부 IP `10.178.0.2`는 수정하지 않습니다.
 
 ---
 
@@ -503,6 +505,22 @@ Spring Boot (prod)
 | `application.yml` | 공통 설정 (메일 · MyBatis · JWT · 외부 API) |
 | `application-local.yml` | 로컬 DB · 포트 · 프론트 주소(`http://localhost:5173`) |
 | `application-prod.yml` | 운영 DB · 포트 · 프론트 주소(`https://safetrace.kr`) |
+
+운영 DB는 같은 GCP VM의 Oracle XE에 내부 IP로 연결합니다.
+
+```yaml
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: jdbc:oracle:thin:@//10.178.0.2:1521/xe
+
+app:
+  frontend-base-url: https://safetrace.kr
+```
+
+> `10.178.0.2`는 GCP VM 내부 사설 IP이므로 VM 외부 IP가 변경되어도 수정하지 않습니다.
 
 > `JWT_SECRET`, `GMAIL_APP_PASSWORD`, `GROQ_API_KEY`는 서버 환경변수로 주입하며, 실제 설정 파일은 Git에 커밋하지 않습니다.
 
