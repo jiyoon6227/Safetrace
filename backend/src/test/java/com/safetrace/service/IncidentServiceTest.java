@@ -56,8 +56,8 @@ class IncidentServiceTest {
                 () -> incidentService.changeStatus(1L, "RESPONDING", "확인 완료", 10L)
         );
 
-        verify(incidentMapper, never()).updateStatus(anyLong(), anyString());
-        verify(incidentMapper, never()).closeIncident(anyLong(), anyString());
+        verify(incidentMapper, never()).updateStatus(anyLong(), anyString(), anyString());
+        verify(incidentMapper, never()).closeIncident(anyLong(), anyString(), anyString());
         verify(incidentMapper, never()).insertLog(any());
     }
 
@@ -78,7 +78,7 @@ class IncidentServiceTest {
                 () -> incidentService.changeStatus(1L, "CLOSED", "   ", 10L)
         );
 
-        verify(incidentMapper, never()).closeIncident(anyLong(), anyString());
+        verify(incidentMapper, never()).closeIncident(anyLong(), anyString(), anyString());
         verify(incidentMapper, never()).insertLog(any());
     }
 
@@ -97,7 +97,27 @@ class IncidentServiceTest {
                 () -> incidentService.changeStatus(1L, "RESPONDING", "현장 출동", 20L)   // B가 요청
         );
 
-        verify(incidentMapper, never()).updateStatus(anyLong(), anyString());
+        verify(incidentMapper, never()).updateStatus(anyLong(), anyString(), anyString());
+        verify(incidentMapper, never()).insertLog(any());
+    }
+
+    @Test
+    void 이미_처리된_상태변경_요청이면_막는다() {
+        Incident incident = new Incident();
+        incident.setIncidentId(1L);
+        incident.setStatus("CONFIRMING");   // 서버가 읽었을 때는 확인중
+        incident.setAssignedStaffId(10L);
+
+        when(incidentMapper.findById(1L)).thenReturn(incident);
+        when(memberMapper.findById(10L)).thenReturn(activeStaff());   // 담당자 본인 요청
+        // 그사이 같은 요청이 먼저 처리돼서 DB는 이미 대응중 → 조건이 안 맞아 0줄
+        when(incidentMapper.updateStatus(1L, "CONFIRMING", "RESPONDING")).thenReturn(0);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> incidentService.changeStatus(1L, "RESPONDING", "현장 출동", 10L)
+        );
+
         verify(incidentMapper, never()).insertLog(any());
     }
 

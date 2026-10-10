@@ -29,7 +29,8 @@ public interface IncidentMapper {
 
     // 상태 변경 (Workflow 전이 시 사용)
     int updateStatus(@Param("incidentId") Long incidentId,
-                      @Param("status") String status);
+                     @Param("currentStatus") String currentStatus,
+                     @Param("newStatus") String newStatus);
 
     // 담당자 배정
     int assignStaff(@Param("incidentId") Long incidentId,
@@ -37,7 +38,8 @@ public interface IncidentMapper {
 
     // 종료 처리 (종료사유 필수)
     int closeIncident(@Param("incidentId") Long incidentId,
-                       @Param("closeReason") String closeReason);
+                      @Param("currentStatus") String currentStatus,
+                      @Param("closeReason") String closeReason);
 
     // 상태변경 이력 저장
     int insertLog(IncidentLog log);

@@ -126,10 +126,16 @@ public class IncidentService {
             throw new IllegalStateException("종료 처리에는 조치내역(종료사유)이 필요합니다.");
         }
 
+        // 읽은 시점의 상태(current)가 아직 그대로일 때만 변경 (같은 요청 중복 방지)
+        int affected;
         if (target == IncidentStatus.CLOSED) {
-            incidentMapper.closeIncident(incidentId, memo);
+            affected = incidentMapper.closeIncident(incidentId, current.name(), memo);
         } else {
-            incidentMapper.updateStatus(incidentId, target.name());
+            affected = incidentMapper.updateStatus(incidentId, current.name(), target.name());
+        }
+
+        if (affected != 1) {
+            throw new IllegalStateException("이미 처리된 요청입니다. 새로고침 후 다시 확인해주세요.");
         }
 
         IncidentLog log = new IncidentLog();

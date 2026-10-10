@@ -63,9 +63,10 @@
     </update>
 
     <update id="updateStatus">
-        UPDATE SF_INCIDENT
-        SET STATUS = #{status}, UPDATED_AT = SYSTIMESTAMP
-        WHERE INCIDENT_ID = #{incidentId}
+    UPDATE SF_INCIDENT
+    SET STATUS = #{newStatus}, UPDATED_AT = SYSTIMESTAMP
+    WHERE INCIDENT_ID = #{incidentId}
+      AND STATUS = #{currentStatus}
     </update>
 
     <update id="assignStaff">
@@ -84,9 +85,10 @@
     </update>
 
     <update id="closeIncident">
-        UPDATE SF_INCIDENT
-        SET STATUS = 'CLOSED', CLOSE_REASON = #{closeReason}, UPDATED_AT = SYSTIMESTAMP
-        WHERE INCIDENT_ID = #{incidentId}
+    UPDATE SF_INCIDENT
+    SET STATUS = 'CLOSED', CLOSE_REASON = #{closeReason}, UPDATED_AT = SYSTIMESTAMP
+    WHERE INCIDENT_ID = #{incidentId}
+      AND STATUS = #{currentStatus}
     </update>
 
     <insert id="insertLog" parameterType="com.safetrace.domain.IncidentLog">
