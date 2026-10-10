@@ -13,8 +13,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -101,9 +104,8 @@ public class SafetyCheckService {
         }
 
         // 위 검증이 모두 통과한 뒤에만 실제 요청을 생성한다.
+        List<SafetyCheck> createdChecks = new ArrayList<>();
         for (Long targetId : uniqueTargetIds) {
-            Member target = targetMembers.get(targetId);
-
             SafetyCheck check = new SafetyCheck();
             check.setRequesterId(requesterId);
             check.setTargetMemberId(targetId);
@@ -112,30 +114,38 @@ public class SafetyCheckService {
             check.setTokenExpiresAt(LocalDateTime.now().plusHours(tokenExpiryHours));
 
             safetyCheckMapper.insert(check);
+            createdChecks.add(check);
+        }
 
-            // 사이트에 접속 중인 요청자/대상자에게만 실시간 알림
-            webSocketHandler.broadcastRequested(check);
+        // 모든 요청이 DB에 확정 저장된 뒤에만 알림·메일을 보낸다
+        // (중간에 실패해 롤백되면, 존재하지 않는 요청의 메일이 나가는 것을 막기 위함)
+        String mailIncidentTitle = incidentTitle;
+        runAfterCommit(() -> {
+            for (SafetyCheck check : createdChecks) {
+                // 사이트에 접속 중인 요청자/대상자에게만 실시간 알림
+                webSocketHandler.broadcastRequested(check);
 
-            // 이메일 알림 설정이 켜져있고 이메일이 등록되어 있으면 메일 발송
-            // 메일 실패 때문에 DB 요청 생성 자체가 실패하지 않도록 개별 예외 처리
-            if ("Y".equals(target.getEmailNotifyEnabled())
-                    && target.getEmail() != null
-                    && !target.getEmail().isBlank()) {
-                try {
-                    mailService.sendSafetyCheckRequest(
-                            target.getEmail(),
-                            requester.getName(),
-                            incidentTitle,
-                            check.getToken()
-                    );
-                } catch (Exception e) {
-                    System.err.println(
-                            "안전확인 이메일 발송 실패 (targetId="
-                                    + targetId + "): " + e.getMessage()
-                    );
+                // 메일 실패가 다른 가족의 알림·메일을 막지 않도록 개별 예외 처리
+                Member target = targetMembers.get(check.getTargetMemberId());
+                if ("Y".equals(target.getEmailNotifyEnabled())
+                        && target.getEmail() != null
+                        && !target.getEmail().isBlank()) {
+                    try {
+                        mailService.sendSafetyCheckRequest(
+                                target.getEmail(),
+                                requester.getName(),
+                                mailIncidentTitle,
+                                check.getToken()
+                        );
+                    } catch (Exception e) {
+                        System.err.println(
+                                "안전확인 이메일 발송 실패 (targetId="
+                                        + check.getTargetMemberId() + "): " + e.getMessage()
+                        );
+                    }
                 }
             }
-        }
+        });
     }
 
     public List<SafetyCheck> getSentRequests(Long requesterId) {
@@ -156,7 +166,7 @@ public class SafetyCheckService {
             throw new IllegalStateException("이미 응답한 요청입니다.");
         }
 
-    // 그사이 다른 경로(이메일 링크 등)로 먼저 응답했으면 0줄 → 알림 보내지 않고 멈춤
+        // 그사이 다른 경로(이메일 링크 등)로 먼저 응답했으면 0줄 → 알림 보내지 않고 멈춤
         int affected = safetyCheckMapper.respond(checkId, status);
         if (affected != 1) {
             throw new IllegalStateException("이미 응답한 요청입니다.");
@@ -210,6 +220,20 @@ public class SafetyCheckService {
     private void validateStatus(String status) {
         if (!"SAFE".equals(status) && !"HELP".equals(status)) {
             throw new IllegalArgumentException("status는 SAFE 또는 HELP만 가능합니다.");
+        }
+    }
+
+    // DB 저장이 최종 확정(커밋)된 뒤에 실행한다. 트랜잭션 밖에서 불리면 바로 실행한다.
+    private void runAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
         }
     }
 }
