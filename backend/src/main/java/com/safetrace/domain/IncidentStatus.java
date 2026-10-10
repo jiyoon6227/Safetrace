@@ -1,11 +1,5 @@
 package com.safetrace.domain;
 
-/**
- * Incident 워크플로우 6단계
- * 발생(RECEIVED) → 접수 → 확인중 → 대응중 → 복구중 → 종료
- * 각 상태는 "다음으로 갈 수 있는 상태"를 스스로 알고 있게 해서
- * 서비스 로직이 아니라 enum 자체가 규칙을 갖도록 설계함
- */
 public enum IncidentStatus {
     RECEIVED("접수"),
     CONFIRMING("확인중"),
@@ -29,10 +23,7 @@ public enum IncidentStatus {
      * - 역행은 허용하지 않음 (CLOSED -> RECEIVED 같은 되돌리기 금지)
      */
     public boolean canTransitionTo(IncidentStatus target) {
-        IncidentStatus[] order = values();
-        int currentIdx = this.ordinal();
-        int targetIdx = target.ordinal();
-        // 바로 다음 단계로만 이동 허용
-        return targetIdx == currentIdx + 1;
+        // 바로 다음 단계로만 이동 허용 (선언 순서 기준)
+        return target.ordinal() == this.ordinal() + 1;
     }
 }
