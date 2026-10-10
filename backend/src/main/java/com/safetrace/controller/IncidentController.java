@@ -95,11 +95,12 @@ public class IncidentController {
         return incidentService.updateIncidentDetails(incidentId, incident);
     }
 
-    // STAFF 전용 - 담당자 배정
+    // STAFF 전용 - "내가 담당하기": 담당자가 없는 사건을 로그인한 본인에게 배정
     @PatchMapping("/{incidentId}/assign")
     @PreAuthorize("hasRole('STAFF')")
-    public Incident assign(@PathVariable Long incidentId, @RequestBody Map<String, Long> body) {
-        return incidentService.assignStaff(incidentId, body.get("staffId"));
+    public Incident assign(@PathVariable Long incidentId, Authentication authentication) {
+    Long staffId = currentMemberId(authentication);
+    return incidentService.assignStaff(incidentId, staffId);
     }
 
     // STAFF 전용 - 상태 전이 (Workflow 핵심 API)

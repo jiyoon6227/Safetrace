@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -111,15 +112,15 @@ public class IncidentService {
             );
         }
 
-        // 예전엔 RESPONDING(대응중) 전환에만 담당자 배정을 요구했는데, 담당자 없이 확인중/수습중/종료까지
-        // 다 진행돼버리는 게 실무상 이상해서(누가 처리했는지 책임 소재가 불명확해짐) 모든 전환에 적용하도록 확장.
+        // 담당자가 배정된 사건만 상태를 바꿀 수 있다
         if (incident.getAssignedStaffId() == null) {
             throw new IllegalStateException("담당자가 배정되지 않아 상태를 전환할 수 없습니다. 먼저 담당자를 배정해주세요.");
         }
 
-        // 이미 배정된 담당자가 탈퇴했거나 STAFF 권한이 아닌 상태라면
-        // 다른 정상 STAFF를 다시 배정한 뒤 진행하도록 막는다.
-        requireActiveStaff(incident.getAssignedStaffId(), "현재 배정 담당자");
+        // 사건 상태는 배정된 담당자 본인만 변경할 수 있다
+        if (!staffId.equals(incident.getAssignedStaffId())) {
+            throw new AccessDeniedException("이 사건의 담당자만 상태를 변경할 수 있습니다.");
+        }
 
         if (target == IncidentStatus.CLOSED && (memo == null || memo.isBlank())) {
             throw new IllegalStateException("종료 처리에는 조치내역(종료사유)이 필요합니다.");
@@ -172,17 +173,22 @@ public class IncidentService {
 
     @Transactional
     public Incident assignStaff(Long incidentId, Long staffId) {
-        Incident incident = incidentMapper.findById(incidentId);
-        if (incident == null) {
-            throw new IllegalArgumentException("존재하지 않는 Incident 입니다: " + incidentId);
-        }
+    Incident incident = incidentMapper.findById(incidentId);
+    if (incident == null) {
+        throw new IllegalArgumentException("존재하지 않는 Incident 입니다: " + incidentId);
+    }
 
-        requireActiveStaff(staffId, "배정할 담당자");
+    // 담당자 인계 기능이 없으므로, 담당자가 비어 있는 사건만 배정할 수 있다
+    if (incident.getAssignedStaffId() != null) {
+        throw new IllegalStateException("이미 담당자가 배정된 사건입니다.");
+    }
 
-        int affected = incidentMapper.assignStaff(incidentId, staffId);
-        if (affected != 1) {
-            throw new IllegalStateException("담당자 배정에 실패했습니다. 담당자 상태를 다시 확인해주세요.");
-        }
+    requireActiveStaff(staffId, "배정할 담당자");
+
+    int affected = incidentMapper.assignStaff(incidentId, staffId);
+    if (affected != 1) {
+        throw new IllegalStateException("다른 담당자가 먼저 배정되었습니다. 새로고침 후 확인해주세요.");
+    }
 
         Incident updated = incidentMapper.findById(incidentId);
         broadcastAfterCommit(() -> webSocketHandler.broadcastStaffAssigned(updated));

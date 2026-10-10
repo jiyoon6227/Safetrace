@@ -7,9 +7,12 @@ import com.safetrace.mapper.MemberMapper;
 import com.safetrace.websocket.IncidentWebSocketHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 class IncidentServiceTest {
@@ -46,11 +49,11 @@ class IncidentServiceTest {
         Member staff = activeStaff();
 
         when(incidentMapper.findById(1L)).thenReturn(incident);
-        when(memberMapper.findById(20L)).thenReturn(staff);
+        when(memberMapper.findById(10L)).thenReturn(staff);
 
         assertThrows(
                 IllegalStateException.class,
-                () -> incidentService.changeStatus(1L, "RESPONDING", "확인 완료", 20L)
+                () -> incidentService.changeStatus(1L, "RESPONDING", "확인 완료", 10L)
         );
 
         verify(incidentMapper, never()).updateStatus(anyLong(), anyString());
@@ -72,10 +75,29 @@ class IncidentServiceTest {
 
         assertThrows(
                 IllegalStateException.class,
-                () -> incidentService.changeStatus(1L, "CLOSED", "   ", 20L)
+                () -> incidentService.changeStatus(1L, "CLOSED", "   ", 10L)
         );
 
         verify(incidentMapper, never()).closeIncident(anyLong(), anyString());
+        verify(incidentMapper, never()).insertLog(any());
+    }
+
+    @Test
+    void 담당자가_아닌_STAFF는_상태를_바꿀수_없다() {
+        Incident incident = new Incident();
+        incident.setIncidentId(1L);
+        incident.setStatus("CONFIRMING");
+        incident.setAssignedStaffId(10L);   // 담당자는 A(10번)
+
+        when(incidentMapper.findById(1L)).thenReturn(incident);
+        when(memberMapper.findById(20L)).thenReturn(activeStaff());   // B(20번)도 정상 STAFF
+
+        assertThrows(
+                AccessDeniedException.class,
+                () -> incidentService.changeStatus(1L, "RESPONDING", "현장 출동", 20L)   // B가 요청
+        );
+
+        verify(incidentMapper, never()).updateStatus(anyLong(), anyString());
         verify(incidentMapper, never()).insertLog(any());
     }
 
