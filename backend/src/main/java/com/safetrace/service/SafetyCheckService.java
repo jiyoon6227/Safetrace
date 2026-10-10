@@ -156,7 +156,11 @@ public class SafetyCheckService {
             throw new IllegalStateException("이미 응답한 요청입니다.");
         }
 
-        safetyCheckMapper.respond(checkId, status);
+    // 그사이 다른 경로(이메일 링크 등)로 먼저 응답했으면 0줄 → 알림 보내지 않고 멈춤
+        int affected = safetyCheckMapper.respond(checkId, status);
+        if (affected != 1) {
+            throw new IllegalStateException("이미 응답한 요청입니다.");
+        }
 
         check.setStatus(status);
         webSocketHandler.broadcastResponded(check);
@@ -182,7 +186,11 @@ public class SafetyCheckService {
             throw new IllegalStateException("만료된 링크입니다. 로그인 후 다시 응답해주세요.");
         }
 
-        safetyCheckMapper.respondByToken(token, status);
+        // 그사이 사이트에서 먼저 응답했거나 링크를 두 번 눌렀으면 0줄 → 알림 보내지 않고 멈춤
+        int affected = safetyCheckMapper.respondByToken(token, status);
+        if (affected != 1) {
+            throw new IllegalStateException("이미 응답이 완료된 링크입니다.");
+        }
 
         check.setStatus(status);
         webSocketHandler.broadcastResponded(check);

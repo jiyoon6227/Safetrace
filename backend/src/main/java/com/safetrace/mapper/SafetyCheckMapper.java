@@ -14,8 +14,8 @@ public interface SafetyCheckMapper {
     List<SafetyCheck> findReceivedByTargetId(@Param("targetMemberId") Long targetMemberId);
 
     // 로그인 상태에서 응답
-    void respond(@Param("checkId") Long checkId, @Param("status") String status);
+    int respond(@Param("checkId") Long checkId, @Param("status") String status);
 
     // 이메일 링크로 응답
-    void respondByToken(@Param("token") String token, @Param("status") String status);
+    int respondByToken(@Param("token") String token, @Param("status") String status);
 }
