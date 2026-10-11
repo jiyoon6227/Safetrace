@@ -295,7 +295,7 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap, focus
    * 전체 안전지도에서는 1km / 3km / 5km 버튼을 누를 때
    * 단순히 데이터만 필터링하는 게 아니라 지도 화면도 실제 반경에 맞춰 확대/축소한다.
    *
-   * compact(메인 미리보기) 지도는 기존 화면 크기를 그대로 유지한다.
+   * compact(메인 미리보기) 지도는 화면 크기 유지.
    */
   useEffect(() => {
     if (

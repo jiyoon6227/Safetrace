@@ -1,7 +1,7 @@
-// [신규 파일] 세션 만료 임박 알림 팝업
+// 세션 만료 임박 알림 팝업
 // - 기능: 로그인 토큰(JWT) 만료 5분 전부터 "연장하시겠습니까?" 팝업을 띄움
 // - "연장하기" 누르면 /api/auth/refresh 호출해서 새 토큰을 받아 localStorage 교체 (만료시간 리셋)
-// - 무시하고 시간 지나면 자동으로 로그아웃 처리(토큰 삭제 + 기존 로그아웃 흐름과 동일하게 처리)
+// - 응답 없이 만료되면 자동 로그아웃 (토큰 삭제 + auth:invalid)
 import { useEffect, useRef, useState } from "react";
 import { getTokenExpiryMs, refreshToken } from "../api/client";
 
@@ -16,9 +16,8 @@ function formatRemaining(ms) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-// MainPage.jsx가 page에 따라 여러 곳에서 일찍 return하는 구조라, 특정 페이지 트리 안에 끼워넣지 않고
-// main.jsx에서 <App/>과 나란히 한 번만 마운트해서 쓰는 독립 컴포넌트로 만듦.
-// 그래서 props 없이 localStorage의 토큰을 직접 보고 스스로 판단한다(1초마다 체크).
+// main.jsx에서 단독 마운트하는 독립 컴포넌트 (MainPage가 페이지별로 조기 return)
+// props 없이 localStorage 토큰을 1초마다 확인
 export default function SessionExpiryModal() {
   const [visible, setVisible] = useState(false);
   const [remainingMs, setRemainingMs] = useState(0);
@@ -39,8 +38,7 @@ export default function SessionExpiryModal() {
       const left = expiryMs - Date.now();
 
       if (left <= 0) {
-        // 만료 시각 지남 - 기존 401 처리(client.js의 handleUnauthorized)와 같은 결과가 나오도록
-        // 토큰 삭제 + auth:invalid 이벤트를 직접 쏴서 MainPage.jsx가 화면 상태를 정리하게 함
+        // 만료 시각 경과 - client.js 401 처리와 동일하게 토큰 삭제 + auth:invalid 발생
         if (!loggedOutRef.current) {
           loggedOutRef.current = true;
           localStorage.removeItem("token");
@@ -67,8 +65,7 @@ export default function SessionExpiryModal() {
       await refreshToken(); // 내부에서 localStorage 토큰을 새 걸로 교체함
       setVisible(false); // 팝업 닫기 - 다음 tick에서 새로 늘어난 만료시각 기준으로 다시 판단됨
     } catch {
-      // 연장 자체가 실패한 경우(예: 그 사이 회원 탈퇴/DB 재시딩) authFetch가 이미
-      // 401 처리(토큰 삭제 + auth:invalid)까지 끝내놨으므로 여기선 팝업만 닫으면 됨
+      // 연장 실패 시 401 처리는 authFetch에서 완료, 팝업만 닫기
       setVisible(false);
     } finally {
       setExtending(false);

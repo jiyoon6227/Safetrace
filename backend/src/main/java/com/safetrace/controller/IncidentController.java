@@ -86,7 +86,7 @@ public class IncidentController {
     }
 
     // STAFF 전용 - 사건 상세정보 수정 (제목/유형/위험도/위치)
-    // STATUS/담당자는 여기서 안 바꿈 - 각자 전용 API(assign, status)를 써야 함
+    // STATUS·담당자는 전용 API(assign, status)에서만 변경
     @PatchMapping("/{incidentId}")
     @PreAuthorize("hasRole('STAFF')")
     public Incident updateDetails(@PathVariable Long incidentId,

@@ -7,8 +7,7 @@ import {
 import { authFetch } from "../api/client";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 
-// 행안부 쪽 지역명 표기가 정식명/약칭으로 들쭉날쭉해서 재시도용으로 쓰는 시/도 약칭 매핑
-// (MyPage.jsx의 SIDO_SHORT_NAME과 동일 - 세종처럼 "구" 단위가 없는 지역까지 커버하기 위함)
+// 시/도 약칭 매핑 (행안부 지역명의 정식명/약칭 혼용 대응, MyPage SIDO_SHORT_NAME과 동일)
 const SIDO_SHORT_NAME = {
   서울특별시: "서울",
   부산광역시: "부산",
@@ -237,9 +236,7 @@ export default function DisasterNewsPage({
               gu && SIDO_SHORT_NAME[sido]
                 ? `${SIDO_SHORT_NAME[sido]} ${gu}`
                 : null;
-            // 구 단위가 아니라 시/도 전체에 동시 발송되는 재난문자(예: 물놀이 안전수칙 안내처럼
-            // 여러 광역시도에 한꺼번에 나가는 문자)는 원본 지역명이 구 없이 시/도명만 있어서
-            // 위 세 조합으로는 안 걸림 -> 시/도명만으로도 별도 조회해서 합쳐야 함
+            // 시/도 전체 발송 문자는 지역명에 구가 없어 시/도명 단독 조회 필요
             const regionSidoOnlyFallback = gu ? sido : null;
 
             const buildHistoryUrl = (rgnNm) =>
@@ -249,16 +246,9 @@ export default function DisasterNewsPage({
               `&endDate=${encodeURIComponent(endDate)}` +
               `&limit=500`;
 
-            // 구 단위 문자(당진시 등)랑 시/도 전체 문자(충청남도 전체 등)는 서로 다른 문자라
-            // 둘 다 보여줘야 함. 구 단위에서 결과가 나왔다고 시/도 전체 조회를 건너뛰면
-            // (예전 방식) 당진시처럼 자체 발송 문자가 있는 지역은 시/도 전체 문자가 계속 안 보임
-            // -> 구 단위 fallback 체인 결과 + 시/도 전체 결과를 병렬로 가져와서 합친다.
+            // 구 단위 결과 + 시/도 전체 결과를 병렬 조회 후 병합
 
-            // "동구"/"중구"/"서구"처럼 여러 시/도에 동시에 존재하는 구 이름은 gu 단독으로
-            // fallback 조회하면(regionFallback/regionShortFallback) 행안부 API가 부분일치로
-            // 다른 시/도의 같은 이름 구(예: 부산 동구, 인천 동구)나 "일산동구"처럼 이름에 "동구"가
-            // 우연히 포함된 완전히 다른 구까지 같이 돌려주는 문제가 있음. fallback 결과는 실제로
-            // msg.region 안에 우리 시/도 이름(정식명 또는 약칭)이 들어있는 것만 남기도록 거른다.
+            // fallback 결과는 msg.region에 해당 시/도(정식명·약칭) 포함 시에만 사용 (동명 구 부분일치 제외)
             const shortSido = SIDO_SHORT_NAME[sido];
             const belongsToSido = (msg) => {
               const region = msg.region || "";
@@ -278,12 +268,8 @@ export default function DisasterNewsPage({
               districtData = await authFetch(buildHistoryUrl(regionShortFallback)).then((data) => data.filter(belongsToSido));
             }
 
-            // 시/도 전체 발송 문자는 구 단위 결과 유무와 상관없이 항상 별도로 조회
-            // 단, rgnNm="충청남도"로 조회하면 API가 "충청남도"로 시작하는 모든 시군 문자를
-            // 다 돌려주므로, "진짜 시/도 전체 대상" 문자만 남긴다.
-            // 주의: 여러 시/도에 동시발송된 문자는 region 필드에 "강원도,경기도,...,충청남도,..."
-            // 처럼 콤마로 여러 지역이 나열돼서 옴 - 그래서 전체 문자열이 "충청남도"와 똑같은지가
-            // 아니라, 콤마로 쪼갠 목록 안에 "충청남도"라는 토큰이 정확히 있는지로 판단해야 함.
+            // 시/도 전체 발송 문자는 구 단위 결과와 무관하게 항상 별도 조회
+            // 시/도 전체 대상 문자만 사용 (region 콤마 목록에 시/도명 토큰이 정확히 있는지로 판단)
             const sidoData = regionSidoOnlyFallback
               ? await authFetch(buildHistoryUrl(regionSidoOnlyFallback))
                   .then((data) =>
@@ -305,8 +291,7 @@ export default function DisasterNewsPage({
               seen.add(key);
               return true;
             });
-            // CRT_DT가 "2026-09-12 12:10:00"처럼 공백으로 와서 Date()가 브라우저에 따라
-            // 못 알아먹을 수 있어, "T"로 바꿔서 안전하게 파싱(백엔드 parseCrtDt와 같은 이유)
+            // CRT_DT 공백 구분자를 "T"로 치환 후 파싱 (브라우저별 Date 파싱 차이 대응)
             const toTimestamp = (msg) => {
               const normalized = (msg.createdAt || "").replace(/\//g, "-").replace(" ", "T");
               const time = new Date(normalized).getTime();

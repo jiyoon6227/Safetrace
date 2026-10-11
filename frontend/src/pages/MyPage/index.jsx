@@ -14,21 +14,13 @@ import RegionsTab from "./RegionsTab";
 import NotifyTab from "./NotifyTab";
 
 export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenSafetyNews }) {
-  // 새로고침해도 보고 있던 탭(가족 관리 등)이 유지되도록 history.state에서 복원.
-  // history.state는 새로고침해도 남아있으므로, 탭을 바꿀 때마다 같이 기록해둔다 (아래 selectTab).
+  // 새로고침 후에도 보던 탭 유지 (history.state 복원, selectTab에서 기록)
   const [activeTab, setActiveTab] = useState(window.history.state?.mypageTab || "info");
-  // 탭을 다시 눌렀을 때 매번 값이 바뀌는 카운터 - RegionsTab처럼 "데이터 자체는 새로 받아와도
-  // 화면에 실제로 그걸 다시 그리는 로직은 별도 조건(선택된 지역 좌표 등)에 걸려있는 탭이 있어서,
-  // 그런 탭들이 이 값을 자기 useEffect 의존성에 넣어두면 탭 재클릭마다 확실히 다시 그려지게 됨
+  // 탭 재클릭 카운터 (탭별 useEffect 의존성용, 재클릭 시 강제 갱신)
   const [refreshSignal, setRefreshSignal] = useState(0);
   const selectTab = (key) => {
     if (key === activeTab) {
-      // 이미 활성화된 탭을 다시 누른 경우 - activeTab 값이 그대로라 setActiveTab만으론
-      // 리렌더가 안 일어나므로 새로고침 함수를 직접 호출해야 함.
-      // 처음엔 "이 탭엔 이 데이터만" 식으로 탭별로 좁혀서 새로고침했는데, 화면 하나가
-      // 여러 데이터 소스를 같이 쓰는 경우가 많아서(가족관리 탭이 안전확인 상태까지 같이
-      // 보여주거나, 알림 탭이 알림설정까지 같이 보여주는 식) 계속 하나씩 빠뜨렸음.
-      // 그래서 그냥 전부 다 새로고침하는 걸로 통일 - 전부 가벼운 GET이라 부담 없음.
+      // 활성 탭 재클릭 시 전체 데이터 새로고침 (탭마다 여러 데이터 소스 사용, 모두 가벼운 GET)
       loadMember();
       loadFamilies();
       loadSafetyChecks();
@@ -50,9 +42,8 @@ export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenS
       return [];
     }
   });
-  // 삭제한 알림 id 목록 - 제보등록/관심지역등록 같은 항목은 실제 DB row가 없는 "합성" 알림이라
-  // 서버에서 지울 게 없어서, 읽음처리와 동일하게 localStorage에 "숨김 목록"으로 관리함
-  // (DB에 실제로 있는 재난/제보 알림은 여기에 추가하는 것과 별개로 서버에서도 진짜로 삭제함)
+  // 삭제한 알림 id 목록 (합성 알림은 DB row가 없어 localStorage 숨김 목록으로 관리)
+  // (DB 재난/제보 알림은 서버에서도 삭제)
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("safeTraceDismissedNotifications") || "[]");
@@ -76,8 +67,7 @@ export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenS
   const [myReports, setMyReports] = useState([]);
   const [reportsLoading, setReportsLoading] = useState(true);
 
-  // 재난 알림(관심지역 반경 매칭)/제보 알림(내 제보 상태변경) - 서버가 실제 이벤트
-  // 시점에 만들어둔 진짜 알림 목록. 나머지(안전확인/기타)는 기존처럼 다른 상태들로부터 조합함.
+  // 재난 알림/제보 알림 - 서버 이벤트 시점에 생성된 알림 (안전확인/기타는 다른 상태로부터 조합)
   const [dbNotifications, setDbNotifications] = useState([]);
 
   const loadMember = () => {
@@ -148,10 +138,7 @@ export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenS
     return () => socket.close();
   }, []);
 
-  // Incident WebSocket - 재난 알림(관심지역 반경 매칭)/제보 알림(내 제보 상태변경)은
-  // 새 Incident가 생기거나 상태가 바뀌는 그 순간에 서버가 DB에 만들어두는 거라, 이 broadcast가
-  // 오는 타이밍이 곧 "새 알림이 생겼을 수도 있는 타이밍"임. 이 신호가 나랑 무관한 Incident여도
-  // 서버가 로그인한 나(memberId) 기준으로만 알림을 내려주므로 그냥 다시 조회해도 손해가 없음.
+  // Incident WebSocket 수신 시 알림 재조회 (서버가 본인 알림만 반환)
   useEffect(() => {
     const socket = connectIncidentSocket(() => {
       loadNotifications();

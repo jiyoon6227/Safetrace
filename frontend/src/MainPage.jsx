@@ -138,9 +138,7 @@ const STATUS_DOT = {
   CLOSED: "bg-emerald-400",
 };
 
-// "대응상황 상세" 모달 진행바 전용 - STATUS 5개를 6칸(접수/담당자배정/현장확인/대응중/복구중/완료)에 맞춰 재배치.
-// CONFIRMING 하나가 "담당자배정"과 "현장확인" 두 칸을 걸치는 상태라, 활성 칸을 3(현장확인)으로 두면
-// 자동으로 1~2칸(접수·담당자배정)은 완료, 3칸(현장확인)은 진행중으로 표시됨 - "사이"에 있다는 의미를 그렇게 표현
+// "대응상황 상세" 진행바 - STATUS 5개를 6칸에 배치 (CONFIRMING은 담당자배정·현장확인 사이라 3칸째로 표시)
 const DETAIL_PROGRESS_STEPS = ["접수", "담당자배정", "현장확인", "대응중", "복구중", "완료"];
 const DETAIL_STEP_BY_STATUS = { RECEIVED: 1, CONFIRMING: 3, RESPONDING: 4, RECOVERING: 5, CLOSED: 6 };
 
@@ -333,8 +331,7 @@ export default function MainPage() {
   const [tab, setTab] = useState("nearby");
   // 이메일 안전확인 링크(?safetyCheckToken=xxx)로 들어온 거면 그 응답 화면부터 바로 보여줌
   const safetyCheckTokenFromUrl = new URLSearchParams(window.location.search).get("safetyCheckToken");
-  // 새로고침(F5)을 해도 지금 보던 화면이 유지되도록, history.state에 남아있던 페이지가 있으면 그걸 먼저 씀.
-  // (history.state는 새로고침해도 그대로 남아있음 - 지금까지는 이걸 안 읽어서 새로고침할 때마다 무조건 "home"으로 튕겼었음)
+  // 새로고침 후에도 보던 페이지 유지 (history.state 복원)
   const [page, setPage] = useState(
     safetyCheckTokenFromUrl ? "safety-check-response" : window.history.state?.page || "home"
   ); // "home" | "login" | "mypage" | "shelters" | "safety-guides" | "disaster-info" | "safety-map" | "safety-news" | "safety-check-response" | "notices"
@@ -348,8 +345,7 @@ export default function MainPage() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef(null);
 
-  // 로그인이 필요한 기능을 로그아웃 상태에서 눌렀을 때 - 진짜 브라우저 네이티브 alert으로 띄움
-  // (커스텀 모달 말고 window.alert 그대로 씀. 확인 누르면 alert이 닫히고 바로 다음 줄인 goTo("login")로 넘어감)
+  // 로그인 필요 기능 클릭 시 네이티브 alert 후 로그인 페이지로 이동
   const requireLogin = (action) => {
     if (!token) {
       window.alert("로그인이 필요한 서비스입니다.");
@@ -724,7 +720,7 @@ export default function MainPage() {
     }
   };
 
-  // 현재 위치/지역을 기준으로 백엔드의 Gemini 상황 브리핑을 가져온다.
+  // 현재 위치/지역 기준 AI 상황 브리핑 조회 (Groq)
   useEffect(() => {
     if (page !== "home" || !weatherLocation) return undefined;
 
@@ -790,9 +786,7 @@ export default function MainPage() {
     return () => { active = false; };
   }, [page]);
 
-  // 히어로 카드용 - 내 위치 반경 3km 내 진행 중인 사건 중 가장 심각한 것 1건.
-  // 안전지도/대피시설 패널과 같은 /api/incidents/nearby를 쓰되, 여기선 화면에 하나만 보여주면 되므로
-  // 거리 계산(distanceKm) 후 pickPriorityIncident로 우선순위가 가장 높은 사건만 골라 state에 저장함.
+  // 히어로 카드용 - 반경 3km 내 진행 중 사건 중 가장 심각한 1건
   useEffect(() => {
     if (page !== "home" || !weatherLocation) {
       setMainNearbyIncident(null);
@@ -822,9 +816,7 @@ export default function MainPage() {
     return () => { active = false; };
   }, [page, weatherLocation]);
 
-  // 브라우저 뒤로가기/앞으로가기가 앱 내 페이지 전환도 따라가게 함.
-  // 지금까지는 setPage만 써서 화면은 바뀌어도 URL 히스토리엔 기록이 안 남았고,
-  // 그래서 뒤로가기를 누르면 앱 안으로 안 돌아오고 이 탭을 열기 전 페이지(구글 등)로 튀어버렸음.
+  // 앱 내 페이지 전환을 브라우저 히스토리에 기록 (뒤로가기/앞으로가기 지원)
   useEffect(() => {
     window.history.replaceState({ ...window.history.state, page }, "");
     const handlePopState = (e) => {
@@ -840,7 +832,7 @@ export default function MainPage() {
   // 페이지 전환: 추가 state도 같이 저장해두면 새로고침/뒤로가기에서도 선택 정보를 유지할 수 있음
   const goTo = (nextPage, extraState = {}) => {
     // 일반 페이지 이동 시 열려 있던 현장제보 팝업 상태를 반드시 닫는다.
-    // openReport=true를 명시한 경우에만 기존 팝업 방식으로 연다.
+    // openReport=true일 때만 팝업으로 열기
     if (extraState.openReport) {
       setShowReportForm(true);
     } else {
@@ -881,14 +873,12 @@ export default function MainPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [profileMenuOpen]);
   const [showReportForm, setShowReportForm] = useState(false);
-  const [showWithdrawModal, setShowWithdrawModal] = useState(false); // 마이페이지 푸터의 "회원탈퇴" - SiteFooter는 공통 컴포넌트라 여기서 상태를 들고 있다가 넘겨줌
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false); // 마이페이지 푸터 "회원탈퇴" 모달 (공통 SiteFooter에 전달)
   const [reportSuccess, setReportSuccess] = useState(false);
   const [myReports, setMyReports] = useState([]);
   const [myReportsLoading, setMyReportsLoading] = useState(false);
 
-  // client.js의 authFetch/authUpload가 401(서버 기준 더 이상 유효하지 않은 토큰)을 받으면
-  // 거기서 localStorage의 토큰은 이미 지우고 이 이벤트를 쏨. 여기선 화면 쪽 상태를 정리한다.
-  // (DB 초기화, 회원 탈퇴, 토큰 만료 등으로 실제로는 로그아웃된 상태를 화면에도 반영하는 부분)
+  // authFetch/authUpload의 401 처리 후 화면 상태 정리 (토큰 삭제는 client.js에서 완료)
   useEffect(() => {
     const handleAuthInvalid = () => {
       setToken(null);
@@ -936,8 +926,7 @@ export default function MainPage() {
   const [selectedFamilyIds, setSelectedFamilyIds] = useState([]);
   const [safetyCheckSending, setSafetyCheckSending] = useState(false);
 
-  // 내 프로필 정보 - 헤더 표시용. 토큰 안 이름/사진은 로그인 시점 스냅샷이라 마이페이지에서
-  // 수정해도 안 바뀌므로, 토큰 대신 이 값을 화면에 쓰고 홈으로 돌아올 때마다 다시 불러온다.
+  // 헤더 표시용 프로필 (토큰의 이름/사진은 로그인 시점 값이라 홈 복귀 시마다 재조회)
   const [myProfile, setMyProfile] = useState(null);
   useEffect(() => {
     if (!token) {
@@ -961,9 +950,7 @@ export default function MainPage() {
       .finally(() => setMyReportsLoading(false));
   }, [token, reportSuccess]);
 
-  // 헤더 종모양 배지 - 마이페이지 "알림" 탭이랑 완전히 같은 기준(재난/제보/기타/안전확인 다 합쳐서)으로
-  // 세야 하는데, 그중 재난알림/제보알림/기타는 마이페이지에서만 불러오던 데이터라 여기서도 따로 불러옴.
-  // (안전확인은 위에서 이미 sentSafetyChecks/receivedSafetyChecks로 갖고 있어서 재사용)
+  // 헤더 알림 배지용 - 마이페이지 "알림" 탭과 같은 기준의 재난/제보/기타 알림 조회 (안전확인은 위 상태 재사용)
   const [regions, setRegions] = useState([]);
   const [dbNotifications, setDbNotifications] = useState([]);
   useEffect(() => {
@@ -1065,9 +1052,7 @@ export default function MainPage() {
 
       getNotifications().then(setDbNotifications).catch(() => {});
 
-      // WebSocket payload를 먼저 즉시 반영하고, DB 확정값을 다시 조회해서 한 번 더 동기화한다.
-      // 이렇게 해야 다른 담당자 화면에서 상태를 바꿨을 때 시민 화면의 뱃지/진행바가 즉시 바뀌고,
-      // 재연결 직후에도 오래된 상태가 남지 않는다.
+      // WebSocket payload 즉시 반영 후 DB 값으로 재동기화 (재연결 직후 오래된 상태 방지)
       setIncidentInfo((prev) => {
         if (!prev[changedId]) return prev;
         return { ...prev, [changedId]: { ...prev[changedId], ...data.incident } };
@@ -1199,11 +1184,11 @@ export default function MainPage() {
     goTo("home");
   };
 
-  // 메인 가운데/퀵메뉴의 "현장 제보하기"는 기존처럼 팝업을 연다.
+  // 메인 가운데/퀵메뉴의 "현장 제보하기"는 팝업으로 열기
   const handleReportClick = () => requireLogin(() => setShowReportForm(true));
 
   // 헤더의 "현장 제보"만 별도 페이지로 이동한다.
-  // 혹시 기존 팝업 상태가 남아 있어도 먼저 닫고 report 페이지로 전환한다.
+  // 열려 있는 팝업은 닫은 뒤 report 페이지로 전환
   const handleReportPageClick = () =>
     requireLogin(() => {
       setShowReportForm(false);
@@ -1259,10 +1244,7 @@ export default function MainPage() {
     : null;
   const unlinkedReports = myReports.filter((r) => !(r.status === "LINKED" && r.incidentId));
 
-  // 가족 각자와 나 사이의 안전확인 기록은 방향이 두 가지(내가 보낸 것 / 그 가족이 보낸 것)라
-  // 둘 다 합쳐서 "가장 최근 기록 하나"를 찾아야 카드에 정확한 현재 상태가 뜸.
-  // (예: 그 가족이 나한테 요청 보내고 내가 이미 응답까지 한 경우 - sentSafetyChecks에는 없고
-  //  받은 목록에만 있어서, 합치지 않으면 "아직 요청한 적 없어요"로 잘못 표시됐었음)
+  // 가족별 안전확인 상태는 보낸 요청·받은 요청을 합친 가장 최근 기록 기준
   const latestCheckByMember = {};
   const considerCheck = (memberId, check, direction) => {
     const existing = latestCheckByMember[memberId];
@@ -1273,9 +1255,7 @@ export default function MainPage() {
   sentSafetyChecks.forEach((c) => considerCheck(c.targetMemberId, c, "sent"));
   receivedSafetyChecks.forEach((c) => considerCheck(c.requesterId, c, "received"));
 
-  // 헤더 종모양 알림 배지 - 마이페이지 "알림" 탭과 완전히 같은 기준으로 계산함
-  // (재난 알림 + 제보 알림 + 기타(관심지역 등록) + 안전확인, 그리고 마이페이지에서 읽음 처리한
-  //  건 localStorage(safeTraceReadNotifications)를 그대로 같이 봐서 두 화면 숫자가 항상 일치하게)
+  // 헤더 알림 배지 - 마이페이지 "알림" 탭과 같은 기준 (읽음 목록 localStorage safeTraceReadNotifications 공유)
   const notificationItems = buildNotificationItems({
     sentChecks: sentSafetyChecks,
     receivedChecks: receivedSafetyChecks,
@@ -1380,8 +1360,7 @@ export default function MainPage() {
     .sort((a, b) => b.sortTime - a.sortTime)
     .slice(0, 3);
 
-  // 메인 카드 레이아웃은 기존 디자인대로
-  // "대표 제보 1건 + 다른 제보 2건" 구조를 유지한다.
+  // 메인 카드 구성: 대표 제보 1건 + 다른 제보 2건
   // 연결된 사건이 있으면 가장 최근 사건을 대표로 보여주고,
   // 연결 사건이 없을 때만 가장 최근 미연결 제보를 대표로 사용한다.
   const primaryTrackingItem =
@@ -1421,8 +1400,7 @@ export default function MainPage() {
     return true;
   });
 
-  // 미연결/반려 제보와 연결 사건을 하나로 합친 뒤 시간 기준으로 정렬한다.
-  // 이렇게 해야 최신순/오래된순이 전체 목록 기준으로 정상 동작한다.
+  // 미연결·반려 제보와 연결 사건을 합쳐 시간순 정렬
   const filteredTrackingItems = [
     ...filteredPendingReports.map((report) => ({
       kind: "report",
@@ -1677,11 +1655,7 @@ export default function MainPage() {
 
       {/* 메인 히어로 */}
       <section className="relative overflow-hidden bg-[#071A31]">
-        {/*
-          배경 이미지는 절대 100% 100%로 강제 늘리지 않음.
-          object-cover가 원본 비율을 유지한 채 영역을 채워서
-          창 폭이 바뀌어도 지도가 찌그러지지 않는다.
-        */}
+        {/* 배경 이미지는 object-cover로 비율 유지 (100% 100% 강제 시 창 폭에 따라 찌그러짐) */}
         <img
           src={mainBg}
           alt=""
@@ -2249,7 +2223,7 @@ export default function MainPage() {
               )}
             </section>
 
-            {/* Gemini API 기반 AI 상황 브리핑 */}
+            {/* AI 상황 브리핑 (Groq) */}
             <section className="bg-white rounded-[18px] border border-slate-200 shadow-sm p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-[17px] font-extrabold text-[#0B2A52] flex items-center gap-2">
@@ -2309,7 +2283,7 @@ export default function MainPage() {
               </button>
             </section>
 
-            {/* 내 현장제보 추적 - 기존 디자인: 대표 1건 + 다른 제보 2건 */}
+            {/* 내 현장제보 추적 - 대표 1건 + 다른 제보 2건 */}
             <section className="bg-white rounded-[18px] border border-slate-200 shadow-sm p-4">
               <div className="flex items-start justify-between mb-3">
                 <div>
@@ -3074,7 +3048,7 @@ export default function MainPage() {
                               <span className="text-[11px] text-slate-500">#{detailIncident.incidentId}</span>
                             </div>
                             <h3 className="font-bold text-[#0F2540] text-base mb-1 truncate">{detailIncident.title}</h3>
-                            {/* 정확한 도로명 주소 필드가 없어서 region으로 표시 - 한 줄 고정(줄바꿈 시 아이콘과 텍스트가 어긋나 보여서) */}
+                            {/* 도로명 주소 필드 부재로 region 표시 - 한 줄 고정 (줄바꿈 시 아이콘 정렬 어긋남) */}
                             <p className="text-xs text-slate-500 flex items-center gap-1 truncate">
                               <MapPin className="w-3 h-3 shrink-0" /> <span className="truncate">{detailIncident.region}</span>
                             </p>

@@ -293,19 +293,13 @@ export default function RegionsTab({ regions = [], onChanged, member, onOpenShel
               .finally(() => setUvIndexLoading(false));
           }
 
-          // 세종특별자치시처럼 "구" 단위 행정구역이 아예 없는 지역은 gu가 빈 문자열로 와서
-          // 예전엔 여기서 바로 걸러져 재난문자/대피시설 조회 자체를 안 했음(=세종은 항상 빈 목록).
-          // gu가 없으면 시도명 자체("세종특별자치시")를 지역 쿼리로 그대로 씀.
+          // 구 단위가 없는 지역(세종 등)은 시도명을 지역 쿼리로 사용
           const regionQuery = gu ? `${sido} ${gu}` : sido;
-          // "성남시 분당구"처럼 표기가 API마다 다를 수 있어 재시도용으로 구 이름만 따로 두는데,
-          // 세종은애초에 gu가 없으니 재시도할 것도 없음(=쓸데없는 API 호출 안 함, 호출량도 아낌)
+          // 표기 차이 대응용 구 이름 단독 재시도 (구가 없는 지역은 생략)
           const regionFallback = gu || null;
-          // 행안부 원본 데이터가 발송 기관마다 시도를 정식명("부산광역시")이 아니라 약칭("부산")으로
-          // 적어둔 경우가 있어서(대전은 정식명으로 매칭됐는데 부산은 안 됐던 사례), 마지막으로 약칭까지 시도
+          // 시도 약칭 재시도 (행안부 원본의 정식명/약칭 혼용 대응)
           const regionShortFallback = gu && SIDO_SHORT_NAME[sido] ? `${SIDO_SHORT_NAME[sido]} ${gu}` : null;
-          // 재난문자 중엔 구 단위가 아니라 시/도 전체에 동시 발송되는 것도 있음(예: 물놀이 안전수칙
-          // 안내처럼 여러 광역시도에 한꺼번에 나가는 문자). 그런 문자는 원본 지역명이 "대전광역시"처럼
-          // 시/도명만 있고 구는 안 붙어있어서, 위의 구 포함 조합들로는 하나도 안 걸림 -> 시/도명 단독으로도 시도
+          // 시/도 전체 발송 문자 대응용 시/도명 단독 조회
           const regionSidoOnlyFallback = gu ? sido : null;
 
           if (!regionQuery) {
@@ -327,12 +321,8 @@ export default function RegionsTab({ regions = [], onChanged, member, onOpenShel
               .catch(() => setShelters([]))
               .finally(() => setSheltersLoading(false));
 
-            // 실제 발송된 긴급재난문자 - 행정안전부(재난안전데이터공유플랫폼)
-            // 구 단위로 발송된 문자("당진시")랑 시/도 전체에 동시발송된 문자("충청남도" 전체 대상,
-            // 예: 물놀이 안전수칙 안내)는 서로 다른 문자라 둘 다 보여줘야 함.
-            // 예전엔 fallback 체인이라 구 단위 문자가 하나라도 있으면 거기서 멈추고
-            // 시/도 전체 문자는 조회 자체를 안 했음(=당진시처럼 자체 발송 문자가 있는 지역은
-            // 시/도 전체 문자가 계속 묻혀서 안 보이는 문제) -> 병렬로 둘 다 가져와서 합치는 걸로 변경.
+            // 긴급재난문자 (행정안전부 재난안전데이터공유플랫폼)
+            // 구 단위 문자와 시/도 전체 문자를 병렬 조회 후 병합
             const fetchDistrictMessages = () =>
               authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(regionQuery)}&limit=20`)
                 .then((data) => data.filter(belongsToSido))
@@ -351,11 +341,7 @@ export default function RegionsTab({ regions = [], onChanged, member, onOpenShel
             const fetchSidoWideMessages = () =>
               regionSidoOnlyFallback
                 ? authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(regionSidoOnlyFallback)}&limit=20`)
-                    // 행안부 API가 rgnNm="충청남도"로 조회하면 "충청남도"로 시작하는 모든 문자
-                    // (당진시/태안군/서천군...)를 다 돌려줌. 그중 "진짜 시/도 전체 대상" 문자만 남긴다.
-                    // 주의: 여러 시/도에 동시발송된 문자는 region 필드에 "강원도,경기도,...,충청남도,..."
-                    // 처럼 콤마로 여러 지역이 나열돼서 옴 - 그래서 전체 문자열이 "충청남도"와 똑같은지가
-                    // 아니라, 콤마로 쪼갠 목록 안에 "충청남도"라는 토큰이 정확히 있는지로 판단해야 함.
+                    // 시/도 전체 대상 문자만 사용 (region 콤마 목록에 시/도명 토큰이 정확히 있는지로 판단)
                     .then((data) =>
                       data.filter((msg) =>
                         (msg.region || "")
@@ -367,20 +353,14 @@ export default function RegionsTab({ regions = [], onChanged, member, onOpenShel
                     .catch(() => [])
                 : Promise.resolve([]);
 
-            // CRT_DT가 "2026-09-12 12:10:00"처럼 공백으로 와서 Date()가 브라우저에 따라
-            // 못 알아먹을 수 있어, "T"로 바꿔서 안전하게 파싱(백엔드 parseCrtDt와 같은 이유)
+            // CRT_DT 공백 구분자를 "T"로 치환 후 파싱 (브라우저별 Date 파싱 차이 대응)
             const toTimestamp = (msg) => {
               const normalized = (msg.createdAt || "").replace(/\//g, "-").replace(" ", "T");
               const time = new Date(normalized).getTime();
               return Number.isNaN(time) ? 0 : time;
             };
 
-            // "동구"/"중구"/"서구"처럼 여러 시/도에 동시에 존재하는 구 이름은 gu 단독으로
-            // fallback 검색하면(regionFallback) 행안부 API가 부분일치로 다른 시/도의 같은 이름 구
-            // (예: 부산 동구, 인천 동구)나 심지어 "일산동구"처럼 이름에 "동구"가 우연히 포함된
-            // 완전히 다른 구까지 같이 돌려주는 문제가 있음. 그래서 fallback 결과는 실제로
-            // msg.region 안에 우리 시/도 이름(정식명 또는 약칭)이 들어있는 것만 남기도록 다시 거른다.
-            // (regionQuery 1차 시도는 이미 "시도+구"로 물어봤으니 안전하지만, 혹시 몰라 똑같이 적용)
+            // fallback 결과는 msg.region에 해당 시/도(정식명·약칭) 포함 시에만 사용 (동명 구 부분일치 제외)
             const shortSido = SIDO_SHORT_NAME[sido];
             const belongsToSido = (msg) => {
               const region = msg.region || "";
@@ -633,7 +613,7 @@ export default function RegionsTab({ regions = [], onChanged, member, onOpenShel
           </div>
         </div>
 
-        {/* 내 관심 지역 - 시안과 동일한 구성: 제목/설명/개수 + 큰 지도 + 지역목록 + 추가 버튼 */}
+        {/* 내 관심 지역 - 제목/설명/개수 + 큰 지도 + 지역목록 + 추가 버튼 */}
         {regions.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center">
             <p className="text-sm text-slate-400">등록된 관심지역이 없습니다.</p>
@@ -657,7 +637,7 @@ export default function RegionsTab({ regions = [], onChanged, member, onOpenShel
 
             {/* 지도 + 목록 */}
             <div className="grid grid-cols-1 md:grid-cols-[minmax(220px,0.95fr)_minmax(280px,1.2fr)] gap-3 items-stretch">
-              {/* 지도 - 기존보다 넓고 높게 */}
+              {/* 지도 */}
               <div className="relative rounded-xl overflow-hidden border border-slate-100 bg-slate-100 min-h-[265px]">
                 <div ref={mapRef} className="absolute inset-0 w-full h-full" />
               </div>
@@ -742,7 +722,7 @@ export default function RegionsTab({ regions = [], onChanged, member, onOpenShel
                   })}
                 </div>
 
-                {/* 시안의 하단 관심지역 추가 버튼 */}
+                {/* 하단 관심지역 추가 버튼 */}
                 <button
                   type="button"
                   onClick={openAddressSearch}
@@ -934,9 +914,7 @@ export default function RegionsTab({ regions = [], onChanged, member, onOpenShel
                         </div>
                         <p className="text-[10px] text-slate-400 mt-1 whitespace-nowrap">습도 {weather.humidity}% · 풍속 {weather.windSpeed}m/s</p>
                         {(() => {
-                          // "강수없음" 텍스트뿐 아니라 "0", "0.0" 같은 실질적으로 비가 안 오는 값도
-                          // 다 걸러야 함 - 안 그러면 맑은 날에도 "시간당 강수량 0mm"가 계속 떠서
-                          // 원래 의도(비 올 때만 표시)와 다르게 항상 한 줄이 더 붙어버림
+                          // "강수없음"·"0"·"0.0" 등 무강수 값 제외 (비 올 때만 표시)
                           const rainValue = parseFloat(weather.hourlyRainfall);
                           if (!rainValue || Number.isNaN(rainValue)) return null;
                           return (

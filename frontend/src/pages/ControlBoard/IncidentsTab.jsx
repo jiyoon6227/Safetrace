@@ -354,7 +354,7 @@ export default function IncidentsTab({
                 </div>
               )}
 
-              {/* 첫 번째 시안처럼: 왼쪽에 사건 상세/진행, 오른쪽에 연결 제보/사진을 처음부터 나란히 배치 */}
+              {/* 왼쪽: 사건 상세/진행, 오른쪽: 연결 제보/사진 나란히 배치 */}
               <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_355px] gap-3.5 min-w-0 items-start">
                 <div className="min-w-0">
                   {/* 사건 상세 헤더 */}
@@ -554,7 +554,7 @@ export default function IncidentsTab({
                   </div>
                 </div>
 
-                {/* 오른쪽: 첫 번째 시안처럼 상세 상단부터 연결 제보/사진 배치 */}
+                {/* 오른쪽: 연결 제보/사진 */}
                 <aside className="space-y-2.5 min-w-0">
                   <div className="border border-slate-300 rounded-xl p-3 shadow-sm bg-white">
                     <div className="flex items-center justify-between mb-2">

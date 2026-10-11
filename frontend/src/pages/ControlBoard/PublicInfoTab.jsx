@@ -249,8 +249,7 @@ export default function PublicInfoTab() {
       setLoadingWeather(false);
     });
 
-    // 최근 재난문자는 백엔드에서 전국 데이터를 한 번에 받아 정확히 최근 48시간만 사용한다.
-    // 새 백엔드 엔드포인트가 아직 반영되지 않은 경우에는 기존 지역별 API로 자동 폴백한다.
+    // 최근 재난문자: 전국 API로 최근 48시간 조회 (실패 시 지역별 API로 폴백)
     const messageJob = authFetch("/api/environment/disaster-messages/nationwide?limit=100")
       .catch(() => fetchNationwideMessagesFallback())
       .then((data) => {

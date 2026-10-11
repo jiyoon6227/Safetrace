@@ -11,7 +11,7 @@ export default function SiteFooter({ onNavigate, showWithdraw = false, onWithdra
 
   return (
     <footer className="mt-auto border-t border-slate-200 bg-white text-slate-600">
-      {/* 얇은 상단 바 - 모든 페이지가 이 SiteFooter 하나로 통일해서 씀 (예전엔 페이지마다 따로 있었음) */}
+      {/* 얇은 상단 바 - 전 페이지 공통 */}
       <div className="border-b border-slate-200">
         <div className="mx-auto max-w-[1450px] px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
           <div><b className="text-[#0B2A52]">세이프트레이스</b> · 재난 상황관리·대응 플랫폼</div>

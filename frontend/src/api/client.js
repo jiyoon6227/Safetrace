@@ -1,10 +1,7 @@
 const BASE_URL = "";
 
-// 토큰은 서명/만료시간이 멀쩡해도 서버(DB) 쪽에서 무효가 될 수 있음
-// (회원 탈퇴, DB 초기화 등으로 더 이상 존재하지 않는 회원). 그런 경우 백엔드는 401을 준다.
-// 이럴 때 프론트가 계속 그 토큰을 들고 "로그인된 척" 하지 않도록, 401을 받으면
-// 이 자리에서 바로 토큰을 지우고 전역 이벤트로 앱에 "로그아웃됐다"고 알린다.
-// (403은 로그인 자체는 유효하지만 권한이 없는 것이므로 로그아웃 처리하지 않는다.)
+// 401 응답 시 토큰 삭제 후 auth:invalid 이벤트 발생 (탈퇴·DB 초기화 등 서버 기준 무효 토큰)
+// 403은 권한 부족이므로 로그아웃 제외
 function handleUnauthorized() {
   localStorage.removeItem("token");
   window.dispatchEvent(new Event("auth:invalid"));
@@ -40,9 +37,7 @@ export async function authFetch(path, options = {}) {
   return res.json();
 }
 
-// 사진 등 파일 업로드용. Content-Type은 지정하지 않음 — FormData를 body로 넘기면
-// 브라우저가 boundary 포함된 multipart/form-data 헤더를 알아서 만들어주는데,
-// 여기서 "application/json" 같은 값을 강제로 넣으면 그게 깨져버림.
+// Content-Type 미지정 (FormData의 multipart boundary를 브라우저가 생성)
 export async function authUpload(path, formData) {
   const token = localStorage.getItem("token");
 
@@ -71,12 +66,9 @@ export async function authUpload(path, formData) {
   return res.json();
 }
 
-// JWT는 "헤더.내용.서명" 구조라, 가운데 부분(내용)만 base64 디코딩하면
-// 토큰 만들 때 넣었던 memberId, role, name을 서버 호출 없이 바로 꺼내볼 수 있음
+// JWT payload를 base64 디코딩해 memberId, role, name 추출
 //
-// 주의: atob()만 쓰면 한글 등 멀티바이트 UTF-8 문자가 깨짐(예: "곽지윤" → "ê³½ì§€ìœ¤").
-// atob는 base64를 "바이트값 그대로"만 문자열로 풀기 때문에, UTF-8로 인코딩된 다국어 텍스트를
-// 다시 UTF-8로 재해석해줘야 원래 글자가 나옴 (TextDecoder 사용).
+// atob 결과를 TextDecoder로 UTF-8 재해석 (atob만 쓰면 한글 깨짐)
 function decodeJwtPayload(token) {
   const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
   const binary = atob(base64);
@@ -102,8 +94,7 @@ export function getCurrentUser() {
   }
 }
 
-// 토큰의 만료시각을 ms 단위(Date.now()랑 바로 비교 가능한 형태)로 꺼내옴
-// SessionExpiryModal이 "얼마나 남았는지" 계산할 때 씀
+// 토큰 만료시각(ms) 조회 (SessionExpiryModal 남은 시간 계산용)
 export function getTokenExpiryMs() {
   const token = localStorage.getItem("token");
   if (!token) return null;
@@ -119,9 +110,7 @@ export function getTokenExpiryMs() {
   }
 }
 
-// 세션 연장 - 아직 유효한 토큰으로 백엔드 /api/auth/refresh를 호출해서
-// 만료시간이 새로 늘어난 토큰을 발급받고, localStorage에 있는 기존 토큰을 그걸로 교체함.
-// 실패(401 등)하면 authFetch가 알아서 토큰 삭제 + "auth:invalid" 이벤트까지 처리해줌.
+// 세션 연장: /api/auth/refresh로 재발급 후 localStorage 토큰 교체 (실패 시 authFetch의 401 처리)
 export async function refreshToken() {
   const data = await authFetch("/api/auth/refresh", {
     method: "POST",

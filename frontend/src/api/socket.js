@@ -1,8 +1,5 @@
-// 현재 페이지 origin 기준으로 동적 조립한다(client.js의 BASE_URL="" 상대경로 패턴과 동일한 이유).
-// localhost:8080을 문자열로 박아두면 배포 후 다른 사람 브라우저에서는 "localhost"가 그 사람
-// 자신의 컴퓨터를 가리켜버려서 실시간 기능이 전부 조용히 끊긴다.
-// https로 배포되면 브라우저가 보안상 wss://만 허용하므로 location.protocol을 보고 자동 전환.
-// 로컬 개발 때는 vite.config.js의 /ws 프록시(ws: true)가 8080으로 그대로 넘겨준다.
+// WebSocket 주소는 현재 origin 기준으로 조립 (localhost 고정 시 배포 환경에서 연결 불가)
+// https 환경은 wss 사용, 로컬 개발은 vite /ws 프록시 경유
 function wsOrigin() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}`;
@@ -23,11 +20,8 @@ function buildAuthenticatedUrl(baseUrl) {
   return `${baseUrl}${separator}token=${encodeURIComponent(token)}`;
 }
 
-// 백엔드가 재시작되거나(devtools hot reload 등) 네트워크가 잠깐 끊기면
-// WebSocket 연결이 끊어진 채로 남아서, 그 이후 상태 변경이 화면에 영원히
-// 반영되지 않는 문제가 있었음.
-// onclose 때마다 일정 시간 뒤 재연결을 시도하도록 공통 래퍼로 뺐다.
-// 재연결할 때마다 localStorage의 최신 JWT를 다시 읽는다.
+// 연결 종료 시 자동 재연결 (백엔드 재시작·네트워크 단절 대비)
+// 재연결마다 localStorage의 최신 JWT 사용
 function connectWithRetry(baseUrl, onMessage, label) {
   let socket = null;
   let retryTimer = null;

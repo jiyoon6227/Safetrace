@@ -168,7 +168,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
   const [candidates, setCandidates] = useState([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [reportError, setReportError] = useState("");
-  // 사건 연결/등록 성공했을 때 잠깐 떴다 사라지는 토스트 - "저장은 됐는데 화면이 조용해서 헷갈림" 문제 해결용
+  // 사건 연결/등록 성공 토스트
   const [toast, setToast] = useState("");
   useEffect(() => {
     if (!toast) return;
@@ -517,9 +517,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
       requestAnimationFrame(() => {
         if (cancelled) return;
         window.kakao.maps.event.trigger(map, "resize");
-        // 지도 초기화는 지도만 담당한다. 사건 데이터 조회는 아래 별도 effect에서 즉시 실행한다.
-        // (메인페이지 -> 담당자 대시보드 재진입 때 map ref 재마운트와 effect cleanup이 겹치면
-        // 여기의 rAF가 취소되어 loadIncidents()가 영원히 실행되지 않던 race condition 방지)
+        // 지도 초기화만 담당, 사건 데이터는 별도 effect에서 조회 (rAF 취소 시 loadIncidents 미실행 방지)
         drawMarkers(incidents, dashboardReports, mapTypeFilter, mapLayers, mapUrgentOnly);
       });
     });
@@ -552,7 +550,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
   // 카카오맵 초기화 여부와 상관없이 사건 목록을 즉시 가져온다.
   useEffect(() => {
     loadIncidents();
-    // 최초 마운트 시 1회만 실행. 이후 수동 새로고침/소켓 갱신은 기존 loadIncidents를 그대로 사용한다.
+    // 최초 마운트 시 1회 실행 (수동 새로고침·소켓 갱신은 loadIncidents 사용)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -577,8 +575,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
     const isUrgent = (inc) => inc.status !== "CLOSED" && inc.severity === "HIGH";
 
     const showIncidents = layers.incidents;
-    // 제보는 사건 상태 칩 대상이 아니라서, 특정 사건 상태를 골라 보는 중(statusFilter 있음)이면
-    // 상태 필터와 무관한 제보 마커가 같이 남아있어 "그 상황만 안 보인다"는 혼란이 생김 -> 전체(statusFilter=null)일 때만 표시
+    // 제보 마커는 상태 필터 미선택(전체)일 때만 표시 (제보는 사건 상태 칩 대상 아님)
     const showReports = layers.reports && !statusFilter;
 
     const visibleIncidents = showIncidents
@@ -794,7 +791,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
   // ---- 제보 관리 (중복탐지 후보 -> 실제 병합) -------------------------------
 
   // 위경도 -> 실제 주소 문자열로 변환 (카카오 리버스 지오코딩)
-  // 이제 DB에 ADDRESS가 저장되어 오니까, 저장된 게 없는 옛날 제보에 한해서만 좌표로 역지오코딩(하위호환)
+  // DB에 ADDRESS가 없는 제보만 좌표로 역지오코딩 (하위 호환)
   const resolveReportAddress = (report) => {
     if (report.address) { setReportAddresses((prev) => ({ ...prev, [report.reportId]: report.address })); return; }
     if (!window.kakao?.maps?.services || report.latitude == null || report.longitude == null) return;
@@ -823,8 +820,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
     }
   };
 
-  // 사이드바에서 "제보 관리" 탭을 이미 켜진 상태에서 또 누르면 목록만 다시 받아오는 게 아니라
-  // 걸어둔 필터(상태/유형/지역/정렬/날짜/검색어)까지 전부 초기 상태로 되돌림 - 새로고침한 느낌을 주기 위함
+  // 활성 탭 재클릭 시 목록 재조회 + 필터(상태/유형/지역/정렬/날짜/검색어) 초기화
   const resetReportFilters = () => {
     setReportSearchQuery("");
     setReportTypeFilter(null);
@@ -1090,9 +1086,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
   };
 
   const startNewIncidentFromReport = (report) => {
-    // 이미 "제보 상세"에서 변환해둔 주소가 있으면 그걸 그대로 지역란에 채움.
-    // 아직 변환이 안 끝났으면(드물게 클릭이 빨랐을 경우) 일단 비워두고,
-    // resolveReportAddress가 끝나는 대로 아래 useEffect가 뒤늦게 채워줌.
+    // 변환된 주소가 있으면 지역란에 채우기 (미완료 시 아래 useEffect에서 채움)
     setNewIncident({
       title: `${report.disasterType} · 제보 #${report.reportId}`,
       disasterType: report.disasterType,
@@ -1295,8 +1289,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
       return matchSearch && matchStatus && matchType && matchRegion && matchSeverity && matchDate;
     })
     .sort((a, b) => {
-      // 접수일시(createdAt) 기준 고정 정렬 - updatedAt으로 정렬하면 상태/내용을 수정할 때마다
-      // updatedAt이 갱신되어 목록에서 행이 위로 튀어오르는 문제가 있어 접수일시로 고정함
+      // 접수일시(createdAt) 기준 정렬 (updatedAt 기준 시 수정할 때마다 행 위치 변동)
       const aDate = new Date(a.createdAt);
       const bDate = new Date(b.createdAt);
       return incidentSortOrder === "newest" ? bDate - aDate : aDate - bDate;
@@ -1483,9 +1476,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  // "해결 완료" 카드는 incidents 배열의 updatedAt으로 세면 안 됨 - 종료된 사건을
-  // 나중에 수정(제목 등)해도 updatedAt이 갱신되어 그날 해결한 것처럼 잘못 잡히기 때문.
-  // 대신 상태변경 이력 기준으로 정확히 세는 백엔드 API를 따로 불러옴
+  // "해결 완료" 카드는 상태변경 이력 기준 백엔드 API 사용 (updatedAt 기준 시 종료 후 수정도 집계)
   const [closedCountStats, setClosedCountStats] = useState({ today: 0, yesterday: 0 });
   useEffect(() => {
     const yesterdayDate = new Date(today);
@@ -1508,21 +1499,18 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
   const recoveringToday = incidents.filter((i) => i.status === "RECOVERING" && sameDay(i.updatedAt, today)).length;
   const recoveringYesterday = incidents.filter((i) => i.status === "RECOVERING" && sameDay(i.updatedAt, yesterday)).length;
 
-  // 상단 카드/지도 필터 칩 전부 "사건"(Incident.status) 기준으로 통일함. dashboardReports는 이제
-  // "확인 필요 제보"(내 업무 카드)처럼 사건화 전 원본 제보량이 필요한 곳에만 씀 - 상단 KPI에는 안 씀
+  // dashboardReports는 사건화 전 원본 제보량이 필요한 곳(내 업무 카드)에만 사용
   const dashboardReceivedCount = dashboardReports.filter((r) => r.status === "RECEIVED").length;
   const confirmingToday = incidents.filter((i) => i.status === "CONFIRMING" && sameDay(i.updatedAt, today)).length;
   const confirmingYesterday = incidents.filter((i) => i.status === "CONFIRMING" && sameDay(i.updatedAt, yesterday)).length;
 
-  // 상단 카드 - 접수대기/확인중/대응중/복구중/해결 전부 "사건" 상태(Incident.status) 기준으로 통일.
-  // 처리 흐름(접수→확인중→대응중→복구중→종료) 그대로 카드를 배치 - 긴급(심각도)은 상태가 아니라서 상단에서 제외
-  // (담당 사건 개수는 여기 없고 "내 업무" 쪽으로 옮김 - 상단 카드는 전체 현황용, 내 업무는 개인화된 할 일용)
+  // 상단 카드 - Incident.status 기준, 처리 흐름 순서로 배치 (긴급은 심각도라 제외)
   const stats = {
     received: incidents.filter((i) => i.status === "RECEIVED").length,
     confirming: incidents.filter((i) => i.status === "CONFIRMING").length,
     responding: incidents.filter((i) => i.status === "RESPONDING").length,
     recovering: incidents.filter((i) => i.status === "RECOVERING").length,
-    // 상단 카드에서는 빠졌지만 지도 필터 칩("긴급")이 여전히 이 값을 참조함
+    // 지도 필터 칩 "긴급"용
     urgent: incidents.filter((i) => i.severity === "HIGH" && i.status !== "CLOSED").length,
     closedToday: closedCountStats.today,
   };
@@ -1571,8 +1559,8 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
     { icon: Clock3, label: "장기 미처리", value: longPendingCount, sub: `${LONG_PENDING_DAYS}일 이상 상태 변경 없음`, tone: "text-red-600 bg-red-50", onClick: () => setActiveNav("incidents") },
   ];
 
-  // 지도 상태 필터 칩 - 전부 Incident.status 하나로만 분류(서로 안 겹침)해서 개수 합이 "전체"와 정확히 일치함.
-  // 긴급은 상태가 아니라 심각도라 이 목록에서 빼고 mapUrgentOnly 토글로 따로 뺐음(DashboardTab에서 별도 렌더링)
+  // 지도 상태 필터 칩 - Incident.status 단일 분류 (개수 합계 = 전체)
+  // 긴급은 심각도라 제외, mapUrgentOnly 토글로 별도 처리 (DashboardTab에서 렌더링)
   const mapStatusChips = [
     { key: null, label: "전체", count: incidents.length },
     { key: "RECEIVED", label: "접수대기", count: stats.received },
@@ -1741,8 +1729,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
                 className="relative text-slate-400 hover:text-slate-600 cursor-pointer"
                 aria-label="미확인 제보"
               >
-                {/* 마이페이지(시민용)의 진짜 알림 피드와 헷갈리지 않도록 종 대신 클립보드 아이콘 사용.
-                    이건 실시간 계산된 "지금 접수대기 중인 제보 수"일 뿐, 읽음/안읽음이 쌓이는 알림이 아님 */}
+                {/* 종 대신 클립보드 아이콘 (실시간 접수대기 제보 수, 알림 피드와 구분) */}
                 <ClipboardList className="w-4.5 h-4.5" />
                 {dashboardReceivedCount > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center ring-2 ring-white">
