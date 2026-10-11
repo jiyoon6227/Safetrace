@@ -4,12 +4,11 @@ import com.safetrace.domain.Incident;
 import com.safetrace.domain.Report;
 import com.safetrace.mapper.IncidentMapper;
 import com.safetrace.mapper.ReportMapper;
+import com.safetrace.util.TransactionUtils;
 import com.safetrace.websocket.ReportWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 
@@ -46,7 +45,7 @@ public class ReportService {
         }
 
         Report created = reportMapper.findById(report.getReportId());
-        broadcastAfterCommit(() -> reportWebSocketHandler.broadcastReportCreated(created));
+        TransactionUtils.runAfterCommit(() -> reportWebSocketHandler.broadcastReportCreated(created));
         return created;
     }
 
@@ -96,7 +95,7 @@ public class ReportService {
         }
 
         Report updated = reportMapper.findById(reportId);
-        broadcastAfterCommit(() -> reportWebSocketHandler.broadcastReportLinked(updated));
+        TransactionUtils.runAfterCommit(() -> reportWebSocketHandler.broadcastReportLinked(updated));
         return updated;
     }
 
@@ -115,7 +114,7 @@ public class ReportService {
         }
 
         Report updated = reportMapper.findById(reportId);
-        broadcastAfterCommit(() -> reportWebSocketHandler.broadcastReportReviewing(updated));
+        TransactionUtils.runAfterCommit(() -> reportWebSocketHandler.broadcastReportReviewing(updated));
         return updated;
     }
 
@@ -135,7 +134,7 @@ public class ReportService {
         }
 
         Report updated = reportMapper.findById(reportId);
-        broadcastAfterCommit(() -> reportWebSocketHandler.broadcastReportRejected(updated));
+        TransactionUtils.runAfterCommit(() -> reportWebSocketHandler.broadcastReportRejected(updated));
         return updated;
     }
 
@@ -164,19 +163,6 @@ public class ReportService {
             throw new IllegalStateException(
                     "이미 처리된 제보는 " + actionName + " 처리할 수 없습니다."
             );
-        }
-    }
-
-    private void broadcastAfterCommit(Runnable action) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    action.run();
-                }
-            });
-        } else {
-            action.run();
         }
     }
 

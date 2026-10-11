@@ -8,13 +8,12 @@ import com.safetrace.mapper.FamilyRelationMapper;
 import com.safetrace.mapper.IncidentMapper;
 import com.safetrace.mapper.MemberMapper;
 import com.safetrace.mapper.SafetyCheckMapper;
+import com.safetrace.util.TransactionUtils;
 import com.safetrace.websocket.SafetyCheckWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -120,7 +119,7 @@ public class SafetyCheckService {
         // 모든 요청이 DB에 확정 저장된 뒤에만 알림·메일을 보낸다
         // (중간에 실패해 롤백되면, 존재하지 않는 요청의 메일이 나가는 것을 막기 위함)
         String mailIncidentTitle = incidentTitle;
-        runAfterCommit(() -> {
+        TransactionUtils.runAfterCommit(() -> {
             for (SafetyCheck check : createdChecks) {
                 // 사이트에 접속 중인 요청자/대상자에게만 실시간 알림
                 webSocketHandler.broadcastRequested(check);
@@ -220,20 +219,6 @@ public class SafetyCheckService {
     private void validateStatus(String status) {
         if (!"SAFE".equals(status) && !"HELP".equals(status)) {
             throw new IllegalArgumentException("status는 SAFE 또는 HELP만 가능합니다.");
-        }
-    }
-
-    // DB 저장이 최종 확정(커밋)된 뒤에 실행한다. 트랜잭션 밖에서 불리면 바로 실행한다.
-    private void runAfterCommit(Runnable action) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    action.run();
-                }
-            });
-        } else {
-            action.run();
         }
     }
 }

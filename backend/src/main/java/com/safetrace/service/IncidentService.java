@@ -7,12 +7,11 @@ import com.safetrace.domain.Member;
 import com.safetrace.mapper.IncidentMapper;
 import com.safetrace.mapper.MemberMapper;
 import com.safetrace.util.GeoUtils;
+import com.safetrace.util.TransactionUtils;
 import com.safetrace.websocket.IncidentWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.util.List;
@@ -69,7 +68,7 @@ public class IncidentService {
 
         // 알림 DB 저장 후 broadcast (신호 수신 직후 조회 시 알림 존재 보장)
         notificationService.notifyNearbyMembersOfNewIncident(created);
-        broadcastAfterCommit(() -> webSocketHandler.broadcastIncidentCreated(created));
+        TransactionUtils.runAfterCommit(() -> webSocketHandler.broadcastIncidentCreated(created));
 
         return created;
     }
@@ -149,7 +148,7 @@ public class IncidentService {
         // 알림 DB 저장 후 broadcast
         notificationService.notifyReportersOfStatusChange(updated, current.getLabel(), target.getLabel());
         // 담당자 상황판 + 관심지역 시민 화면 양쪽에 실시간 반영
-        broadcastAfterCommit(() -> webSocketHandler.broadcastStatusChanged(updated, memo));
+        TransactionUtils.runAfterCommit(() -> webSocketHandler.broadcastStatusChanged(updated, memo));
 
         return updated;
     }
@@ -171,7 +170,7 @@ public class IncidentService {
         incidentMapper.updateDetails(incident);
 
         Incident updated = incidentMapper.findById(incidentId);
-        broadcastAfterCommit(() -> webSocketHandler.broadcastIncidentUpdated(updated));
+        TransactionUtils.runAfterCommit(() -> webSocketHandler.broadcastIncidentUpdated(updated));
         return updated;
     }
 
@@ -195,7 +194,7 @@ public class IncidentService {
     }
 
         Incident updated = incidentMapper.findById(incidentId);
-        broadcastAfterCommit(() -> webSocketHandler.broadcastStaffAssigned(updated));
+        TransactionUtils.runAfterCommit(() -> webSocketHandler.broadcastStaffAssigned(updated));
         return updated;
     }
 
@@ -233,19 +232,6 @@ public class IncidentService {
 
         if (!incident.getAssignedStaffId().equals(staffId)) {
             throw new AccessDeniedException("이 사건의 담당자만 " + action + "할 수 있습니다.");
-        }
-    }
-
-    private void broadcastAfterCommit(Runnable action) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    action.run();
-                }
-            });
-        } else {
-            action.run();
         }
     }
 
@@ -305,7 +291,7 @@ public class IncidentService {
         incidentMapper.insertPhoto(incidentId, photoUrl, existing.size());
 
         Incident updated = incidentMapper.findById(incidentId);
-        broadcastAfterCommit(() -> webSocketHandler.broadcastIncidentUpdated(updated));
+        TransactionUtils.runAfterCommit(() -> webSocketHandler.broadcastIncidentUpdated(updated));
         return updated;
     }
 
