@@ -1,7 +1,9 @@
 package com.safetrace.controller;
 
 import com.safetrace.domain.SafetyCheck;
+import com.safetrace.dto.SafetyCheckRespondRequest;
 import com.safetrace.service.SafetyCheckService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -48,10 +50,10 @@ public class SafetyCheckController {
 
     // 로그인 상태(사이트 접속 중)에서 응답. body 예시: { "status": "SAFE" }
     @PatchMapping("/{checkId}/respond")
-    public Map<String, String> respond(@PathVariable Long checkId, @RequestBody Map<String, String> body,
+    public Map<String, String> respond(@PathVariable Long checkId, @RequestBody @Valid SafetyCheckRespondRequest request,
                                         Authentication authentication) {
         Long memberId = (Long) authentication.getPrincipal();
-        safetyCheckService.respond(checkId, body.get("status"), memberId);
+        safetyCheckService.respond(checkId, request.status(), memberId);
         return Map.of("message", "응답이 저장되었습니다.");
     }
 

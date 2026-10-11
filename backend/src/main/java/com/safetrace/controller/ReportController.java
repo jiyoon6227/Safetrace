@@ -2,8 +2,10 @@ package com.safetrace.controller;
 
 import com.safetrace.domain.Incident;
 import com.safetrace.domain.Report;
+import com.safetrace.dto.ReportCreateRequest;
 import com.safetrace.service.IncidentService;
 import com.safetrace.service.ReportService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -23,9 +25,9 @@ public class ReportController {
     // 시민 - 현장제보 등록
     // body 예시: { "disasterType": "침수", "content": "도로에 물이 차고 있어요", "latitude": 36.35, "longitude": 127.38 }
     @PostMapping
-    public Report create(@RequestBody Report report, Authentication authentication) {
+    public Report create(@RequestBody @Valid ReportCreateRequest request, Authentication authentication) {
         Long memberId = (Long) authentication.getPrincipal();
-        return reportService.createReport(report, memberId);
+        return reportService.createReport(request.toReport(), memberId);
     }
 
     // STAFF 전용 - 아직 사건에 연결 안 된 제보 목록 (제보 관리 탭)

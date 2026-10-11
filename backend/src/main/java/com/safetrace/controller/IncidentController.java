@@ -3,8 +3,11 @@ package com.safetrace.controller;
 import com.safetrace.domain.Incident;
 import com.safetrace.domain.IncidentLog;
 import com.safetrace.domain.Report;
+import com.safetrace.dto.IncidentCreateRequest;
+import com.safetrace.dto.IncidentStatusChangeRequest;
 import com.safetrace.service.IncidentService;
 import com.safetrace.service.ReportService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -30,7 +33,8 @@ public class IncidentController {
     // 생성자를 담당자로 자동 배정
     @PostMapping
     @PreAuthorize("hasRole('STAFF')")
-    public Incident create(@RequestBody Incident incident, Authentication authentication) {
+    public Incident create(@RequestBody @Valid IncidentCreateRequest request, Authentication authentication) {
+        Incident incident = request.toIncident();
         incident.setAssignedStaffId(currentMemberId(authentication));
         return incidentService.createIncident(incident);
     }
@@ -109,10 +113,10 @@ public class IncidentController {
     @PatchMapping("/{incidentId}/status")
     @PreAuthorize("hasRole('STAFF')")
     public Incident changeStatus(@PathVariable Long incidentId,
-                                  @RequestBody Map<String, String> body,
+                                  @RequestBody @Valid IncidentStatusChangeRequest request,
                                   Authentication authentication) {
         Long staffId = currentMemberId(authentication);
-        return incidentService.changeStatus(incidentId, body.get("status"), body.get("memo"), staffId);
+        return incidentService.changeStatus(incidentId, request.status(), request.memo(), staffId);
     }
 
     // 시민제보 접수 시 - 관련 있을 만한 기존 Incident 후보 조회 (중복탐지)
