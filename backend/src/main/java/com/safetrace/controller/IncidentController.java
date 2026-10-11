@@ -89,8 +89,11 @@ public class IncidentController {
     // STATUS/담당자는 여기서 안 바꿈 - 각자 전용 API(assign, status)를 써야 함
     @PatchMapping("/{incidentId}")
     @PreAuthorize("hasRole('STAFF')")
-    public Incident updateDetails(@PathVariable Long incidentId, @RequestBody Incident incident) {
-        return incidentService.updateIncidentDetails(incidentId, incident);
+    public Incident updateDetails(@PathVariable Long incidentId,
+                                  @RequestBody Incident incident,
+                                  Authentication authentication) {
+        Long staffId = currentMemberId(authentication);
+        return incidentService.updateIncidentDetails(incidentId, incident, staffId);
     }
 
     // STAFF 전용 - "내가 담당하기": 담당자가 없는 사건을 로그인한 본인에게 배정
@@ -124,8 +127,11 @@ public class IncidentController {
     // body 예시: { "photoUrl": "/uploads/xxx.jpg" }
     @PostMapping("/{incidentId}/photos")
     @PreAuthorize("hasRole('STAFF')")
-    public Incident addPhoto(@PathVariable Long incidentId, @RequestBody Map<String, String> body) {
-        return incidentService.addIncidentPhoto(incidentId, body.get("photoUrl"));
+    public Incident addPhoto(@PathVariable Long incidentId,
+                             @RequestBody Map<String, String> body,
+                             Authentication authentication) {
+        Long staffId = currentMemberId(authentication);
+        return incidentService.addIncidentPhoto(incidentId, body.get("photoUrl"), staffId);
     }
 
     // STAFF 전용 - 등록된 현장 사진 전체 목록 (0번째 = 대표)

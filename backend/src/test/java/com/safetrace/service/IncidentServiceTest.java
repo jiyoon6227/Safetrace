@@ -121,6 +121,43 @@ class IncidentServiceTest {
         verify(incidentMapper, never()).insertLog(any());
     }
 
+    @Test
+    void 담당자가_아닌_STAFF는_사건정보를_수정할수_없다() {
+        Incident incident = new Incident();
+        incident.setIncidentId(1L);
+        incident.setStatus("CONFIRMING");
+        incident.setAssignedStaffId(10L);
+
+        when(incidentMapper.findById(1L)).thenReturn(incident);
+
+        Incident updates = new Incident();
+        updates.setTitle("제목 변경");
+
+        assertThrows(
+                AccessDeniedException.class,
+                () -> incidentService.updateIncidentDetails(1L, updates, 20L)
+        );
+
+        verify(incidentMapper, never()).updateDetails(any());
+    }
+
+    @Test
+    void 담당자가_아닌_STAFF는_현장사진을_추가할수_없다() {
+        Incident incident = new Incident();
+        incident.setIncidentId(1L);
+        incident.setStatus("CONFIRMING");
+        incident.setAssignedStaffId(10L);
+
+        when(incidentMapper.findById(1L)).thenReturn(incident);
+
+        assertThrows(
+                AccessDeniedException.class,
+                () -> incidentService.addIncidentPhoto(1L, "/uploads/test.jpg", 20L)
+        );
+
+        verify(incidentMapper, never()).insertPhoto(anyLong(), anyString(), anyInt());
+    }
+
     private Member activeStaff() {
         Member member = new Member();
         member.setRole("STAFF");

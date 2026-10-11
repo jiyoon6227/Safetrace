@@ -159,11 +159,13 @@ public class IncidentService {
      * STATUS·담당자는 전용 워크플로우(changeStatus/assignStaff)에서만 변경.
      */
     @Transactional
-    public Incident updateIncidentDetails(Long incidentId, Incident incident) {
+    public Incident updateIncidentDetails(Long incidentId, Incident incident, Long staffId) {
         Incident existing = incidentMapper.findById(incidentId);
         if (existing == null) {
             throw new IllegalArgumentException("존재하지 않는 Incident 입니다: " + incidentId);
         }
+
+        requireAssignedStaff(existing, staffId, "사건 정보를 수정");
 
         incident.setIncidentId(incidentId);
         incidentMapper.updateDetails(incident);
@@ -223,6 +225,17 @@ public class IncidentService {
         return member;
     }
 
+    // 배정된 담당자 본인만 허용 (사건 수정·현장 사진 추가용)
+    private void requireAssignedStaff(Incident incident, Long staffId, String action) {
+        if (incident.getAssignedStaffId() == null) {
+            throw new IllegalStateException("담당자가 배정되지 않은 사건입니다. 먼저 담당자를 배정해주세요.");
+        }
+
+        if (!incident.getAssignedStaffId().equals(staffId)) {
+            throw new AccessDeniedException("이 사건의 담당자만 " + action + "할 수 있습니다.");
+        }
+    }
+
     private void broadcastAfterCommit(Runnable action) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -277,11 +290,13 @@ public class IncidentService {
      * (대표/추가 구분 없이 0번째가 곧 대표). 최대 5장 제한.
      */
     @Transactional
-    public Incident addIncidentPhoto(Long incidentId, String photoUrl) {
+    public Incident addIncidentPhoto(Long incidentId, String photoUrl, Long staffId) {
         Incident incident = incidentMapper.findById(incidentId);
         if (incident == null) {
             throw new IllegalArgumentException("존재하지 않는 Incident 입니다: " + incidentId);
         }
+
+        requireAssignedStaff(incident, staffId, "현장 사진을 추가");
 
         List<String> existing = incidentMapper.findPhotoUrlsByIncidentId(incidentId);
         if (existing.size() >= MAX_PHOTOS) {
