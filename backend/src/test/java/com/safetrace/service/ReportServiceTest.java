@@ -7,7 +7,11 @@ import com.safetrace.mapper.ReportMapper;
 import com.safetrace.websocket.ReportWebSocketHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
 
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
@@ -57,5 +61,45 @@ class ReportServiceTest {
 
         verify(reportMapper).linkIncident(1L, 100L);
         verify(reportWebSocketHandler, never()).broadcastReportLinked(any());
+    }
+
+    @Test
+    void 제보_작성자_본인은_사진목록을_볼수_있다() {
+        Report report = new Report();
+        report.setReportId(1L);
+        report.setMemberId(5L);
+
+        when(reportMapper.findById(1L)).thenReturn(report);
+        when(reportMapper.findPhotoUrlsByReportId(1L)).thenReturn(List.of("/uploads/a.jpg", "/uploads/b.jpg"));
+
+        assertEquals(List.of("/uploads/a.jpg", "/uploads/b.jpg"), reportService.getPhotoUrls(1L, 5L, false));
+    }
+
+    @Test
+    void STAFF는_다른사람의_제보사진도_볼수_있다() {
+        Report report = new Report();
+        report.setReportId(1L);
+        report.setMemberId(5L);
+
+        when(reportMapper.findById(1L)).thenReturn(report);
+        when(reportMapper.findPhotoUrlsByReportId(1L)).thenReturn(List.of("/uploads/a.jpg"));
+
+        assertEquals(List.of("/uploads/a.jpg"), reportService.getPhotoUrls(1L, 99L, true));
+    }
+
+    @Test
+    void 다른_시민은_제보사진을_볼수_없다() {
+        Report report = new Report();
+        report.setReportId(1L);
+        report.setMemberId(5L);
+
+        when(reportMapper.findById(1L)).thenReturn(report);
+
+        assertThrows(
+                AccessDeniedException.class,
+                () -> reportService.getPhotoUrls(1L, 20L, false)
+        );
+
+        verify(reportMapper, never()).findPhotoUrlsByReportId(anyLong());
     }
 }

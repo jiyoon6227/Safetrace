@@ -55,6 +55,9 @@ export default function IncidentsTab({
   linkedReports,
   setShowLinkedReportsModal,
   linkedReportsLoading,
+  linkedReportPhotos,
+  showAllLinkedReportPhotos,
+  setShowAllLinkedReportPhotos,
   setActiveNav,
   setSelectedReportId,
   setViewingPhotoUrl,
@@ -619,28 +622,28 @@ export default function IncidentsTab({
                   <div className="border border-slate-300 rounded-xl p-3 shadow-sm bg-white">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="text-sm font-extrabold text-[#0F2540]">
-                        제보자 첨부 사진 {linkedReports.filter((r) => r.photoUrl).length > 0 && `(${linkedReports.filter((r) => r.photoUrl).length})`}
+                        제보자 첨부 사진 {linkedReportPhotos.length > 0 && `(${linkedReportPhotos.length})`}
                       </h4>
-                      {linkedReports.filter((r) => r.photoUrl).length > 4 && (
+                      {linkedReportPhotos.length > 4 && (
                         <button
                           type="button"
-                          onClick={() => { setActiveNav("reports"); }}
+                          onClick={() => setShowAllLinkedReportPhotos((prev) => !prev)}
                           className="text-[11px] font-semibold text-blue-600 hover:underline cursor-pointer"
                         >
-                          전체보기 ›
+                          {showAllLinkedReportPhotos ? "접기" : "전체보기"}
                         </button>
                       )}
                     </div>
-                    {linkedReports.some((report) => report.photoUrl) ? (
+                    {linkedReportPhotos.length > 0 ? (
                       <div className="grid grid-cols-2 gap-2">
-                        {linkedReports.filter((report) => report.photoUrl).slice(0, 4).map((report) => (
+                        {(showAllLinkedReportPhotos ? linkedReportPhotos : linkedReportPhotos.slice(0, 4)).map((photo, index) => (
                           <button
-                            key={report.reportId}
+                            key={`${photo.reportId}-${index}`}
                             type="button"
-                            onClick={() => setViewingPhotoUrl(report.photoUrl)}
+                            onClick={() => setViewingPhotoUrl(photo.url)}
                             className="overflow-hidden rounded-lg border border-slate-200 hover:shadow-md hover:-translate-y-0.5 transition cursor-pointer group"
                           >
-                            <img src={report.photoUrl} alt="제보 첨부" className="w-full h-24 object-cover transition-transform duration-200 group-hover:scale-[1.03]" />
+                            <img src={photo.url} alt="제보 첨부" className="w-full h-24 object-cover transition-transform duration-200 group-hover:scale-[1.03]" />
                           </button>
                         ))}
                       </div>

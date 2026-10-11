@@ -7,6 +7,7 @@ import com.safetrace.mapper.ReportMapper;
 import com.safetrace.util.TransactionUtils;
 import com.safetrace.websocket.ReportWebSocketHandler;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -171,8 +172,12 @@ public class ReportService {
         return reportMapper.findByIncidentId(incidentId);
     }
 
-    // 제보 상세 - 등록된 사진 전체 목록 (0번째 = 대표)
-    public List<String> getPhotoUrls(Long reportId) {
+    // 제보 상세 - 등록된 사진 전체 목록 (STAFF 또는 제보 작성자 본인만 조회 가능)
+    public List<String> getPhotoUrls(Long reportId, Long memberId, boolean isStaff) {
+        Report report = getReportOrThrow(reportId);
+        if (!isStaff && !report.getMemberId().equals(memberId)) {
+            throw new AccessDeniedException("본인이 등록한 제보의 사진만 볼 수 있습니다.");
+        }
         return reportMapper.findPhotoUrlsByReportId(reportId);
     }
 }

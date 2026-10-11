@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapPin, Camera, ChevronRight, X, XCircle, Clock, Search, FileText } from "lucide-react";
 import { authFetch } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
@@ -22,6 +22,9 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
   useEscapeKey(!!detailReportId, () => setDetailReportId(null));
   const [detailTimeline, setDetailTimeline] = useState([]);
   const [detailTimelineLoading, setDetailTimelineLoading] = useState(false);
+  const [detailPhotos, setDetailPhotos] = useState([]);
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
+  const detailReportIdRef = useRef(null); // 사진 응답 도착 시점의 열린 제보 번호 확인용
   // 사건에 아직 연결 안 된 제보는 incident.region이 없어서(사건 자체가 없음) 위치가 항상 "-"로 뜸.
   // 제보 자체엔 위경도만 있어서, 카카오 리버스 지오코딩으로 좌표 -> 주소 문자열을 따로 조회해둠.
   const [reportAddresses, setReportAddresses] = useState({});
@@ -111,6 +114,16 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
 
   const openDetail = async (report) => {
     setDetailReportId(report.reportId);
+    detailReportIdRef.current = report.reportId;
+    // 사진 전체 목록 조회 (실패 시 대표 사진 1장)
+    setDetailPhotos(report.photoUrl ? [report.photoUrl] : []);
+    setSelectedPhotoIndex(0);
+    authFetch(`/api/reports/${report.reportId}/photos`)
+      .then((urls) => {
+        if (detailReportIdRef.current !== report.reportId) return;
+        if (Array.isArray(urls) && urls.length > 0) setDetailPhotos(urls);
+      })
+      .catch(() => {});
     if (!report.incidentId) {
       setDetailTimeline([]);
       return;
@@ -184,15 +197,24 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
           <p className="text-sm text-slate-400 p-5">해당하는 제보가 없습니다.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
+            <table className="w-full min-w-[800px] table-fixed text-sm border-collapse">
+              {/* 칸 너비 고정 (합계 100%) */}
+              <colgroup>
+                <col className="w-[28%]" />
+                <col className="w-[10%]" />
+                <col className="w-[15%]" />
+                <col className="w-[20%]" />
+                <col className="w-[11%]" />
+                <col className="w-[16%]" />
+              </colgroup>
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-left text-xs font-bold text-slate-500 tracking-wide">
-                  <th className="px-5 py-4 align-middle">제보 내용</th>
-                  <th className="px-4 py-4 align-middle whitespace-nowrap text-center">유형</th>
-                  <th className="px-4 py-4 align-middle whitespace-nowrap text-center">등록일시</th>
-                  <th className="px-4 py-4 align-middle text-center">위치</th>
-                  <th className="px-4 py-4 align-middle whitespace-nowrap text-center">상태</th>
-                  <th className="px-5 py-4 align-middle whitespace-nowrap text-center">작업</th>
+                  <th className="px-5 py-4 align-middle text-left">제보 내용</th>
+                  <th className="px-3 py-4 align-middle whitespace-nowrap text-center">유형</th>
+                  <th className="px-3 py-4 align-middle whitespace-nowrap text-center">등록일시</th>
+                  <th className="px-3 py-4 align-middle whitespace-nowrap text-center">위치</th>
+                  <th className="px-3 py-4 align-middle whitespace-nowrap text-center">상태</th>
+                  <th className="px-3 py-4 align-middle whitespace-nowrap text-center">작업</th>
                 </tr>
               </thead>
               <tbody>
@@ -204,6 +226,7 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
                   const d = new Date(r.createdAt);
                   const dateLabel = d.toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" });
                   const timeLabel = d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+                  const locationLabel = incident?.region || reportAddresses[r.reportId] || "주소 확인 중...";
                   return (
                     <tr key={r.reportId} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition align-middle">
                       <td className="px-5 py-4 align-middle">
@@ -229,12 +252,12 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-4 align-middle whitespace-nowrap text-center">
+                      <td className="px-3 py-4 align-middle whitespace-nowrap text-center">
                         <span className={`inline-flex items-center gap-1 text-xs font-bold ${DISASTER_TYPE_TEXT_COLOR[r.disasterType] || "text-slate-600"}`}>
                           <DisasterIcon className="w-3.5 h-3.5 shrink-0" />{r.disasterType}
                         </span>
                       </td>
-                      <td className="px-4 py-4 align-middle whitespace-nowrap">
+                      <td className="px-3 py-4 align-middle whitespace-nowrap text-center">
                         <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500">
                           <Clock className="w-3.5 h-3.5 shrink-0 text-slate-400" />
                           <span>
@@ -243,13 +266,13 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-4 align-middle max-w-[190px]">
-                        <span className="flex items-start justify-center gap-1 text-xs text-slate-500">
-                          <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-400" />
-                          <span className="leading-snug">{incident?.region || reportAddresses[r.reportId] || "주소 확인 중..."}</span>
+                      <td className="px-3 py-4 align-middle text-center">
+                        <span className="flex items-center justify-center gap-1 text-xs text-slate-500" title={locationLabel}>
+                          <MapPin className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                          <span className="truncate min-w-0">{locationLabel}</span>
                         </span>
                       </td>
-                      <td className="px-4 py-4 align-middle whitespace-nowrap text-center">
+                      <td className="px-3 py-4 align-middle whitespace-nowrap text-center">
                         <div className="flex flex-col items-center gap-1">
                           <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${reportState.style}`}>{reportState.label}</span>
                           {incidentState && (
@@ -257,7 +280,7 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
                           )}
                         </div>
                       </td>
-                      <td className="px-5 py-4 align-middle text-center whitespace-nowrap">
+                      <td className="px-3 py-4 align-middle text-center whitespace-nowrap">
                         <button
                           onClick={() => openDetail(r)}
                           className="inline-flex items-center gap-1 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-1.5 hover:border-slate-300 hover:text-blue-600 transition cursor-pointer"
@@ -366,13 +389,32 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
                 <span className="text-[9px] text-slate-400 whitespace-nowrap">#{detailReport.reportId}</span>
               </div>
 
-              {detailReport.photoUrl && (
-                <img
-                  src={detailReport.photoUrl}
-                  alt=""
-                  className="w-full h-44 object-cover rounded-xl cursor-pointer"
-                  onClick={() => setPreviewPhotoUrl(detailReport.photoUrl)}
-                />
+              {detailPhotos.length > 0 && (
+                <div className="space-y-2">
+                  <img
+                    src={detailPhotos[selectedPhotoIndex]}
+                    alt=""
+                    className="w-full h-44 object-contain bg-slate-100 rounded-xl cursor-pointer"
+                    onClick={() => setPreviewPhotoUrl(detailPhotos[selectedPhotoIndex])}
+                  />
+                  {detailPhotos.length > 1 && (
+                    <div className="flex gap-2 overflow-x-auto">
+                      {detailPhotos.map((url, index) => (
+                        <button
+                          key={`${url}-${index}`}
+                          type="button"
+                          onClick={() => setSelectedPhotoIndex(index)}
+                          className={`w-14 h-14 rounded-lg overflow-hidden shrink-0 border-2 transition cursor-pointer ${
+                            index === selectedPhotoIndex ? "border-blue-500" : "border-transparent hover:border-slate-300"
+                          }`}
+                          aria-label={`사진 ${index + 1} 보기`}
+                        >
+                          <img src={url} alt="" className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
 
               <div>

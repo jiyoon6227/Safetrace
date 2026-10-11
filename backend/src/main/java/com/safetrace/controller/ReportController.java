@@ -83,10 +83,12 @@ public class ReportController {
         return reportService.reject(reportId, body.get("reason"));
     }
 
-    // STAFF 전용 - 제보에 등록된 사진 전체 목록 (0번째 = 대표)
+    // STAFF 또는 제보 작성자 본인 - 제보에 등록된 사진 전체 목록 (0번째 = 대표)
     @GetMapping("/{reportId}/photos")
-    @PreAuthorize("hasRole('STAFF')")
-    public List<String> getPhotos(@PathVariable Long reportId) {
-        return reportService.getPhotoUrls(reportId);
+    public List<String> getPhotos(@PathVariable Long reportId, Authentication authentication) {
+        Long memberId = (Long) authentication.getPrincipal();
+        boolean isStaff = authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_STAFF".equals(authority.getAuthority()));
+        return reportService.getPhotoUrls(reportId, memberId, isStaff);
     }
 }

@@ -652,6 +652,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
     setDetailError("");
     setMemo("");
     setIncidentPhotos([]);
+    setLinkedReportPhotos([]);
   };
 
   const toggleIncidentDetail = (incidentId) => {
@@ -664,6 +665,13 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
 
   // 사건에 등록된 현장 사진 전체 목록 (0번째 = 대표) - 사건 상세를 열 때마다 같이 불러옴
   const [incidentPhotos, setIncidentPhotos] = useState([]);
+  // 연결된 제보들의 첨부 사진 전체 ({ reportId, url } 목록)
+  const [linkedReportPhotos, setLinkedReportPhotos] = useState([]);
+  // 제보자 첨부 사진 펼침 여부 (다른 사건 선택 시 접힘)
+  const [showAllLinkedReportPhotos, setShowAllLinkedReportPhotos] = useState(false);
+  useEffect(() => {
+    setShowAllLinkedReportPhotos(false);
+  }, [selectedIncidentId]);
   // "연결된 제보" 전체보기 팝업
   const [showLinkedReportsModal, setShowLinkedReportsModal] = useState(false);
   const [linkedReportsModalPage, setLinkedReportsModalPage] = useState(1);
@@ -701,6 +709,14 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
       const reportsData = await authFetch(`/api/incidents/${incidentId}/reports`);
       setLinkedReports(reportsData);
       reportsData.forEach(resolveReportAddress);
+      const photoGroups = await Promise.all(
+        reportsData.map((report) =>
+          authFetch(`/api/reports/${report.reportId}/photos`)
+            .then((urls) => urls.map((url) => ({ reportId: report.reportId, url })))
+            .catch(() => (report.photoUrl ? [{ reportId: report.reportId, url: report.photoUrl }] : []))
+        )
+      );
+      setLinkedReportPhotos(photoGroups.flat());
     } catch (err) {
       setDetailError(err.message);
     } finally {
@@ -1940,6 +1956,9 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
             linkedReports={linkedReports}
             setShowLinkedReportsModal={setShowLinkedReportsModal}
             linkedReportsLoading={linkedReportsLoading}
+            linkedReportPhotos={linkedReportPhotos}
+            showAllLinkedReportPhotos={showAllLinkedReportPhotos}
+            setShowAllLinkedReportPhotos={setShowAllLinkedReportPhotos}
             setActiveNav={setActiveNav}
             setSelectedReportId={setSelectedReportId}
             setViewingPhotoUrl={setViewingPhotoUrl}
