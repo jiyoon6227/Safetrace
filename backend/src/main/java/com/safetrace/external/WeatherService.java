@@ -93,7 +93,7 @@ public class WeatherService {
             result.put("hourlyRainfall", values.get("RN1"));  // 1시간 강수량(mm), "강수없음"일 수 있음
             result.put("baseDate", baseDate);
             result.put("baseTime", baseTime);
-            // AI 답변용 기준 시각을 읽기 쉬운 형태로 가공 (모델의 날짜 변환 오류 방지)
+            
             result.put("observedAt", baseDateTime.format(
                     DateTimeFormatter.ofPattern("M월 d일 HH:mm")) + " 관측 기준");
             return result;

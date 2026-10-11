@@ -303,7 +303,6 @@ public class IncidentService {
     /**
      * 시민제보와 관련 있을 가능성이 있는 기존 Incident를 찾는다.
      * 조건: 같은 재난유형 + 최근 N분 이내 + 반경 500m 이내
-     * AI 없이 위경도 거리계산(하버사인 공식) + 자바 로직만으로 구현.
      */
     public List<Incident> findRelatedIncidents(String disasterType, double reportLat, double reportLng) {
         List<Incident> candidates = incidentMapper.findRecentByType(disasterType, DUPLICATE_TIME_WINDOW_MINUTES);

@@ -25,8 +25,10 @@ export async function authFetch(path, options = {}) {
     throw new Error("로그인이 만료되었거나 더 이상 유효하지 않습니다.");
   }
 
+  // 권한 없음 - 서버 메시지 우선, 없으면 기본 문구
   if (res.status === 403) {
-    throw new Error("인증이 필요하거나 권한이 없습니다.");
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message || "인증이 필요하거나 권한이 없습니다.");
   }
 
   if (!res.ok) {
@@ -54,8 +56,10 @@ export async function authUpload(path, formData) {
     throw new Error("로그인이 만료되었거나 더 이상 유효하지 않습니다.");
   }
 
+  // 권한 없음 - 서버 메시지 우선, 없으면 기본 문구
   if (res.status === 403) {
-    throw new Error("인증이 필요하거나 권한이 없습니다.");
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message || "인증이 필요하거나 권한이 없습니다.");
   }
 
   if (!res.ok) {
