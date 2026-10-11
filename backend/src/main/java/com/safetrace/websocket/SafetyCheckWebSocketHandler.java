@@ -17,8 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 안전확인 WebSocket.
  *
- * 과거에는 SafetyCheck 전체 객체(이메일 응답용 token 포함)를 모든 접속자에게 broadcast 했지만,
- * 지금은 JWT handshake에서 확인된 사용자 중 요청자/대상자에게만 최소 정보만 전송한다.
+ * JWT handshake로 확인된 요청자/대상자에게만 최소 정보 전송 (이메일 응답용 token 노출 방지)
  */
 @Component
 @RequiredArgsConstructor

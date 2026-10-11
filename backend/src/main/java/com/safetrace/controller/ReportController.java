@@ -43,7 +43,6 @@ public class ReportController {
     }
 
     // 시민 전용 - 내가 등록한 제보 목록 (내 제보 추적 화면)
-    // "/my"가 "/{reportId}" 계열 경로와 겹치지 않는지 확인: 현재 GET 단일조회 경로가 없어서 충돌 없음
     @GetMapping("/my")
     public List<Report> getMyReports(Authentication authentication) {
         Long memberId = (Long) authentication.getPrincipal();

@@ -10,13 +10,9 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.UUID;
 
-// 현장제보에 첨부하는 사진을 서버 로컬 디스크(uploadDir)에 저장하고,
-// 브라우저에서 바로 열어볼 수 있는 URL(/uploads/파일명)을 돌려준다.
-// 실제 파일 서빙은 WebConfig의 addResourceHandlers가 처리.
+// 현장 사진을 로컬 디스크(uploadDir)에 저장 후 /uploads/파일명 URL 반환 (서빙은 WebConfig)
 //
-// 주의: transferTo()에 상대경로를 그대로 넘기면 Tomcat이 자기 내부 임시
-// 작업폴더 기준으로 다시 해석해버려서 "경로를 찾을 수 없음" 에러가 남.
-// 그래서 절대경로로 바꾼 뒤, transferTo() 대신 스트림을 직접 복사한다.
+// 업로드 경로는 절대경로로 변환 후 스트림 복사 (상대경로를 transferTo에 넘기면 Tomcat 임시폴더 기준으로 해석됨)
 @RestController
 @RequestMapping("/api/uploads")
 public class UploadController {
@@ -24,9 +20,7 @@ public class UploadController {
     @Value("${app.upload-dir}")
     private String uploadDir;
 
-    // 재난 제보/사건 등록용 사진 업로드라 이미지만 받는다. 이게 없으면 .html/.js/.exe 등
-    // 어떤 파일이든 올려서 /uploads/**(WebConfig에서 정적 리소스로 그대로 서빙)를 통해
-    // 우리 도메인에서 그대로 열리게 만들 수 있다 - 확장자와 실제 Content-Type을 둘 다 검사한다.
+    // 이미지 파일만 허용, 확장자와 Content-Type 모두 검사 (/uploads/**로 그대로 서빙되므로 임의 파일 차단)
     private static final java.util.Set<String> ALLOWED_EXTENSIONS =
             java.util.Set.of(".jpg", ".jpeg", ".png", ".gif", ".webp");
     private static final java.util.Set<String> ALLOWED_CONTENT_TYPES =

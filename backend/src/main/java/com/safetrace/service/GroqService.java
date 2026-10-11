@@ -35,11 +35,8 @@ public class GroqService {
 
     private static final URI CHAT_URI = URI.create("https://api.groq.com/openai/v1/chat/completions");
 
-    // Groq 무료 티어 일일 토큰 한도(200,000)를 실수로/장난으로 다 써버리는 걸 막기 위한
-    // 자체 안전장치. "질문 개수"로 추정하면 질문 길이에 따라 오차가 크므로, Groq가 응답마다
-    // 실제로 돌려주는 usage.total_tokens를 그대로 누적 집계해서 판단한다 — 추정이 아니라 실측.
-    // 200,000 전부가 아니라 180,000에서 끊는 이유: 마지막 한 번의 호출이 얼마나 토큰을 쓸지는
-    // 호출 전엔 알 수 없어서, 그 한 번이 남은 여유를 넘겨버릴 상황에 대비한 안전 여유분(20,000).
+    // 일일 토큰 자체 한도: 응답 usage.total_tokens 누적 기준 180,000에서 차단
+    // (Groq 무료 티어 200,000 중 마지막 호출 사용량 대비 여유분 20,000)
     private static final long DAILY_TOKEN_SAFETY_LIMIT = 180_000L;
     private final AtomicLong dailyTokensUsed = new AtomicLong(0);
     private volatile LocalDate dailyCountDate = LocalDate.now();
@@ -64,10 +61,7 @@ public class GroqService {
         }
     }
 
-    // "대구 재난문자"처럼 지역명이 질문에 직접 들어오거나,
-    // "공주시는?"처럼 직전 지역 질문의 의도를 이어받는 짧은 후속 질문은
-    // 모델의 tool_choice=auto 판단에 맡기지 않고 서버가 지역 조회를 먼저 실행한다.
-    // 그래야 새 지역을 물었는데 직전 지역의 재난문자/날씨를 재사용하는 일을 막을 수 있다.
+    // 지역명 포함 질문·지역만 바꾼 후속 질문은 서버가 지역 조회 선실행 (직전 지역 데이터 재사용 방지)
     private static final Map<String, String> REGION_ALIASES = Map.ofEntries(
             Map.entry("서울", "서울특별시"),
             Map.entry("부산", "부산광역시"),
@@ -183,12 +177,7 @@ public class GroqService {
             for (int i = start; i < history.size(); i++) {
                 Map<String, String> item = history.get(i);
                 String role = String.valueOf(item.getOrDefault("role", ""));
-                // user 메시지는 조금 더 길게(400자), assistant 메시지는 짧게(80자) 잘라서 넘긴다.
-                // 예전엔 assistant 답변을 700자까지 그대로 컨텍스트에 남겼는데, 그러면 "대구는?" 다음 "공주시는?"처럼
-                // 지역만 바뀐 후속 질문에서 모델이 새로 조회하지 않고 직전 답변(날씨 수치, 재난문자 본문 등)을 그대로
-                // 복붙해버리는 문제가 반복됐다. 컨텍스트에 "복붙할 완성된 답"이 남아있는 한 프롬프트 지시만으로는
-                // 막기 어려워서, 아예 그 답변 본문 자체를 짧게 잘라 "이전에 이런 주제/지역을 물었다"는 흐름만
-                // 남기고 구체적인 수치·본문은 컨텍스트에서 빼버리는 방식으로 원천 차단한다.
+                // user 400자, assistant 80자로 절단 (직전 답변의 수치·본문 재사용 방지)
                 int maxLength = "assistant".equals(role) ? 80 : 400;
                 String content = truncate(String.valueOf(item.getOrDefault("content", "")), maxLength);
                 if (("user".equals(role) || "assistant".equals(role)) && !content.isBlank()) {
@@ -201,23 +190,17 @@ public class GroqService {
         String explicitRegion = extractExplicitRegion(question);
         RegionalIntent regionalIntent = inferRegionalIntent(question, history);
 
-        // 재난문자 질문은 LLM에게 최종 사실 생성을 맡기지 않는다.
-        // 서버에서 지역 검증까지 끝난 실제 재난문자 결과를 그대로 반환한다.
-        // 이렇게 하면 조회 결과가 0건인데도 직전 공주시/대구 문자를 다시 말하는 환각을 막을 수 있다.
+        // 재난문자 질문은 서버 조회 결과 그대로 반환 (0건일 때 직전 지역 문자 환각 방지)
         if (explicitRegion != null && regionalIntent == RegionalIntent.DISASTER_MESSAGE) {
             return aiToolFunctions.getRegionalDisasterMessages(explicitRegion);
         }
 
-        // 미세먼지도 재난문자와 같은 이유로 LLM의 tool_choice=auto 판단에 맡기지 않는다.
-        // 모델이 도구를 안 부르고 "대기질 양호합니다" 같은 학습된 템플릿 답변을 도시명만 바꿔
-        // 지어내는 경우가 실제로 관측되어(부산/서울/대구 질문에 전부 동일한 PM10 15, PM2.5 10 답변),
-        // 서버가 직접 조회한 값을 그대로 반환하도록 강제한다.
+        // 미세먼지도 서버 조회 결과 그대로 반환 (도구 미호출 시 수치 날조 방지)
         if (explicitRegion != null && regionalIntent == RegionalIntent.AIR_QUALITY) {
             return aiToolFunctions.getAirQuality(explicitRegion);
         }
 
-        // 여기서부터는 실제로 Groq를 호출하는 경로다. callGroq()가 호출 전에 오늘 누적 토큰을
-        // 스스로 확인해서, 한도를 넘었으면 DailyQuotaExceededException을 던진다.
+        // 이후 Groq 호출 경로 (한도 초과 시 callGroq()에서 DailyQuotaExceededException)
         try {
             // 날씨/대피시설/지역 안전상황은 새 지역 데이터를 서버에서 먼저 조회한 뒤
             // 그 데이터만 Groq가 설명하도록 한다.
@@ -359,10 +342,7 @@ public class GroqService {
      * 광역 시/도 약칭(서울, 대구 등)은 정식명으로 바꾸고,
      * 공주시/안동시/동해시처럼 시·군·구가 붙은 지역명은 그대로 사용한다.
      *
-     * 주의:
-     * 예전에는 질문의 공백을 전부 없앤 뒤 "시/군/구"로 끝나는 한글을 찾았기 때문에
-     * "너는 누구"가 "너는누구"가 되어 '구'로 끝나는 지역명처럼 잘못 인식될 수 있었다.
-     * 이제는 원래 문장의 단어 경계를 유지해서 지역 후보를 찾는다.
+     * 원문 단어 경계 기준 검색 (공백 제거 시 "너는 누구"가 지역명으로 오인됨)
      */
     private String extractExplicitRegion(String question) {
         if (question == null || question.isBlank()) return null;
@@ -380,7 +360,6 @@ public class GroqService {
         }
 
         // "공주시는?", "안동시 재난문자", "해운대구 상황" 같은 시/군/구 단위 질문.
-        // 공백을 없애지 않은 원문에서 찾기 때문에 "너는 누구" 전체를 지역으로 오인하지 않는다.
         java.util.regex.Matcher matcher = java.util.regex.Pattern
                 .compile("(?<![가-힣])([가-힣]{2,10}(?:시|군|구))(?=(?:은|는|이|가|에서|의|에|도|만|요)?(?:\\s|[?!.~,]|$|재난문자|안전문자|날씨|특보|사건|대피|위험|안전|상황))")
                 .matcher(question.trim());
@@ -687,8 +666,7 @@ public class GroqService {
 
     /**
      * Groq 응답의 usage.total_tokens(그 호출에서 실제로 쓴 토큰 수)를 오늘 누적치에 더한다.
-     * OpenAI 호환 API라 모든 응답에 usage 필드가 오지만, 혹시 없거나 파싱 실패해도
-     * 0으로 처리하고 넘어간다(집계가 안 될 뿐 요청 자체는 이미 끝난 뒤라 실패시킬 이유가 없음).
+     * usage 누락·파싱 실패 시 0으로 처리 (요청은 이미 완료된 상태)
      */
     private void recordTokenUsage(JsonNode response) {
         long usedThisCall = response.path("usage").path("total_tokens").asLong(0);

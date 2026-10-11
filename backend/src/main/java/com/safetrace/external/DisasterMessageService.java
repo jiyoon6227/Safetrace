@@ -53,10 +53,8 @@ public class DisasterMessageService {
     // 한 번에 너무 크게 요청하지 않고 페이지 단위로 안전하게 가져온다.
     private static final int PAGE_SIZE = 100;
 
-    // 비정상 응답 등으로 무한 반복되는 것을 막기 위한 안전장치.
-    // 48시간(마이페이지) / 사용자가 고른 기간(더보기) 조회라 실제로 수백 페이지까지 갈 일이 없다.
-    // 예전 100은 쿼터 초과 상황에서 fallback 3단계(정식명→약칭→하위지역)와 겹치면
-    // 질문 한 번에 API 호출을 순식간에 수백 건까지 태울 수 있어 5로 낮춘다.
+    // 무한 반복 방지용 페이지 상한 (48시간·선택 기간 조회는 수 페이지 이내)
+    // (쿼터 초과 시 지역 fallback 3단계와 겹친 호출 급증 방지)
     private static final int MAX_PAGES = 5;
 
     private static final DateTimeFormatter API_DATE_FORMAT =
@@ -94,9 +92,8 @@ public class DisasterMessageService {
     }
 
     /**
-     * "진짜로 문자가 없는 것"과 "호출 자체가 실패한 것"(쿼터초과/인증오류/타임아웃 등)을
-     * 구분하기 위한 예외. 이게 나오면 절대 빈 결과로 캐시하지 말고, fallback(정식명→약칭→
-     * 하위지역) 재시도도 즉시 중단해야 한다 — 안 그러면 한 번의 실패가 쿼터를 3~4배로 더 태운다.
+     * 조회 결과 없음과 호출 실패(쿼터 초과/인증 오류/타임아웃 등) 구분용 예외.
+     * 발생 시 빈 결과 캐시 금지, 지역 fallback 재시도 즉시 중단 (실패 1회당 쿼터 3~4배 소모 방지)
      */
     public static final class DisasterMessageApiException extends RuntimeException {
         public DisasterMessageApiException(String message) {
@@ -110,10 +107,6 @@ public class DisasterMessageService {
         this.serviceKey = serviceKey;
     }
 
-    /**
-     * 마이페이지용.
-     * 현재 시각 기준 최근 48시간 이내 문자만 반환한다.
-     */
     /**
      * 공공정보 대시보드용.
      * 지역 조건을 주지 않고 전국 최근 48시간 재난문자를 최신순으로 반환한다.
@@ -249,13 +242,7 @@ public class DisasterMessageService {
     }
 
     /**
-     * 핵심 수정 부분.
-     *
-     * 예전처럼 pageNo=1 한 페이지만 가져오는 것이 아니라
-     * pageNo=1, 2, 3 ... 순서로 계속 요청한다.
-     *
-     * 또한 crtDt=yyyyMMdd를 같이 보내므로
-     * 필요한 시작 날짜 이후 데이터만 가져온다.
+     * crtDt 이후 데이터를 pageNo=1, 2, 3 ... 순서로 전체 조회.
      */
     private List<Map<String, Object>> fetchAllPagesAndSort(
             String rgnNm,

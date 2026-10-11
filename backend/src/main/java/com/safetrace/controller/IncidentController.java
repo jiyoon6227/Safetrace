@@ -21,15 +21,13 @@ public class IncidentController {
     private final IncidentService incidentService;
     private final ReportService reportService;
 
-    // JwtAuthenticationFilter가 토큰에서 꺼낸 memberId를 principal로 넣어주기 때문에
-    // 컨트롤러에서는 이렇게 꺼내 쓰면 "지금 로그인한 사람이 누구인지"를 알 수 있음
+    // JwtAuthenticationFilter가 principal에 넣은 memberId
     private Long currentMemberId(Authentication authentication) {
         return (Long) authentication.getPrincipal();
     }
 
     // STAFF 전용 - 새 Incident 등록
-    // 생성한 담당자를 자동으로 배정 - 상태 변경 화면에서 따로 "담당자 지정" 안 해도
-    // 사건이 만들어지는 시점에 이미 담당자가 붙어있게 하기 위함
+    // 생성자를 담당자로 자동 배정
     @PostMapping
     @PreAuthorize("hasRole('STAFF')")
     public Incident create(@RequestBody Incident incident, Authentication authentication) {
@@ -87,7 +85,7 @@ public class IncidentController {
         return reportService.getReportsByIncidentId(incidentId);
     }
 
-    // STAFF 전용 - 사건 상세정보 수정 (제목/유형/위험도/위치/현장사진)
+    // STAFF 전용 - 사건 상세정보 수정 (제목/유형/위험도/위치)
     // STATUS/담당자는 여기서 안 바꿈 - 각자 전용 API(assign, status)를 써야 함
     @PatchMapping("/{incidentId}")
     @PreAuthorize("hasRole('STAFF')")
@@ -110,7 +108,7 @@ public class IncidentController {
     public Incident changeStatus(@PathVariable Long incidentId,
                                   @RequestBody Map<String, String> body,
                                   Authentication authentication) {
-        Long staffId = currentMemberId(authentication); // 로그인한 담당자 ID를 그대로 사용 (예전엔 1L로 고정돼 있었음)
+        Long staffId = currentMemberId(authentication);
         return incidentService.changeStatus(incidentId, body.get("status"), body.get("memo"), staffId);
     }
 

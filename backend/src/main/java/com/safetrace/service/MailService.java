@@ -10,10 +10,8 @@ import org.springframework.stereotype.Service;
 
 // 가족 안전확인 요청 이메일 발송 전담.
 // HTML 메일로 보내서 링크가 실제 클릭 가능한 버튼/하이퍼링크로 뜨게 한다.
-// (SimpleMailMessage로 순수 텍스트만 보내면 localhost 같은 주소는 메일 클라이언트가
-//  자동으로 링크화를 안 해주는 경우가 많아서, 진짜 <a> 태그를 박아야 확실함)
-// 실패해도 전체 요청 흐름(DB 저장)까지 실패시키면 안 되므로,
-// 호출하는 쪽(SafetyCheckService)에서 실패를 잡아 로그만 남기고 넘어가는 구조로 쓴다.
+// (텍스트 메일은 localhost 링크가 자동 링크화되지 않음)
+// 발송 실패 처리는 호출부(SafetyCheckService) 담당
 @Service
 @RequiredArgsConstructor
 public class MailService {

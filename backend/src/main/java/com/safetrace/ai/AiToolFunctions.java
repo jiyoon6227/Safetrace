@@ -22,10 +22,7 @@ public class AiToolFunctions {
 
     private static final Logger log = LoggerFactory.getLogger(AiToolFunctions.class);
 
-    // 시/도 대표 좌표 - 프론트(ControlBoard/constants.js의 SIDO_CENTER)와 동일한 17개 시도.
-    // getRegionalSafetyData(예: "서울", "부산")처럼 좌표 없이 지역명만 들어왔을 때
-    // 날씨를 조회하려면 위경도가 필요한데, 그 지역의 정확한 지점 좌표까지는 알 수 없으니
-    // 시/도 대표 지점(대략 도청/시청 소재지) 좌표로 근사해서 씀.
+    // 시/도 대표 좌표 (프론트 SIDO_CENTER와 동일, 지역명만 있는 조회의 날씨용 근사 좌표)
     private static final Map<String, double[]> SIDO_CENTER = Map.ofEntries(
             Map.entry("서울특별시", new double[]{37.5665, 126.9780}),
             Map.entry("부산광역시", new double[]{35.1796, 129.0756}),
@@ -69,14 +66,9 @@ public class AiToolFunctions {
             Map.entry("제주특별자치도", "제주")
     );
 
-    // "강릉시", "청주시"처럼 광역시가 아닌 시/군 이름만 단독으로 들어오면 SIDO_CENTER의
-    // "시/도 이름을 포함하는지"로 좌표를 찾는 방식이 절대 매칭되지 않는다(예: "강릉시"에는
-    // "강원특별자치도"라는 글자가 없음). 그래서 대한민국의 모든 시/군을 상위 시/도에
-    // 미리 매핑해두고, normalizeRegion에서 필요하면 시/도 이름을 앞에 붙여준다.
-    // (구 단위는 다루지 않음 - 구는 항상 "OO광역시 OO구"처럼 상위 시와 같이 언급되거나,
-    //  이미 SIDO_CENTER 매칭이 되는 광역시 소속이라 이 표가 없어도 대부분 정상 동작함)
-    // 참고: "고성군"은 강원/경남에 동명이 있어 강원 쪽으로 기본 매핑함 - 경남 고성을 물으면
-    // "경상남도 고성군"처럼 도 이름을 같이 말해야 정확히 인식됨.
+    // 시/군 단독 지역명 → 상위 시/도 매핑 ("강릉시" 등은 SIDO_CENTER 매칭 불가)
+    // 구 단위 제외 (광역시 소속이거나 상위 시와 함께 언급됨)
+    // "고성군"은 강원 기본 매핑 (경남은 "경상남도 고성군"으로 입력 필요)
     private static final Map<String, String> CITY_TO_SIDO = Map.<String, String>ofEntries(
             // 경기도
             Map.entry("수원시", "경기도"), Map.entry("성남시", "경기도"), Map.entry("의정부시", "경기도"),
@@ -394,8 +386,8 @@ public class AiToolFunctions {
      * 특정 지역의 최근 재난문자만 반환한다.
      *
      * 중요:
-     * - 실제 지역 조회 방식은 기존에 정상 동작하던 getRecentMessagesWithRegionFallback()을 그대로 사용한다.
-     * - Groq가 직전 지역 답변을 재사용하는 문제를 막기 위해, 재난문자 질문에서는 이 결과를 그대로 반환한다.
+     * - 지역 조회는 getRecentMessagesWithRegionFallback() 사용
+     * - 결과 그대로 반환 (Groq의 직전 지역 답변 재사용 방지)
      */
     public String getRegionalDisasterMessages(String region) {
         String requestedRegion = normalizeRegion(region);
@@ -512,10 +504,7 @@ public class AiToolFunctions {
         }
     }
 
-    // 태풍/호우 경보처럼 한 문자가 여러 구·군에 동시 발송되면 region 필드가
-    // "해운대구,연제구,...,기장군"처럼 수십 개 지역명이 콤마로 나열된 채로 온다.
-    // 이걸 그대로 붙이면 도구 결과가 지역명 도배로 채워져서(특히 8건이 겹치면 배로 증폭)
-    // AI 답변까지 알아보기 힘든 텍스트 덩어리가 되므로, 앞 몇 개만 보여주고 나머지는 개수로 요약한다.
+    // 다수 구·군 동시 발송 시 region이 길게 나열되므로 앞 몇 개만 표시, 나머지는 개수로 요약
     private String summarizeRegion(String region) {
         if (region == null || region.isBlank()) return "-";
         String[] parts = region.split(",");
@@ -583,10 +572,7 @@ public class AiToolFunctions {
             return expanded;
         }
 
-        // "강릉시", "청주시"처럼 광역시가 아닌 시/군 단독 이름은 SIDO_CENTER나 findCanonicalSido의
-        // "지역명이 시/도 이름을 포함하는지" 매칭에서 절대 걸리지 않으므로, 여기서 상위 시/도를
-        // 앞에 붙여준다. 이미 "강원특별자치도 강릉시"처럼 상위 시/도가 붙어 있으면 중복 방지를 위해
-        // 그대로 둔다.
+        // 시/군 단독 이름이면 상위 시/도 접두 (이미 붙어 있으면 유지)
         String cityKey = value.replaceAll("^.*\\s", ""); // 마지막 공백 이후 토큰(=시/군 이름)만 추출
         String parentSido = CITY_TO_SIDO.get(cityKey.isBlank() ? value : cityKey);
 

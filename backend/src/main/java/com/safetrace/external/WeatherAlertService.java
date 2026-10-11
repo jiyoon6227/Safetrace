@@ -37,12 +37,12 @@ public class WeatherAlertService {
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
-    // 기존 공공데이터포털 키 그대로 사용
+    // 공공데이터포털 서비스 키
     public WeatherAlertService(@Value("${publicdata.service-key}") String serviceKey) {
         this.serviceKey = serviceKey;
     }
 
-    // EnvironmentController 기존 시그니처 유지
+    // EnvironmentController 호환용 파라미터 (lookbackDays 미사용)
     public Map<String, Object> getWeatherAlerts(int ignoredLookbackDays) {
         if (serviceKey == null || serviceKey.isBlank()) {
             return unavailable("공공데이터포털 인증키가 설정되지 않았습니다.");

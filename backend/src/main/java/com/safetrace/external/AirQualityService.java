@@ -46,9 +46,7 @@ public class AirQualityService {
             .build();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // 프론트(PublicInfoTab)의 sessionStorage 캐시 TTL(10분)과 맞춰둠.
-    // 외부 API가 느린 게 제일 큰 병목이라, 시도별로 여기서 한 번 캐싱해두면
-    // 프론트 배치 조회가 매번 실제 API를 안 타고 즉시 응답을 받아온다.
+    // 캐시 TTL: 프론트(PublicInfoTab) sessionStorage TTL 10분과 동일 (외부 API 지연 대비)
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
     private final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
@@ -62,9 +60,7 @@ public class AirQualityService {
         this.serviceKey = serviceKey;
     }
 
-    // 프론트(constants.js SIDO_CENTER)와 동일한 17개 시도 전체명칭.
-    // 서버 기동 시 + 주기적으로 이 목록을 미리 조회해서 캐시를 채워둔다 -
-    // 그래야 "이번에 처음 접속한 사람"이 느린 외부 API 비용을 대신 떠안는 일이 없어짐.
+    // 프론트(constants.js SIDO_CENTER)와 동일한 17개 시도 (캐시 예열 대상)
     private static final List<String> ALL_SIDO_FULL_NAMES = List.of(
             "서울특별시", "부산광역시", "대구광역시", "인천광역시", "광주광역시", "대전광역시", "울산광역시",
             "세종특별자치시", "경기도", "강원특별자치도", "충청북도", "충청남도", "전북특별자치도", "전라남도",
@@ -75,10 +71,7 @@ public class AirQualityService {
 
     @PostConstruct
     public void startPrewarming() {
-        // TODO: 오늘 트래픽 한도(일일 500건)를 이 스케줄러 혼자 다 써버려서 일단 꺼둠.
-        // 개발 중 서버를 자주 껐다 켰다 하면 그때마다 0초 지연으로 17개를 또 쏘고,
-        // 거기에 8분 주기 자동 갱신까지 겹쳐서 하루 한도를 순식간에 넘겨버림.
-        // 실제 배포해서 서버를 계속 띄워둘 때만 다시 켜는 걸로.
+        // TODO: 일일 트래픽 한도(500건) 초과로 비활성화, 상시 운영 배포 시 재활성화
         // prewarmScheduler.scheduleAtFixedRate(this::refreshAllSido, 0, 8, TimeUnit.MINUTES);
     }
 
@@ -92,11 +85,10 @@ public class AirQualityService {
             try {
                 getAirQuality(sido); // 캐시에 없거나 만료된 것만 실제로 외부 API를 탐(getAirQuality 내부 캐시 로직 재사용)
             } catch (Exception e) {
-                // 한 지역 실패해도 나머지는 계속 진행 - 다음 주기(8분 뒤)에 다시 시도됨
+                // 한 지역 실패 시에도 나머지 지역 계속 조회
             }
             try {
-                // 17개를 한꺼번에 쏘지 않고 살짝 텀을 줘서, 사용자 쪽 프론트 배치 조회와 겹쳐도
-                // 외부 API의 짧은 시간당 요청 제한에 같이 걸리는 걸 피한다.
+                // 외부 API 단시간 요청 제한 회피용 간격
                 Thread.sleep(300);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -133,8 +125,7 @@ public class AirQualityService {
             return fresh;
         }
 
-        // 이번 호출은 실패/데이터없음이지만, 이전에 성공했던 값이 있으면(만료됐더라도)
-        // 그걸 그대로 돌려줘서 화면이 "-"로 비는 것보다 낫게 만든다.
+        // 실패·데이터 없음 시 이전 성공값 반환 (만료 여부 무관)
         if (cached != null) {
             return cached.data();
         }
@@ -167,8 +158,7 @@ public class AirQualityService {
                 return Map.of("available", false, "message", header.path("resultMsg").asText("대기질 정보를 가져오지 못했습니다."));
             }
 
-            // 이 API가 JSON에서도 XML처럼 items.item으로 감싸서 줄 수도, items를 바로 배열로 줄 수도 있어서
-            // 실제 어떤 형태로 오는지 로그로 확인하고 둘 다 대응함
+            // items.item 래핑 / items 배열 두 형태 모두 처리
             JsonNode itemsNode = root.path("response").path("body").path("items");
             JsonNode items = itemsNode.isArray() ? itemsNode : itemsNode.path("item");
             double pm10Sum = 0, pm25Sum = 0;

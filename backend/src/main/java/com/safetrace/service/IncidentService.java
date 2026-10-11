@@ -27,7 +27,7 @@ public class IncidentService {
     private final IncidentWebSocketHandler webSocketHandler;
     private final NotificationService notificationService;
 
-    // 중복탐지 기준값 (기술서에 "왜 이 값을 썼는지" 설명할 수 있어야 함)
+    // 중복 제보 판단 기준: 반경 500m, 30분 이내
     private static final double DUPLICATE_RADIUS_METERS = 500.0;
     private static final int DUPLICATE_TIME_WINDOW_MINUTES = 30;
 
@@ -67,9 +67,7 @@ public class IncidentService {
 
         Incident created = incidentMapper.findById(incident.getIncidentId());
 
-        // 알림을 먼저 DB에 저장한 뒤 broadcast를 보내야, 프론트가 이 신호를 받자마자
-        // /api/notifications를 조회해도 이미 저장이 끝나있어서 확실하게 받아짐
-        // (반대 순서면 아주 드물게 "신호는 왔는데 아직 저장 전"인 타이밍이 생길 수 있음)
+        // 알림 DB 저장 후 broadcast (신호 수신 직후 조회 시 알림 존재 보장)
         notificationService.notifyNearbyMembersOfNewIncident(created);
         broadcastAfterCommit(() -> webSocketHandler.broadcastIncidentCreated(created));
 
@@ -148,7 +146,7 @@ public class IncidentService {
 
         Incident updated = incidentMapper.findById(incidentId);
 
-        // 여기도 마찬가지로 알림 DB 저장을 broadcast보다 먼저 실행
+        // 알림 DB 저장 후 broadcast
         notificationService.notifyReportersOfStatusChange(updated, current.getLabel(), target.getLabel());
         // 담당자 상황판 + 관심지역 시민 화면 양쪽에 실시간 반영
         broadcastAfterCommit(() -> webSocketHandler.broadcastStatusChanged(updated, memo));
@@ -157,10 +155,8 @@ public class IncidentService {
     }
 
     /**
-     * 사건 상세정보 수정 (제목/유형/위험도/위치/현장사진).
-     * STATUS와 담당자는 각자 전용 워크플로우(changeStatus/assignStaff)가 있으므로 여기서 건드리지 않음.
-     * photoUrl을 새로 첨부하지 않는 수정이면, 프론트가 기존 photoUrl을 그대로 실어보내야
-     * 기존 사진이 유지됨 (안 보내면 NULL로 덮어써짐).
+     * 사건 상세정보 수정 (제목/유형/위험도/위치).
+     * STATUS·담당자는 전용 워크플로우(changeStatus/assignStaff)에서만 변경.
      */
     @Transactional
     public Incident updateIncidentDetails(Long incidentId, Incident incident) {

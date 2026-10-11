@@ -32,7 +32,7 @@ public class MemberService {
         if (!emailVerificationService.isVerified(email)) {
             throw new IllegalArgumentException("이메일 인증을 먼저 완료해주세요.");
         }
-        // 인증코드 발송 이후 다른 사람이 그 사이 먼저 가입해버렸을 가능성 대비, 가입 직전에 한번 더 확인
+        // 인증코드 발송 후 다른 회원의 선가입 대비 재확인
         if (isEmailTaken(email)) {
             throw new IllegalArgumentException("이미 사용 중인 이메일입니다.");
         }
@@ -62,12 +62,10 @@ public class MemberService {
         return jwtTokenProvider.generateToken(member.getMemberId(), member.getRole(), member.getName(), member.getCreatedAt());
     }
 
-    // 세션 연장용 - 이미 유효한 토큰(JwtAuthenticationFilter를 통과해서 SecurityContext에
-    // memberId가 들어와있는 상태)을 가진 회원에게 만료시간만 새로 늘려서 토큰을 재발급.
-    // 필터에서 이미 회원 존재/탈퇴여부까지 검증하고 통과시킨 뒤라 여기선 바로 재발급한다.
+    // 세션 연장용 토큰 재발급 (회원 존재·탈퇴 여부는 JwtAuthenticationFilter에서 검증 완료)
     public String reissueToken(Long memberId) {
         Member member = memberMapper.findById(memberId);
-        // login()과 똑같이 generateToken 호출 - 단지 발급 시각이 "지금"이라 만료시각(exp)만 늘어남
+        // 발급 시각 기준으로 만료시각(exp) 연장
         return jwtTokenProvider.generateToken(member.getMemberId(), member.getRole(), member.getName(), member.getCreatedAt());
     }
 
@@ -82,10 +80,8 @@ public class MemberService {
         return member;
     }
 
-    // 내정보 수정 - 이메일/전화/주소/프로필사진만 변경 가능... 이라고 했지만
-    // 이메일은 가입 시 인증된 값으로 고정하고 이후 변경은 막음(중복/재인증 로직이 없어 악용 소지가 있었음).
-    // 로그인ID/이름/권한/이메일은 여기서 안 건드림
-    // (UPDATE 쿼리 자체가 EMAIL 컬럼을 SET하지 않으므로, 요청에 이메일이 같이 와도 애초에 반영되지 않음)
+    // 내정보 수정: 이름/전화/주소/프로필사진만 반영
+    // (이메일은 가입 시 인증값으로 고정, UPDATE 쿼리에 EMAIL 미포함)
     public void updateMyInfo(Long memberId, Member updates) {
         updates.setMemberId(memberId);
         memberMapper.update(updates);
@@ -140,7 +136,7 @@ public class MemberService {
     }
 
     // 비밀번호 찾기 1단계 - 아이디+이메일이 둘 다 일치하는 회원에게만 인증코드 발송
-    // (회원가입 때와 같은 EmailVerificationService를 그대로 재사용 - 이메일+코드라는 형태 자체는 동일하니까)
+    // (회원가입과 같은 EmailVerificationService 사용)
     public void sendPasswordResetCode(String loginId, String email) {
         Member member = memberMapper.findByLoginId(loginId);
         if (member == null || email == null || !email.equals(member.getEmail())) {

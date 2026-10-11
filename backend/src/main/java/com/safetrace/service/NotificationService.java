@@ -19,8 +19,7 @@ import java.util.stream.Collectors;
 
 /**
  * 마이페이지 "최근 알림" 중 재난 알림 / 제보 알림 두 종류를 실제로 생성하는 서비스.
- * (안전확인/기타 알림은 이미 있는 데이터를 프론트에서 그때그때 조합해서 보여주는 방식을
- *  그대로 쓰고, 이 둘만 진짜 이벤트 기반으로 DB에 남겨서 "제대로 된 알림"으로 만든다.)
+ * (안전확인 등 기타 알림은 프론트에서 이미 받은 데이터를 조합해 표시)
  */
 @Service
 @RequiredArgsConstructor
@@ -78,9 +77,7 @@ public class NotificationService {
             notification.setIncidentId(incident.getIncidentId());
             notificationMapper.insert(notification);
 
-            // 앱 안 알림은 항상 남기고, 이메일은 "혹시 실패해도" DB 알림 자체는 살아있게
-            // try-catch로 감쌈. 안전확인 메일(MailService.sendSafetyCheckRequest)도 같은 패턴으로
-            // 호출하는 쪽에서 실패를 삼키게 돼있어서 그 관례를 그대로 따름.
+            // 이메일 발송 실패와 무관하게 앱 내 알림 유지
             if (member.getEmail() != null && !member.getEmail().isBlank()) {
                 try {
                     mailService.sendDisasterAlert(
@@ -88,7 +85,7 @@ public class NotificationService {
                             incident.getRegion(), distanceKm
                     );
                 } catch (Exception e) {
-                    // 이메일 발송 실패해도 알림 생성 자체는 이미 끝났으니 그냥 넘어감
+                    // 앱 내 알림은 이미 생성됨
                 }
             }
         }

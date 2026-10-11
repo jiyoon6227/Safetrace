@@ -24,7 +24,7 @@ public interface IncidentMapper {
     // 서비스 레이어에서 위경도로 거리 필터링(하버사인)함
     List<Incident> findAllActive();
 
-    // 사건 상세정보 수정 (제목/유형/위험도/위치/현장사진) - STATUS/담당자는 별도 API(전용 워크플로우)에서만 변경
+    // 사건 상세정보 수정 (제목/유형/위험도/위치) - STATUS/담당자는 별도 API에서만 변경
     int updateDetails(Incident incident);
 
     // 상태 변경 (Workflow 전이 시 사용)
@@ -48,8 +48,7 @@ public interface IncidentMapper {
     List<IncidentLog> findLogsByIncidentId(@Param("incidentId") Long incidentId);
 
     // 대시보드 "오늘 해결 완료" 카드용 - 특정 날짜에 CLOSED로 바뀐 건수.
-    // UPDATED_AT을 직접 세면 종료 후 다른 항목(제목 등)을 고쳤을 때도 갱신되어 잘못 잡히므로,
-    // 상태변경 이력(언제 CLOSED가 됐는지만 기록되고 이후 수정에 영향 안 받음)을 기준으로 셈
+    // UPDATED_AT 대신 상태변경 이력 기준 (종료 후 다른 항목 수정 시 오집계 방지)
     int countClosedOn(@Param("date") java.time.LocalDate date);
 
     // 중복탐지용: 같은 재난유형 + 최근 N분 이내 발생한 Incident 후보 조회

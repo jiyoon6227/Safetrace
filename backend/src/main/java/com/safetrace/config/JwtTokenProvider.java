@@ -23,11 +23,8 @@ public class JwtTokenProvider {
         this.expirationMs = expirationMs;
     }
 
-    // 토큰 생성 - memberId, role, name과 함께 로그인 시점의 회원 가입일시(createdAt)도 담음.
-    // DB를 초기화(재시딩)하면 SEQUENCE가 다시 1번부터 채번되므로 예전과 같은 MEMBER_ID의
-    // 회원이 다시 생길 수 있는데, 그건 데이터상 완전히 다른(재생성된) 레코드임.
-    // 그 경우에도 CREATED_AT(가입일시)까지 똑같이 우연히 일치할 가능성은 사실상 없으므로,
-    // 이 값을 토큰에 넣어두면 "겉보기 ID만 같고 실제로는 재생성된 회원"인 경우를 구분해낼 수 있음.
+    // 토큰 생성: memberId, role, name, createdAt 포함
+    // (createdAt: DB 재시딩으로 같은 ID가 재생성된 회원 구분용)
     public String generateToken(Long memberId, String role, String name, LocalDateTime createdAt) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMs);
