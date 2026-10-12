@@ -228,7 +228,7 @@ export default function TrackingModal({
             </div>
           )}
 
-          {/* 상세 모드: 사진+설명 배너 + 6단계 진행바 + 타임라인(정렬 가능) + 담당부서/번호/최근업데이트/지도 정보패널 */}
+          {/* 상세 모드: 사진·설명 배너, 6단계 진행바, 타임라인(정렬 가능) */}
           {/* 검토 대기중 제보 상세 - 아직 Incident가 없어서 타임라인/진행바 없이 제보 원본만 보여줌 */}
           {detailPendingReportId && detailPendingReport && (() => {
             const DetailDisasterIcon = DISASTER_ICON[detailPendingReport.disasterType] || ShieldAlert;

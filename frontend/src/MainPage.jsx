@@ -37,7 +37,6 @@ export default function MainPage() {
   const currentUser = getCurrentUser();
   const isStaff = currentUser?.role === "STAFF";
 
-  const [tab, setTab] = useState("nearby");
   // 이메일 안전확인 링크(?safetyCheckToken=xxx)로 들어온 거면 그 응답 화면부터 바로 보여줌
   const safetyCheckTokenFromUrl = new URLSearchParams(window.location.search).get("safetyCheckToken");
   // 새로고침 후에도 보던 페이지 유지 (history.state 복원)
@@ -625,15 +624,10 @@ export default function MainPage() {
   const [detailTimelineLoading, setDetailTimelineLoading] = useState(false);
   // 상세 모달 "처리 타임라인" 정렬 - 기본값은 최신순
   const [detailTimelineSort, setDetailTimelineSort] = useState("newest"); // "oldest" | "newest"
-  const detailMapRef = useRef(null); // "대응상황 상세" 모달의 실제 Kakao 지도 컨테이너
 
-  // 가족 안전확인 - 등록된 가족 + 나와 주고받은 요청들
-  const [families, setFamilies] = useState([]);
-  const [receivedSafetyChecks, setReceivedSafetyChecks] = useState([]); // 그 가족이 나한테 보낸 것 전부 (PENDING/SAFE/HELP) - 가족별 최신 상태 계산에 필요해서 상태 무관하게 다 들고 있음
-  const [sentSafetyChecks, setSentSafetyChecks] = useState([]); // 내가 보낸 안전확인 요청들 - 가족별 최신 응답상태 계산용
-  const [showSafetyCheckModal, setShowSafetyCheckModal] = useState(false);
-  const [selectedFamilyIds, setSelectedFamilyIds] = useState([]);
-  const [safetyCheckSending, setSafetyCheckSending] = useState(false);
+  // 안전확인 요청 목록 (헤더 알림 배지 계산용)
+  const [receivedSafetyChecks, setReceivedSafetyChecks] = useState([]); // 나에게 온 요청 전체 (PENDING/SAFE/HELP)
+  const [sentSafetyChecks, setSentSafetyChecks] = useState([]); // 내가 보낸 요청 전체
 
   // 헤더 표시용 프로필 (토큰의 이름/사진은 로그인 시점 값이라 홈 복귀 시마다 재조회)
   const [myProfile, setMyProfile] = useState(null);
@@ -821,15 +815,13 @@ export default function MainPage() {
     return () => socket.close();
   }, [token]);
 
-  // 로그인 상태면 등록된 가족 + 나한테 온 응답대기 안전확인 요청을 불러옴
+  // 로그인 상태의 받은·보낸 안전확인 요청 조회
   const loadSafetyCheckData = () => {
     if (!token) {
-      setFamilies([]);
       setReceivedSafetyChecks([]);
       setSentSafetyChecks([]);
       return;
     }
-    authFetch("/api/family").then(setFamilies).catch(() => {});
     authFetch("/api/safety-checks/received").then(setReceivedSafetyChecks).catch(() => {});
     authFetch("/api/safety-checks/sent").then(setSentSafetyChecks).catch(() => {});
   };
@@ -845,42 +837,6 @@ export default function MainPage() {
     return () => socket.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
-
-  const toggleSelectedFamily = (memberId) => {
-    setSelectedFamilyIds((prev) =>
-      prev.includes(memberId) ? prev.filter((id) => id !== memberId) : [...prev, memberId]
-    );
-  };
-
-  const sendSafetyCheckRequest = async () => {
-    if (selectedFamilyIds.length === 0) return;
-    setSafetyCheckSending(true);
-    try {
-      await authFetch("/api/safety-checks", {
-        method: "POST",
-        body: JSON.stringify({ targetMemberIds: selectedFamilyIds, incidentId: null }),
-      });
-      setShowSafetyCheckModal(false);
-      setSelectedFamilyIds([]);
-      alert("안전확인 요청을 보냈습니다.");
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setSafetyCheckSending(false);
-    }
-  };
-
-  const respondSafetyCheck = async (checkId, status) => {
-    try {
-      await authFetch(`/api/safety-checks/${checkId}/respond`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
-      });
-      loadSafetyCheckData();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
 
   const handleLoginSuccess = (newToken) => {
     setToken(newToken);
@@ -951,18 +907,6 @@ export default function MainPage() {
   const detailPendingReport = detailPendingReportId
     ? myReports.find((r) => r.reportId === detailPendingReportId)
     : null;
-  const unlinkedReports = myReports.filter((r) => !(r.status === "LINKED" && r.incidentId));
-
-  // 가족별 안전확인 상태는 보낸 요청·받은 요청을 합친 가장 최근 기록 기준
-  const latestCheckByMember = {};
-  const considerCheck = (memberId, check, direction) => {
-    const existing = latestCheckByMember[memberId];
-    if (!existing || new Date(check.requestedAt) > new Date(existing.check.requestedAt)) {
-      latestCheckByMember[memberId] = { check, direction };
-    }
-  };
-  sentSafetyChecks.forEach((c) => considerCheck(c.targetMemberId, c, "sent"));
-  receivedSafetyChecks.forEach((c) => considerCheck(c.requesterId, c, "received"));
 
   // 헤더 알림 배지 - 마이페이지 "알림" 탭과 같은 기준 (읽음 목록 localStorage safeTraceReadNotifications 공유)
   const notificationItems = buildNotificationItems({
@@ -1009,24 +953,6 @@ export default function MainPage() {
   // detailTimeline은 항상 오래된순(API 원본 순서)이라, 정렬 토글과 무관하게 마지막 원소가 곧 최신 로그
   const latestDetailLog = detailTimeline[detailTimeline.length - 1];
   const detailDescription = latestDetailLog?.memo || detailReports[0]?.content || null;
-  const detailMapUrl =
-    detailIncident?.latitude && detailIncident?.longitude
-      ? `https://www.google.com/maps?q=${detailIncident.latitude},${detailIncident.longitude}`
-      : null;
-
-  // "대응상황 상세" 모달이 열리고 좌표가 있을 때, 가짜 배경 패턴 대신 실제 Kakao 지도를 렌더링
-  useEffect(() => {
-    if (!detailIncidentId || !detailIncident?.latitude || !detailIncident?.longitude) return;
-    if (!detailMapRef.current || !window.kakao || !window.kakao.maps) return;
-    window.kakao.maps.load(() => {
-      if (!detailMapRef.current) return;
-      const center = new window.kakao.maps.LatLng(detailIncident.latitude, detailIncident.longitude);
-      const map = new window.kakao.maps.Map(detailMapRef.current, { center, level: 4 });
-      map.setDraggable(false);
-      map.setZoomable(false);
-      new window.kakao.maps.Marker({ position: center, map });
-    });
-  }, [detailIncidentId, detailIncident?.latitude, detailIncident?.longitude]);
   const detailTimelineSorted = detailTimelineSort === "newest" ? [...detailTimeline].reverse() : detailTimeline;
 
   // 제보 목록 모달용 - 연결 전/반려 제보까지 포함해서 실제 등장하는 재난유형을 보여준다.
