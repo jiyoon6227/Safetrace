@@ -308,6 +308,7 @@ public class IncidentService {
         List<Incident> candidates = incidentMapper.findRecentByType(disasterType, DUPLICATE_TIME_WINDOW_MINUTES);
 
         return candidates.stream()
+                .filter(inc -> inc.getLatitude() != null && inc.getLongitude() != null)
                 .filter(inc -> GeoUtils.distanceMeters(
                         reportLat, reportLng, inc.getLatitude(), inc.getLongitude()) <= DUPLICATE_RADIUS_METERS)
                 .collect(Collectors.toList());

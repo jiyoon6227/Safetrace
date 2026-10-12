@@ -9,6 +9,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -156,6 +159,50 @@ class IncidentServiceTest {
         );
 
         verify(incidentMapper, never()).insertPhoto(anyLong(), anyString(), anyInt());
+    }
+
+    @Test
+    void 반경_500m_안의_같은유형_사건은_중복후보에_포함된다() {
+        Incident near = incidentAt(1L, 36.3504 + 0.0044, 127.3845);   // 약 489m
+
+        when(incidentMapper.findRecentByType("침수", 30)).thenReturn(List.of(near));
+
+        List<Incident> result = incidentService.findRelatedIncidents("침수", 36.3504, 127.3845);
+
+        assertEquals(List.of(near), result);
+        verify(incidentMapper).findRecentByType("침수", 30);
+    }
+
+    @Test
+    void 반경_500m_밖의_같은유형_사건은_중복후보에서_제외된다() {
+        Incident far = incidentAt(2L, 36.3504 + 0.0046, 127.3845);   // 약 511m
+
+        when(incidentMapper.findRecentByType("침수", 30)).thenReturn(List.of(far));
+
+        List<Incident> result = incidentService.findRelatedIncidents("침수", 36.3504, 127.3845);
+
+        assertEquals(List.of(), result);
+    }
+
+    @Test
+    void 위치없는_사건이_섞여있어도_에러없이_제외된다() {
+        Incident noLocation = incidentAt(3L, null, null);
+        Incident near = incidentAt(1L, 36.3504 + 0.0044, 127.3845);
+
+        when(incidentMapper.findRecentByType("침수", 30)).thenReturn(List.of(noLocation, near));
+
+        List<Incident> result = incidentService.findRelatedIncidents("침수", 36.3504, 127.3845);
+
+        assertEquals(List.of(near), result);
+    }
+
+    private Incident incidentAt(Long incidentId, Double latitude, Double longitude) {
+        Incident incident = new Incident();
+        incident.setIncidentId(incidentId);
+        incident.setDisasterType("침수");
+        incident.setLatitude(latitude);
+        incident.setLongitude(longitude);
+        return incident;
     }
 
     private Member activeStaff() {
