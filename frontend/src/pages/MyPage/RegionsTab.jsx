@@ -6,10 +6,13 @@ import {
 import { authFetch } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import {
-  REGION_LABELS, SIDO_SHORT_NAME, DISASTER_ICON, DISASTER_TYPE_STYLE,
+  REGION_LABELS, DISASTER_ICON, DISASTER_TYPE_STYLE,
   SEVERITY_LABEL_KO, SEVERITY_STYLE, STATUS_LABEL_KO, REPORT_STATUS_DOT,
   formatDateTime, formatDateTimeFull,
 } from "./constants";
+import {
+  buildRegionQueries, fetchDistrictMessages, fetchSidoWideMessages, mergeDisasterMessages,
+} from "../../utils/disasterRegion";
 
 // ---- 관심 지역 --------------------------------------------------------------
 
@@ -293,14 +296,9 @@ export default function RegionsTab({ regions = [], onChanged, member, onOpenShel
               .finally(() => setUvIndexLoading(false));
           }
 
-          // 구 단위가 없는 지역(세종 등)은 시도명을 지역 쿼리로 사용
-          const regionQuery = gu ? `${sido} ${gu}` : sido;
-          // 표기 차이 대응용 구 이름 단독 재시도 (구가 없는 지역은 생략)
-          const regionFallback = gu || null;
-          // 시도 약칭 재시도 (행안부 원본의 정식명/약칭 혼용 대응)
-          const regionShortFallback = gu && SIDO_SHORT_NAME[sido] ? `${SIDO_SHORT_NAME[sido]} ${gu}` : null;
-          // 시/도 전체 발송 문자 대응용 시/도명 단독 조회
-          const regionSidoOnlyFallback = gu ? sido : null;
+          // 재난문자·대피시설 조회용 지역 이름 후보
+          const queries = buildRegionQueries(sido, gu);
+          const { regionQuery, regionFallback, regionShortFallback } = queries;
 
           if (!regionQuery) {
             setShelters([]);
@@ -321,64 +319,16 @@ export default function RegionsTab({ regions = [], onChanged, member, onOpenShel
               .catch(() => setShelters([]))
               .finally(() => setSheltersLoading(false));
 
-            // 긴급재난문자 (행정안전부 재난안전데이터공유플랫폼)
-            // 구 단위 문자와 시/도 전체 문자를 병렬 조회 후 병합
-            const fetchDistrictMessages = () =>
-              authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(regionQuery)}&limit=20`)
-                .then((data) => data.filter(belongsToSido))
-                .then((data) => {
-                  if (data.length > 0 || !regionFallback) return data;
-                  return authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(regionFallback)}&limit=20`)
-                    .then((fallbackData) => fallbackData.filter(belongsToSido));
-                })
-                .then((data) => {
-                  if (data.length > 0 || !regionShortFallback) return data;
-                  return authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(regionShortFallback)}&limit=20`)
-                    .then((fallbackData) => fallbackData.filter(belongsToSido));
-                })
-                .catch(() => []);
+            // 긴급재난문자 (행정안전부 재난안전데이터공유플랫폼) - 구 단위와 시/도 전체 동시 조회
+            const fetchRecent = (rgnNm) =>
+              authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(rgnNm)}&limit=20`);
 
-            const fetchSidoWideMessages = () =>
-              regionSidoOnlyFallback
-                ? authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(regionSidoOnlyFallback)}&limit=20`)
-                    // 시/도 전체 대상 문자만 사용 (region 콤마 목록에 시/도명 토큰이 정확히 있는지로 판단)
-                    .then((data) =>
-                      data.filter((msg) =>
-                        (msg.region || "")
-                          .split(",")
-                          .map((r) => r.trim())
-                          .includes(regionSidoOnlyFallback)
-                      )
-                    )
-                    .catch(() => [])
-                : Promise.resolve([]);
-
-            // CRT_DT 공백 구분자를 "T"로 치환 후 파싱 (브라우저별 Date 파싱 차이 대응)
-            const toTimestamp = (msg) => {
-              const normalized = (msg.createdAt || "").replace(/\//g, "-").replace(" ", "T");
-              const time = new Date(normalized).getTime();
-              return Number.isNaN(time) ? 0 : time;
-            };
-
-            // fallback 결과는 msg.region에 해당 시/도(정식명·약칭) 포함 시에만 사용 (동명 구 부분일치 제외)
-            const shortSido = SIDO_SHORT_NAME[sido];
-            const belongsToSido = (msg) => {
-              const region = msg.region || "";
-              return region.includes(sido) || (!!shortSido && region.includes(shortSido));
-            };
-
-            Promise.all([fetchDistrictMessages(), fetchSidoWideMessages()])
+            Promise.all([
+              fetchDistrictMessages(fetchRecent, queries, sido).catch(() => []),
+              fetchSidoWideMessages(fetchRecent, queries.regionSidoOnlyFallback),
+            ])
               .then(([districtMessages, sidoMessages]) => {
-                const seen = new Set();
-                const merged = [...districtMessages, ...sidoMessages].filter((msg) => {
-                  // 백엔드가 SN 있으면 SN으로, 없으면 시각+지역+내용 조합으로 중복 판단하는 것과 동일한 기준
-                  const key = msg.sn ? `SN:${msg.sn}` : `${msg.createdAt}|${msg.region}|${msg.message}`;
-                  if (seen.has(key)) return false;
-                  seen.add(key);
-                  return true;
-                });
-                merged.sort((a, b) => toTimestamp(b) - toTimestamp(a));
-                setDisasterMessages(merged.slice(0, 20));
+                setDisasterMessages(mergeDisasterMessages(districtMessages, sidoMessages).slice(0, 20));
               })
               .catch(() => setDisasterMessages([]))
               .finally(() => setDisasterMessagesLoading(false));

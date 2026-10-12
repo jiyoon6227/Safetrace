@@ -6,29 +6,9 @@ import {
 } from "lucide-react";
 import { authFetch } from "../api/client";
 import { useEscapeKey } from "../hooks/useEscapeKey";
-
-// 시/도 약칭 매핑 (행안부 지역명의 정식명/약칭 혼용 대응, MyPage SIDO_SHORT_NAME과 동일)
-const SIDO_SHORT_NAME = {
-  서울특별시: "서울",
-  부산광역시: "부산",
-  대구광역시: "대구",
-  인천광역시: "인천",
-  광주광역시: "광주",
-  대전광역시: "대전",
-  울산광역시: "울산",
-  세종특별자치시: "세종",
-  경기도: "경기",
-  강원도: "강원",
-  강원특별자치도: "강원",
-  충청북도: "충북",
-  충청남도: "충남",
-  전라북도: "전북",
-  전북특별자치도: "전북",
-  전라남도: "전남",
-  경상북도: "경북",
-  경상남도: "경남",
-  제주특별자치도: "제주",
-};
+import {
+  buildRegionQueries, fetchDistrictMessages, fetchSidoWideMessages, mergeDisasterMessages,
+} from "../utils/disasterRegion";
 
 const TABS = [
   { key: "info", label: "내 정보", icon: User },
@@ -230,76 +210,22 @@ export default function DisasterNewsPage({
               return;
             }
 
-            const regionQuery = gu ? `${sido} ${gu}` : sido;
-            const regionFallback = gu || null;
-            const regionShortFallback =
-              gu && SIDO_SHORT_NAME[sido]
-                ? `${SIDO_SHORT_NAME[sido]} ${gu}`
-                : null;
-            // 시/도 전체 발송 문자는 지역명에 구가 없어 시/도명 단독 조회 필요
-            const regionSidoOnlyFallback = gu ? sido : null;
+            const queries = buildRegionQueries(sido, gu);
 
-            const buildHistoryUrl = (rgnNm) =>
-              `/api/environment/disaster-messages/history` +
-              `?rgnNm=${encodeURIComponent(rgnNm)}` +
-              `&startDate=${encodeURIComponent(startDate)}` +
-              `&endDate=${encodeURIComponent(endDate)}` +
-              `&limit=500`;
+            const fetchHistory = (rgnNm) =>
+              authFetch(
+                `/api/environment/disaster-messages/history` +
+                `?rgnNm=${encodeURIComponent(rgnNm)}` +
+                `&startDate=${encodeURIComponent(startDate)}` +
+                `&endDate=${encodeURIComponent(endDate)}` +
+                `&limit=500`
+              );
 
-            // 구 단위 결과 + 시/도 전체 결과를 병렬 조회 후 병합
+            // 구 단위 조회 후 시/도 전체 조회 (구 단위 실패 시 오류 표시)
+            const districtData = await fetchDistrictMessages(fetchHistory, queries, sido);
+            const sidoData = await fetchSidoWideMessages(fetchHistory, queries.regionSidoOnlyFallback);
 
-            // fallback 결과는 msg.region에 해당 시/도(정식명·약칭) 포함 시에만 사용 (동명 구 부분일치 제외)
-            const shortSido = SIDO_SHORT_NAME[sido];
-            const belongsToSido = (msg) => {
-              const region = msg.region || "";
-              return region.includes(sido) || (!!shortSido && region.includes(shortSido));
-            };
-
-            // 1차: 부산광역시 서구
-            let districtData = await authFetch(buildHistoryUrl(regionQuery)).then((data) => data.filter(belongsToSido));
-
-            // 2차: 서구
-            if (!districtData?.length && regionFallback) {
-              districtData = await authFetch(buildHistoryUrl(regionFallback)).then((data) => data.filter(belongsToSido));
-            }
-
-            // 3차: 부산 서구
-            if (!districtData?.length && regionShortFallback) {
-              districtData = await authFetch(buildHistoryUrl(regionShortFallback)).then((data) => data.filter(belongsToSido));
-            }
-
-            // 시/도 전체 발송 문자는 구 단위 결과와 무관하게 항상 별도 조회
-            // 시/도 전체 대상 문자만 사용 (region 콤마 목록에 시/도명 토큰이 정확히 있는지로 판단)
-            const sidoData = regionSidoOnlyFallback
-              ? await authFetch(buildHistoryUrl(regionSidoOnlyFallback))
-                  .then((data) =>
-                    data.filter((msg) =>
-                      (msg.region || "")
-                        .split(",")
-                        .map((r) => r.trim())
-                        .includes(regionSidoOnlyFallback)
-                    )
-                  )
-                  .catch(() => [])
-              : [];
-
-            const seen = new Set();
-            const merged = [...(districtData || []), ...(sidoData || [])].filter((msg) => {
-              // 백엔드가 SN 있으면 SN으로, 없으면 시각+지역+내용 조합으로 중복 판단하는 것과 동일한 기준
-              const key = msg.sn ? `SN:${msg.sn}` : `${msg.createdAt}|${msg.region}|${msg.message}`;
-              if (seen.has(key)) return false;
-              seen.add(key);
-              return true;
-            });
-            // CRT_DT 공백 구분자를 "T"로 치환 후 파싱 (브라우저별 Date 파싱 차이 대응)
-            const toTimestamp = (msg) => {
-              const normalized = (msg.createdAt || "").replace(/\//g, "-").replace(" ", "T");
-              const time = new Date(normalized).getTime();
-              return Number.isNaN(time) ? 0 : time;
-            };
-            merged.sort((a, b) => toTimestamp(b) - toTimestamp(a));
-
-            setMessages(merged);
+            setMessages(mergeDisasterMessages(districtData, sidoData));
           } catch (e) {
             setMessages([]);
             setError(e?.message || "안전·재난 소식을 불러오지 못했습니다.");
