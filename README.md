@@ -1,15 +1,14 @@
-# SafeTrace 🛡️
+# SafeTrace
 
-대전·세종·충청권을 중심으로 기획한 **재난·안전 제보 및 상황관리 플랫폼** 개인 프로젝트입니다.
+**재난·안전 제보 및 상황관리 플랫폼** 개인 프로젝트입니다.
 
 SafeTrace는 단순히 재난 정보를 보여주는 데서 끝나지 않고, 시민 제보가 접수된 이후 **검토 → 사건 연결/생성 → 담당자 배정 → 대응 → 종료**까지의 처리 흐름을 추적할 수 있도록 구성했습니다.
 
 | 항목 | 내용 |
 |---|---|
 | **프로젝트&nbsp;유형** | 개인 프로젝트 (기획 · 설계 · 개발 · 배포) |
-| **개발&nbsp;기간** | 2026.09 · 약 3주 |
+| **개발&nbsp;기간** | 2026.09 |
 | **개발&nbsp;인원** | 1명 |
-| **Live&nbsp;Service** | https://safetrace.kr |
 | **GitHub** | https://github.com/jiyoon6227/Safetrace |
 
 ---
@@ -64,11 +63,6 @@ SafeTrace는 **제보 이후의 처리 과정 자체를 시민이 확인할 수 
 
 ## 배포 및 테스트 계정
 
-### Live Service
-
-- **URL**: https://safetrace.kr
-- **GitHub**: https://github.com/jiyoon6227/Safetrace
-
 ### Demo Account
 
 `backend/schema.sql` 실행 시 아래 테스트 계정이 생성됩니다.
@@ -103,6 +97,8 @@ SafeTrace는 **제보 이후의 처리 과정 자체를 시민이 확인할 수 
 - 날씨 / 기상특보 조회
 - 대기질 / 자외선 지수 조회
 - 지도 기반 사건·대피시설 확인
+- 재난 유형별 행동요령 조회
+- 통합 검색 (재난정보 · 대피시설 · 행동요령 · 공지사항)
 
 #### 가족 안전확인
 - 가족 등록 요청 / 수락 / 삭제
@@ -284,7 +280,7 @@ CREATE UNIQUE INDEX UX_SF_MEMBER_LOGIN_ID_ACTIVE
 
 ```text
 local → http://localhost:5173
-prod  → https://safetrace.kr
+prod  → https://운영도메인
 ```
 
 이를 통해 개발 환경과 운영 환경의 허용 Origin을 설정파일 기준으로 관리할 수 있도록 했습니다.
@@ -360,7 +356,7 @@ fallback 결과 시·도 재검증
 | **행정안전부&nbsp;재난안전데이터공유플랫폼** | 전국·지역별 긴급재난문자 및 기간별 재난문자 조회 |
 | **기상청&nbsp;단기예보&nbsp;/&nbsp;특보&nbsp;API** | 현재 날씨 및 기상특보 조회 |
 | **기상청&nbsp;생활기상지수&nbsp;API** | 자외선 지수 조회 |
-| **AirKorea** | 미세먼지·초미세먼지 등 대기질 조회 |
+| **AirKorea** | 미세먼지·초미세먼지 등 대기질 조회 (서버 10분 캐시, 조회 실패 시 직전 조회값 사용) |
 | **민방위&nbsp;대피시설&nbsp;공공데이터** | 지역·현재 위치 기반 대피시설 조회 |
 | **Kakao&nbsp;Maps** | 사건·대피시설 지도 표시, 주소↔좌표 변환, MarkerClusterer |
 | **Daum&nbsp;Postcode** | 주소 검색 |
@@ -381,6 +377,12 @@ JUnit 5와 Mockito를 사용해 핵심 비즈니스 로직에 대한 단위 테�
 - 사건 종료 시 처리내역 검증
 - 회원가입 / 비밀번호 재설정 이메일 인증 상태 검증
 - 동일 제보 중복 처리 방지
+- 담당자가 아닌 STAFF의 사건 상태 변경 · 정보 수정 · 현장 사진 추가 차단
+- 반경 500m 안의 같은 유형 사건만 중복 후보로 포함
+- 제보 사진은 작성자 본인과 STAFF만 열람 가능
+- 이미 응답한 안전확인 요청에 다시 응답 불가 (사이트 · 이메일 링크 모두)
+- 안전확인 요청 저장이 실패하면 메일 · 알림을 보내지 않음
+- 두 지점 사이 거리 계산(GeoUtils)
 
 ```bash
 cd backend
@@ -429,6 +431,7 @@ safe/
       │  │  ├─ external/       # 날씨·재난문자·대기질·대피시설 API
       │  │  ├─ mapper/
       │  │  ├─ service/
+      │  │  ├─ util/
       │  │  └─ websocket/
       │  └─ resources/
       │     ├─ application.yml          # Git 제외
@@ -446,7 +449,7 @@ safe/
 ```text
 사용자 브라우저
       ↓ HTTPS
-   safetrace.kr
+   운영 도메인
       ↓
      Nginx
    ├─ React 정적 파일
@@ -462,7 +465,6 @@ Spring Boot (prod)
 - **Cloud**: GCP Compute Engine Windows VM
 - **Reverse Proxy**: Nginx (`/api`, `/uploads`, `/ws` → `127.0.0.1:8081`)
 - **Database**: Oracle XE (`10.178.0.2:1521/xe`, GCP VM 내부 사설 IP)
-- **Domain**: `https://safetrace.kr`
 - **HTTPS 적용**
 - 운영 Backend 프로필(`prod`) 분리
 - 운영 Frontend URL을 환경설정으로 관리해 CORS / WebSocket Origin에 공통 적용
@@ -504,7 +506,7 @@ Spring Boot (prod)
 |---|---|
 | `application.yml` | 공통 설정 (메일 · MyBatis · JWT · 외부 API) |
 | `application-local.yml` | 로컬 DB · 포트 · 프론트 주소(`http://localhost:5173`) |
-| `application-prod.yml` | 운영 DB · 포트 · 프론트 주소(`https://safetrace.kr`) |
+| `application-prod.yml` | 운영 DB · 포트 · 프론트 주소(운영 도메인) |
 
 운영 DB는 같은 GCP VM의 Oracle XE에 내부 IP로 연결합니다.
 
@@ -517,7 +519,7 @@ spring:
     url: jdbc:oracle:thin:@//10.178.0.2:1521/xe
 
 app:
-  frontend-base-url: https://safetrace.kr
+  frontend-base-url: https://운영도메인
 ```
 
 > `10.178.0.2`는 GCP VM 내부 사설 IP이므로 VM 외부 IP가 변경되어도 수정하지 않습니다.
@@ -552,6 +554,8 @@ http://localhost:5173
 ```
 
 Vite 개발 서버는 `/api`, `/uploads`, `/ws` 요청을 Spring Boot `8080`으로 Proxy합니다.
+
+> 지도는 `frontend/index.html`에 들어 있는 Kakao Maps JavaScript 키로 불러옵니다. 다른 환경에서 실행하려면 본인 키로 바꾸고, 카카오 개발자 콘솔에 실행 도메인을 등록해야 합니다.
 
 ---
 
