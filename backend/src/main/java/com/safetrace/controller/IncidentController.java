@@ -4,6 +4,8 @@ import com.safetrace.domain.Incident;
 import com.safetrace.domain.IncidentLog;
 import com.safetrace.domain.Report;
 import com.safetrace.dto.IncidentCreateRequest;
+import com.safetrace.dto.IncidentLogPublicResponse;
+import com.safetrace.dto.IncidentPublicResponse;
 import com.safetrace.dto.IncidentStatusChangeRequest;
 import com.safetrace.service.IncidentService;
 import com.safetrace.service.ReportService;
@@ -29,6 +31,16 @@ public class IncidentController {
         return (Long) authentication.getPrincipal();
     }
 
+    // 비로그인 요청이면 authentication이 null
+    private boolean isStaff(Authentication authentication) {
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_STAFF".equals(authority.getAuthority()));
+    }
+
+    private List<?> toResponse(List<Incident> incidents, Authentication authentication) {
+        return isStaff(authentication) ? incidents : incidents.stream().map(IncidentPublicResponse::from).toList();
+    }
+
     // STAFF 전용 - 새 Incident 등록
     // 생성자를 담당자로 자동 배정
     @PostMapping
@@ -41,17 +53,18 @@ public class IncidentController {
 
     // 시민 화면 - 내 관심지역의 진행중인 Incident 목록
     @GetMapping("/region/{region}")
-    public List<Incident> getByRegion(@PathVariable String region) {
-        return incidentService.getActiveIncidentsByRegion(region);
+    public List<?> getByRegion(@PathVariable String region, Authentication authentication) {
+        return toResponse(incidentService.getActiveIncidentsByRegion(region), authentication);
     }
 
     // 시민 화면 - 관심지역 좌표 기준 근처(기본 반경 5km) 진행중인 Incident 목록
     // region 문자열 완전일치(getByRegion) 대신, 관심지역에 저장된 실제 좌표로 조회할 때 사용
     @GetMapping("/nearby")
-    public List<Incident> getNearby(@RequestParam double lat,
-                                     @RequestParam double lng,
-                                     @RequestParam(defaultValue = "5") double radiusKm) {
-        return incidentService.getActiveIncidentsNearby(lat, lng, radiusKm);
+    public List<?> getNearby(@RequestParam double lat,
+                             @RequestParam double lng,
+                             @RequestParam(defaultValue = "5") double radiusKm,
+                             Authentication authentication) {
+        return toResponse(incidentService.getActiveIncidentsNearby(lat, lng, radiusKm), authentication);
     }
 
     // STAFF 전용 - 전체 Incident 목록 (대시보드용)
@@ -63,8 +76,9 @@ public class IncidentController {
 
     // 시민 화면 - "내 제보 추적" 타임라인
     @GetMapping("/{incidentId}/timeline")
-    public List<IncidentLog> getTimeline(@PathVariable Long incidentId) {
-        return incidentService.getTimeline(incidentId);
+    public List<?> getTimeline(@PathVariable Long incidentId, Authentication authentication) {
+        List<IncidentLog> logs = incidentService.getTimeline(incidentId);
+        return isStaff(authentication) ? logs : logs.stream().map(IncidentLogPublicResponse::from).toList();
     }
 
     // 대시보드 "오늘 해결 완료" 카드용 - date 생략하면 오늘. 어제 값도 같이 조회해 전날 대비 추이(trend)에 씀
@@ -78,8 +92,9 @@ public class IncidentController {
 
     // 시민 화면 - 내 제보가 연결된 사건의 현재 진행 상태 확인 (뱃지/모달용)
     @GetMapping("/{incidentId}")
-    public Incident getOne(@PathVariable Long incidentId) {
-        return incidentService.getIncidentById(incidentId);
+    public Object getOne(@PathVariable Long incidentId, Authentication authentication) {
+        Incident incident = incidentService.getIncidentById(incidentId);
+        return isStaff(authentication) ? incident : IncidentPublicResponse.from(incident);
     }
 
     // STAFF 전용 - 이 Incident에 묶인 제보 목록 (사건 상세 패널의 "연결된 제보")
@@ -119,8 +134,9 @@ public class IncidentController {
         return incidentService.changeStatus(incidentId, request.status(), request.memo(), staffId);
     }
 
-    // 시민제보 접수 시 - 관련 있을 만한 기존 Incident 후보 조회 (중복탐지)
+    // STAFF 전용 - 관련 있을 만한 기존 Incident 후보 조회 (중복탐지)
     @GetMapping("/related")
+    @PreAuthorize("hasRole('STAFF')")
     public List<Incident> findRelated(@RequestParam String disasterType,
                                        @RequestParam double lat,
                                        @RequestParam double lng) {

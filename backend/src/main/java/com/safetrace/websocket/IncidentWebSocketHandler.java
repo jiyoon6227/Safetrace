@@ -2,6 +2,7 @@ package com.safetrace.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.safetrace.domain.Incident;
+import com.safetrace.dto.IncidentPublicResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -66,16 +67,27 @@ public class IncidentWebSocketHandler extends TextWebSocketHandler {
         safeIncident.put("closeReason", incident.getCloseReason());
         safeIncident.put("updatedAt", incident.getUpdatedAt());
 
+        Map<String, Object> staffPayload = buildPayload(eventType, safeIncident, memo);
+        Map<String, Object> publicPayload = buildPayload(eventType, IncidentPublicResponse.from(incident), memo);
+
+        // STAFF가 아닌 세션에는 담당자·종료 사유를 보내지 않음
+        for (WebSocketSession session : sessions.values()) {
+            send(session, isStaff(session) ? staffPayload : publicPayload);
+        }
+    }
+
+    private Map<String, Object> buildPayload(String eventType, Object incident, String memo) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("eventType", eventType);
-        payload.put("incident", safeIncident);
+        payload.put("incident", incident);
         if (memo != null) {
             payload.put("memo", memo);
         }
+        return payload;
+    }
 
-        for (WebSocketSession session : sessions.values()) {
-            send(session, payload);
-        }
+    private boolean isStaff(WebSocketSession session) {
+        return "STAFF".equals(session.getAttributes().get("role"));
     }
 
     private void send(WebSocketSession session, Object payload) {
