@@ -16,7 +16,7 @@ SafeTrace는 단순히 재난 정보를 보여주는 데서 끝나지 않고, �
 ## 목차
 
 - [프로젝트 소개](#프로젝트-소개)
-- [배포 및 테스트 계정](#배포-및-테스트-계정)
+- [테스트 계정](#테스트-계정)
 - [주요 기능](#주요-기능)
 - [핵심 처리 흐름](#핵심-처리-흐름)
 - [주요 문제 해결](#주요-문제-해결)
@@ -61,7 +61,7 @@ SafeTrace는 **제보 이후의 처리 과정 자체를 시민이 확인할 수 
 
 ---
 
-## 배포 및 테스트 계정
+## 테스트 계정
 
 ### Demo Account
 
@@ -179,8 +179,6 @@ Report C ─┘
 - 상태가 변경될 때마다 `SF_INCIDENT_LOG`에 이력을 누적합니다.
 - 사건 종료 단계에서는 처리내역을 남기도록 검증합니다.
 
-이를 통해 UI 조작이나 API 직접 호출로 인해 비정상적인 상태 변경이 발생하지 않도록 했습니다.
-
 ---
 
 ### 3. 가족 안전확인
@@ -224,7 +222,7 @@ UPDATE SF_REPORT
 먼저 처리된 요청이 상태를 변경하면 이후 요청은 갱신 대상이 없어 처리되지 않습니다.
 갱신 건수가 1건이 아니면 "이미 다른 담당자가 처리한 제보입니다" 예외를 반환해 화면에서 새로고침을 안내합니다.
 
-이를 통해 Frontend의 버튼 비활성화에만 의존하지 않고 서버와 DB에서 최종 데이터 정합성을 보장했습니다.
+화면에서 버튼을 막는 것과 별개로, 서버와 DB에서 최종적으로 막습니다.
 
 ---
 
@@ -248,8 +246,6 @@ afterCommit() → WebSocket Event
 Frontend 실시간 갱신
 ```
 
-이를 통해 DB 상태와 실시간 화면 상태가 어긋나는 문제를 막았습니다.
-
 ---
 
 ### 3. 탈퇴 회원 아이디 재사용
@@ -270,20 +266,26 @@ CREATE UNIQUE INDEX UX_SF_MEMBER_LOGIN_ID_ACTIVE
 
 ---
 
-### 4. 운영 환경 CORS / WebSocket Origin 분리
+### 4. 안전확인 중복 응답 시 잘못된 알림 발송
 
 **문제**  
-로컬 주소 기준으로 허용 Origin이 고정되어 운영 도메인에서 REST API / WebSocket 연결 문제가 발생할 수 있었습니다.
+가족이 이메일 링크로 "안전"이라고 응답한 뒤 사이트에서 "도움 필요"를 다시 누르면, DB에는 SAFE가 그대로 남는데 요청자 화면에는 HELP 알림이 전송되었습니다.
+
+**원인**  
+UPDATE에 `STATUS = 'PENDING'` 조건이 있어 두 번째 응답은 DB에 반영되지 않았지만, Mapper 반환형이 `void`라 서비스가 갱신 건수 0을 알지 못하고 알림을 그대로 보냈습니다.
 
 **해결**  
-`app.frontend-base-url`을 `local`, `prod` 프로필로 분리하고 `SecurityConfig`, `WebSocketConfig`에서 동일 설정값을 사용하도록 변경했습니다.
+- Mapper가 갱신 건수를 반환하도록 바꾸고, 1건이 아니면 예외를 던져 알림 전송 전에 중단
+- 이메일 링크 응답(`CONFIRMED_AT IS NULL` 조건)에도 같은 방식 적용
+- `SafetyCheckServiceTest`로 사이트 · 이메일 링크 중복 응답 시 알림이 전송되지 않는지 검증
 
-```text
-local → http://localhost:5173
-prod  → https://운영도메인
+```java
+int affected = safetyCheckMapper.respond(checkId, status);  // ... WHERE STATUS = 'PENDING'
+if (affected != 1) {
+    throw new IllegalStateException("이미 응답한 요청입니다.");
+}
+webSocketHandler.broadcastResponded(check);
 ```
-
-이를 통해 개발 환경과 운영 환경의 허용 Origin을 설정파일 기준으로 관리할 수 있도록 했습니다.
 
 ---
 
@@ -304,8 +306,6 @@ prod  → https://운영도메인
       +
 fallback 결과 시·도 재검증
 ```
-
-이를 통해 사용자가 선택한 실제 지역의 재난문자만 표시하도록 개선했습니다.
 
 ---
 
@@ -341,7 +341,7 @@ fallback 결과 시·도 재검증
 | **Backend** | Spring Boot 3.3.4, Spring Security, JWT, MyBatis, WebSocket |
 | **Frontend** | React, Vite, Tailwind CSS, lucide-react |
 | **Database** | Oracle DB |
-| **Build&nbsp;/&nbsp;Test** | Maven, JUnit 5, Mockito |
+| **Build&nbsp;/&nbsp;Test** | Maven, JUnit 5, Mockito, Vitest |
 | **Infra** | GCP VM, Nginx, HTTPS |
 | **Mail** | Spring Mail, Gmail SMTP |
 | **AI** | Groq API |
@@ -389,6 +389,13 @@ cd backend
 mvn clean test
 ```
 
+프론트는 재난문자 지역 매칭 로직(`utils/disasterRegion.js`)을 Vitest로 검증합니다.
+
+```bash
+cd frontend
+npm test
+```
+
 ---
 
 ## 프로젝트 구조
@@ -403,6 +410,7 @@ safe/
 │  │  ├─ hooks/
 │  │  ├─ pages/
 │  │  │  ├─ ControlBoard/      # STAFF 관제 화면
+│  │  │  ├─ Main/             # 메인 화면 영역별 컴포넌트
 │  │  │  ├─ MyPage/
 │  │  │  ├─ ReportForm.jsx
 │  │  │  ├─ ReportPage.jsx
@@ -410,6 +418,7 @@ safe/
 │  │  │  ├─ SafetyMapPage.jsx
 │  │  │  ├─ ShelterPage.jsx
 │  │  │  └─ NoticePage.jsx
+│  │  ├─ utils/                # 공통 함수 (재난문자 지역 매칭 등)
 │  │  ├─ MainPage.jsx
 │  │  └─ main.jsx
 │  ├─ index.html
@@ -519,7 +528,7 @@ spring:
     url: jdbc:oracle:thin:@//10.178.0.2:1521/xe
 
 app:
-  frontend-base-url: https://운영도메인
+  frontend-base-url: https://your-domain.com
 ```
 
 > `10.178.0.2`는 GCP VM 내부 사설 IP이므로 VM 외부 IP가 변경되어도 수정하지 않습니다.
@@ -567,8 +576,6 @@ Vite 개발 서버는 `/api`, `/uploads`, `/ws` 요청을 Spring Boot `8080`으�
 - WebSocket 및 대량 제보 부하 테스트
 - 재난 유형별 중복 사건 탐지 거리·시간 기준 세분화
 - CI/CD 자동 배포 구성
-
-> Redis와 Resilience4j는 현재 프로젝트에 적용된 기술이 아니라 향후 개선 계획으로 분리했습니다.
 
 ---
 
