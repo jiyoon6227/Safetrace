@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   ShieldAlert, LogOut, Loader2, ChevronDown, User, Menu, X,
   Clock, AlertTriangle, CheckCircle2, Activity, ClipboardList, Search,
@@ -26,15 +27,6 @@ import PhotoViewerModal from "./PhotoViewerModal";
 
 const CONTROL_BOARD_TABS = new Set(["dashboard", "reports", "incidents", "publicInfo", "statistics"]);
 
-function getInitialControlBoardTab() {
-  try {
-    const tab = new URLSearchParams(window.location.search).get("tab");
-    return CONTROL_BOARD_TABS.has(tab) ? tab : "dashboard";
-  } catch {
-    return "dashboard";
-  }
-}
-
 export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) {
   // 지도 DOM이 다시 마운트되는 경우(HMR/탭 재진입 등)도 감지할 수 있도록 callback ref 사용
   const mapContainerRef = useRef(null);
@@ -51,47 +43,16 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
 
   const currentUser = getCurrentUser();
 
-  // 현재 탭을 URL의 ?tab=... 과 동기화해서 브라우저 새로고침 후에도 같은 탭을 유지한다.
-  // 단, 홈으로 나갈 때는 handleBackToHome에서 tab을 지우므로 다시 STAFF로 들어오면 대시보드부터 시작한다.
-  const [activeNav, setActiveNav] = useState(getInitialControlBoardTab);
+  // 현재 탭은 URL의 ?tab=... 값을 기준으로 정해서 브라우저 새로고침 후에도 같은 탭을 유지한다.
+  // 홈으로 나가면 tab이 없는 주소가 되므로 다시 STAFF로 들어오면 대시보드부터 시작한다.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const activeNav = CONTROL_BOARD_TABS.has(tabParam) ? tabParam : "dashboard";
+  const setActiveNav = (nextTab) => {
+    setSearchParams(nextTab === "dashboard" ? {} : { tab: nextTab }, { replace: true });
+  };
 
-  useEffect(() => {
-    try {
-      const url = new URL(window.location.href);
-
-      if (activeNav === "dashboard") {
-        url.searchParams.delete("tab");
-      } else {
-        url.searchParams.set("tab", activeNav);
-      }
-
-      window.history.replaceState(
-        window.history.state,
-        "",
-        `${url.pathname}${url.search}${url.hash}`
-      );
-    } catch {
-      // URL 동기화 실패 시에도 탭 전환 자체는 정상 동작하게 둔다.
-    }
-  }, [activeNav]);
-
-  // 관제화면에서 홈으로 나갈 때 현재 탭 상태와 ?tab=... 쿼리를 함께 초기화한다.
-  // 다시 STAFF 관리화면으로 들어오면 항상 대시보드부터 시작하도록 보장한다.
   const handleBackToHome = useCallback(() => {
-    setActiveNav("dashboard");
-
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("tab");
-      window.history.replaceState(
-        window.history.state,
-        "",
-        `${url.pathname}${url.search}${url.hash}`
-      );
-    } catch {
-      // URL 정리에 실패해도 홈 이동 자체는 진행한다.
-    }
-
     onBackToHome?.();
   }, [onBackToHome]);
 

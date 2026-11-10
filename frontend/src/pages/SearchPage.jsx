@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ChevronRight, Home, Loader2, Search, X } from "lucide-react";
 import { authFetch } from "../api/client";
 import SiteHeader from "../components/SiteHeader";
@@ -93,6 +94,13 @@ export default function SearchPage({ initialQuery = "", onNavigate }) {
   const [input, setInput] = useState(initialQuery);
   const [query, setQuery] = useState(initialQuery.trim());
   const [activeTab, setActiveTab] = useState("all");
+  const [, setSearchParams] = useSearchParams();
+
+  // 뒤로가기/앞으로가기로 주소의 검색어가 바뀌면 화면도 맞춘다.
+  useEffect(() => {
+    setInput(initialQuery);
+    setQuery(initialQuery.trim());
+  }, [initialQuery]);
 
   const [disasters, setDisasters] = useState([]);
   const [shelters, setShelters] = useState([]);
@@ -261,20 +269,14 @@ export default function SearchPage({ initialQuery = "", onNavigate }) {
     setQuery(next);
     setActiveTab("all");
 
-    window.history.replaceState(
-      { ...window.history.state, page: "search", searchQuery: next },
-      ""
-    );
+    setSearchParams({ searchQuery: next }, { replace: true });
   };
 
   const clearSearch = () => {
     setInput("");
     setQuery("");
     setActiveTab("all");
-    window.history.replaceState(
-      { ...window.history.state, page: "search", searchQuery: "" },
-      ""
-    );
+    setSearchParams({}, { replace: true });
   };
 
   return (

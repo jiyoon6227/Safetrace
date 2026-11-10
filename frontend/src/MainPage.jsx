@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import ControlBoard from "./pages/ControlBoard";
 import ReportForm from "./pages/ReportForm";
@@ -33,22 +34,103 @@ import ReportTrackingCard from "./pages/Main/ReportTrackingCard";
 import AiChatModal from "./pages/Main/AiChatModal";
 import TrackingModal from "./pages/Main/TrackingModal";
 
+const PAGE_PATHS = {
+  home: "/",
+  login: "/login",
+  mypage: "/mypage",
+  shelters: "/shelters",
+  "safety-guides": "/safety-guides",
+  "safety-map": "/safety-map",
+  "disaster-info": "/disaster-info",
+  report: "/report",
+  "safety-news": "/safety-news",
+  search: "/search",
+  notices: "/notices",
+  staff: "/staff",
+  "safety-check-response": "/safety-check",
+};
+
+const PATH_PAGES = Object.fromEntries(
+  Object.entries(PAGE_PATHS).map(([page, path]) => [path, page])
+);
+
+// 새로고침해도 유지되도록 주소의 쿼리 파라미터로 넘기는 값
+const PAGE_QUERY_KEYS = [
+  "shelterRegionId",
+  "safetyNewsRegionId",
+  "safetyGuideKey",
+  "focusIncidentId",
+  "disasterSn",
+  "searchQuery",
+  "noticeId",
+  "mypageTab",
+];
+
+function buildPageUrl(page, extraState) {
+  const params = new URLSearchParams();
+
+  PAGE_QUERY_KEYS.forEach((key) => {
+    const value = extraState[key];
+    if (value !== null && value !== undefined && value !== "") {
+      params.set(key, String(value));
+    }
+  });
+
+  if (extraState.shelterFocus) {
+    params.set("shelterFocusName", extraState.shelterFocus.name || "");
+    params.set("shelterFocusAddress", extraState.shelterFocus.address || "");
+  }
+
+  const path = PAGE_PATHS[page] || "/";
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+function readNumberParam(searchParams, key) {
+  const value = searchParams.get(key);
+  if (!value) return null;
+
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+// 주소로 바로 들어온 경우에도 requireLogin과 같은 안내 후 로그인 페이지로 이동
+// 화면에 들어올 때 한 번만 확인 (로그아웃·세션 만료 후의 이동은 기존 처리를 따름)
+function RequireLogin({ children }) {
+  const navigate = useNavigate();
+  const [allowed] = useState(() => Boolean(localStorage.getItem("token")));
+
+  useEffect(() => {
+    if (allowed) return;
+    window.alert("로그인이 필요한 서비스입니다.");
+    navigate("/login", { replace: true });
+  }, [allowed, navigate]);
+
+  return allowed ? children : null;
+}
+
 export default function MainPage() {
   const currentUser = getCurrentUser();
   const isStaff = currentUser?.role === "STAFF";
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   // 이메일 안전확인 링크(?safetyCheckToken=xxx)로 들어온 거면 그 응답 화면부터 바로 보여줌
-  const safetyCheckTokenFromUrl = new URLSearchParams(window.location.search).get("safetyCheckToken");
-  // 새로고침 후에도 보던 페이지 유지 (history.state 복원)
-  const [page, setPage] = useState(
-    safetyCheckTokenFromUrl ? "safety-check-response" : window.history.state?.page || "home"
-  ); // "home" | "login" | "mypage" | "shelters" | "safety-guides" | "disaster-info" | "safety-map" | "safety-news" | "safety-check-response" | "notices"
-  const [selectedShelterRegionId, setSelectedShelterRegionId] = useState(
-    window.history.state?.shelterRegionId ?? null
-  );
-  const [selectedSafetyNewsRegionId, setSelectedSafetyNewsRegionId] = useState(
-    window.history.state?.safetyNewsRegionId ?? null
-  );
+  const safetyCheckTokenFromUrl = searchParams.get("safetyCheckToken");
+  const currentPath = location.pathname.replace(/\/+$/, "").toLowerCase() || "/";
+  const page = currentPath === "/" && safetyCheckTokenFromUrl
+    ? "safety-check-response"
+    : PATH_PAGES[currentPath] ?? null;
+
+  const shelterFocusName = searchParams.get("shelterFocusName");
+  const shelterFocusAddress = searchParams.get("shelterFocusAddress");
+  // ShelterPage 조회 effect의 의존값이라 주소가 바뀔 때만 새 객체를 만든다.
+  const shelterFocus = useMemo(() => {
+    if (shelterFocusName === null && shelterFocusAddress === null) return null;
+    return { name: shelterFocusName || "", address: shelterFocusAddress || "" };
+  }, [shelterFocusName, shelterFocusAddress]);
+
   const [token, setToken] = useState(localStorage.getItem("token"));
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef(null);
@@ -524,20 +606,7 @@ export default function MainPage() {
     return () => { active = false; };
   }, [page, weatherLocation]);
 
-  // 앱 내 페이지 전환을 브라우저 히스토리에 기록 (뒤로가기/앞으로가기 지원)
-  useEffect(() => {
-    window.history.replaceState({ ...window.history.state, page }, "");
-    const handlePopState = (e) => {
-      setPage(e.state?.page || "home");
-      setSelectedShelterRegionId(e.state?.shelterRegionId ?? null);
-      setSelectedSafetyNewsRegionId(e.state?.safetyNewsRegionId ?? null);
-    };
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 페이지 전환: 추가 state도 같이 저장해두면 새로고침/뒤로가기에서도 선택 정보를 유지할 수 있음
+  // 페이지 전환: 선택 정보는 쿼리 파라미터로 넘겨 새로고침/뒤로가기에서도 유지한다.
   const goTo = (nextPage, extraState = {}) => {
     // 일반 페이지 이동 시 열려 있던 현장제보 팝업 상태를 반드시 닫는다.
     // openReport=true일 때만 팝업으로 열기
@@ -547,16 +616,7 @@ export default function MainPage() {
       setShowReportForm(false);
     }
 
-    setPage(nextPage);
-
-    if (Object.prototype.hasOwnProperty.call(extraState, "shelterRegionId")) {
-      setSelectedShelterRegionId(extraState.shelterRegionId);
-    }
-    if (Object.prototype.hasOwnProperty.call(extraState, "safetyNewsRegionId")) {
-      setSelectedSafetyNewsRegionId(extraState.safetyNewsRegionId);
-    }
-
-        window.history.pushState({ page: nextPage, ...extraState }, "");
+    navigate(buildPageUrl(nextPage, extraState));
   };
 
   // 메인 히어로 검색 → 통합검색 페이지로 이동
@@ -1062,140 +1122,7 @@ export default function MainPage() {
     </div>
   );
 
-  if (page === "safety-check-response") {
-    return renderWithFooter(
-      <SafetyCheckResponsePage
-        token={safetyCheckTokenFromUrl}
-        onDone={() => {
-          window.history.replaceState({}, "", "/");
-          goTo("home");
-        }}
-      />
-    );
-  }
-
-  if (page === "login") {
-    return renderWithFooter(
-      <LoginPage onLoginSuccess={handleLoginSuccess} onBackToHome={() => goTo("home")} onSearch={() => goTo("search")} />
-    );
-  }
-
-  if (page === "mypage") {
-    return (
-      <>
-        {renderWithFooter(
-          <MyPage
-            onBackToHome={() => goTo("home")}
-            onLogout={handleLogout}
-            onOpenShelters={(regionId) => goTo("shelters", { shelterRegionId: regionId })}
-            onOpenSafetyNews={(regionId) => goTo("safety-news", { safetyNewsRegionId: regionId })}
-          />,
-          { showWithdraw: true, onWithdraw: () => setShowWithdrawModal(true) }
-        )}
-        {showWithdrawModal && <WithdrawModal onClose={() => setShowWithdrawModal(false)} />}
-      </>
-    );
-  }
-
-  if (page === "shelters") {
-    return renderWithFooter(
-      <ShelterPage
-        initialRegionId={selectedShelterRegionId}
-        initialFocusShelter={window.history.state?.shelterFocus ?? null}
-        onBackToHome={() => goTo("home")}
-        onLogin={() => goTo("login")}
-        onNavigate={goTo}
-      />
-    );
-  }
-
-  if (page === "safety-guides") {
-    return renderWithFooter(
-      <SafetyGuidePage
-        initialGuideKey={window.history.state?.safetyGuideKey || "FLOOD"}
-        onBackToHome={() => goTo("home")}
-        onOpenShelters={() => goTo("shelters")}
-        onNavigate={goTo}
-      />
-    );
-  }
-
-  if (page === "safety-map") {
-    return renderWithFooter(
-      <SafetyMapPage
-        onBackToHome={() => goTo("home")}
-        onNavigate={goTo}
-        focusIncidentId={window.history.state?.focusIncidentId ?? null}
-      />
-    );
-  }
-
-  if (page === "disaster-info") {
-    return renderWithFooter(
-      <PublicDisasterPage
-        initialMessageSn={window.history.state?.disasterSn ?? null}
-        onBackToHome={() => goTo("home")}
-        onOpenShelters={() => goTo("shelters", { shelterRegionId: null })}
-        onOpenReport={() => requireLogin(() => goTo("home", { openReport: true }))}
-        onNavigate={goTo}
-      />
-    );
-  }
-
-  if (page === "report") {
-    return renderWithFooter(
-      <ReportPage
-        onNavigate={goTo}
-        onSuccess={() => {
-          setReportSuccess(true);
-          goTo("home");
-          setTimeout(() => setReportSuccess(false), 4000);
-        }}
-      />
-    );
-  }
-
-  if (page === "safety-news") {
-    return renderWithFooter(
-      <DisasterNewsPage
-        initialRegionId={selectedSafetyNewsRegionId}
-        onBackToHome={() => goTo("home")}
-        onLogout={handleLogout}
-        onGoToMyPageTab={(tab) => goTo("mypage", { mypageTab: tab })}
-      />
-    );
-  }
-
-  if (page === "staff" && isStaff) {
-    return (
-      <ControlBoard
-        onBackToHome={() => goTo("home")}
-        onLogout={handleLogout}
-        onOpenNotices={(noticeId) => goTo("notices", noticeId ? { noticeId } : {})}
-      />
-    );
-  }
-
-  if (page === "search") {
-    return renderWithFooter(
-      <SearchPage
-        initialQuery={window.history.state?.searchQuery || ""}
-        onNavigate={goTo}
-      />
-    );
-  }
-
-  if (page === "notices") {
-    return renderWithFooter(
-      <NoticePage
-        initialNoticeId={window.history.state?.noticeId ?? null}
-        onBackToHome={() => goTo("home")}
-        onNavigate={goTo}
-      />
-    );
-  }
-
-  return (
+  const homePage = (
     <div className="min-h-screen bg-[#F4F7FB] text-slate-800 font-sans">
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Hi+Melody&display=swap');`}</style>
       {/* 헤더 */}
@@ -1408,5 +1335,172 @@ export default function MainPage() {
 
       <SiteFooter onNavigate={goTo} />
     </div>
+  );
+
+  // 초기값을 처음 한 번만 읽는 화면은 key로 다시 만들어 뒤로가기/앞으로가기의 쿼리 변화를 반영한다.
+  return (
+    <Routes>
+      <Route
+        path="/"
+        element={
+          safetyCheckTokenFromUrl
+            ? <Navigate to={`/safety-check${location.search}`} replace />
+            : homePage
+        }
+      />
+      <Route
+        path="/safety-check"
+        element={
+          safetyCheckTokenFromUrl
+            ? renderWithFooter(
+                <SafetyCheckResponsePage
+                  token={safetyCheckTokenFromUrl}
+                  onDone={() => navigate("/", { replace: true })}
+                />
+              )
+            : <Navigate to="/" replace />
+        }
+      />
+      <Route
+        path="/login"
+        element={renderWithFooter(
+          <LoginPage onLoginSuccess={handleLoginSuccess} onBackToHome={() => goTo("home")} onSearch={() => goTo("search")} />
+        )}
+      />
+      <Route
+        path="/mypage"
+        element={
+          <RequireLogin>
+            {renderWithFooter(
+              <MyPage
+                onBackToHome={() => goTo("home")}
+                onLogout={handleLogout}
+                onOpenShelters={(regionId) => goTo("shelters", { shelterRegionId: regionId })}
+                onOpenSafetyNews={(regionId) => goTo("safety-news", { safetyNewsRegionId: regionId })}
+              />,
+              { showWithdraw: true, onWithdraw: () => setShowWithdrawModal(true) }
+            )}
+            {showWithdrawModal && <WithdrawModal onClose={() => setShowWithdrawModal(false)} />}
+          </RequireLogin>
+        }
+      />
+      <Route
+        path="/shelters"
+        element={renderWithFooter(
+          <ShelterPage
+            key={location.search}
+            initialRegionId={readNumberParam(searchParams, "shelterRegionId")}
+            initialFocusShelter={shelterFocus}
+            onBackToHome={() => goTo("home")}
+            onLogin={() => goTo("login")}
+            onNavigate={goTo}
+          />
+        )}
+      />
+      <Route
+        path="/safety-guides"
+        element={renderWithFooter(
+          <SafetyGuidePage
+            key={location.search}
+            initialGuideKey={searchParams.get("safetyGuideKey") || "FLOOD"}
+            onBackToHome={() => goTo("home")}
+            onOpenShelters={() => goTo("shelters")}
+            onNavigate={goTo}
+          />
+        )}
+      />
+      <Route
+        path="/safety-map"
+        element={renderWithFooter(
+          <SafetyMapPage
+            key={location.search}
+            onBackToHome={() => goTo("home")}
+            onNavigate={goTo}
+            focusIncidentId={readNumberParam(searchParams, "focusIncidentId")}
+          />
+        )}
+      />
+      <Route
+        path="/disaster-info"
+        element={renderWithFooter(
+          <PublicDisasterPage
+            key={location.search}
+            initialMessageSn={searchParams.get("disasterSn")}
+            onBackToHome={() => goTo("home")}
+            onOpenShelters={() => goTo("shelters", { shelterRegionId: null })}
+            onOpenReport={() => requireLogin(() => goTo("home", { openReport: true }))}
+            onNavigate={goTo}
+          />
+        )}
+      />
+      <Route
+        path="/report"
+        element={
+          <RequireLogin>
+            {renderWithFooter(
+              <ReportPage
+                onNavigate={goTo}
+                onSuccess={() => {
+                  setReportSuccess(true);
+                  goTo("home");
+                  setTimeout(() => setReportSuccess(false), 4000);
+                }}
+              />
+            )}
+          </RequireLogin>
+        }
+      />
+      <Route
+        path="/safety-news"
+        element={
+          <RequireLogin>
+            {renderWithFooter(
+              <DisasterNewsPage
+                key={location.search}
+                initialRegionId={readNumberParam(searchParams, "safetyNewsRegionId")}
+                onBackToHome={() => goTo("home")}
+                onLogout={handleLogout}
+                onGoToMyPageTab={(tab) => goTo("mypage", { mypageTab: tab })}
+              />
+            )}
+          </RequireLogin>
+        }
+      />
+      <Route
+        path="/staff"
+        element={
+          isStaff
+            ? (
+                <ControlBoard
+                  onBackToHome={() => goTo("home")}
+                  onLogout={handleLogout}
+                  onOpenNotices={(noticeId) => goTo("notices", noticeId ? { noticeId } : {})}
+                />
+              )
+            : <Navigate to="/" replace />
+        }
+      />
+      <Route
+        path="/search"
+        element={renderWithFooter(
+          <SearchPage
+            initialQuery={searchParams.get("searchQuery") || ""}
+            onNavigate={goTo}
+          />
+        )}
+      />
+      <Route
+        path="/notices"
+        element={renderWithFooter(
+          <NoticePage
+            key={location.search}
+            initialNoticeId={readNumberParam(searchParams, "noticeId")}
+            onBackToHome={() => goTo("home")}
+            onNavigate={goTo}
+          />
+        )}
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }

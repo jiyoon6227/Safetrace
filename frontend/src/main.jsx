@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import MainPage from './MainPage.jsx'
 import SessionExpiryModal from './components/SessionExpiryModal.jsx'
@@ -10,8 +11,8 @@ import SessionExpiryModal from './components/SessionExpiryModal.jsx'
 //
 // SessionExpiryModal은 MainPage 바깥에 독립 마운트 (MainPage가 페이지별로 조기 return)
 createRoot(document.getElementById('root')).render(
-  <>
+  <BrowserRouter>
     <MainPage />
     <SessionExpiryModal />
-  </>,
+  </BrowserRouter>,
 )

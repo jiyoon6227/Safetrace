@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ShieldAlert, Bell, ChevronRight, Sun, Users, ClipboardList, User, Heart } from "lucide-react";
 import { authFetch, getNotifications, deleteNotification, deleteAllNotifications } from "../../api/client";
 import { connectSafetyCheckSocket, connectIncidentSocket } from "../../api/socket";
@@ -14,8 +15,10 @@ import RegionsTab from "./RegionsTab";
 import NotifyTab from "./NotifyTab";
 
 export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenSafetyNews }) {
-  // 새로고침 후에도 보던 탭 유지 (history.state 복원, selectTab에서 기록)
-  const [activeTab, setActiveTab] = useState(window.history.state?.mypageTab || "info");
+  // 새로고침 후에도 보던 탭 유지 (주소의 mypageTab 기준, selectTab에서 기록)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("mypageTab");
+  const activeTab = TABS.some(({ key }) => key === tabParam) ? tabParam : "info";
   // 탭 재클릭 카운터 (탭별 useEffect 의존성용, 재클릭 시 강제 갱신)
   const [refreshSignal, setRefreshSignal] = useState(0);
   const selectTab = (key) => {
@@ -30,8 +33,7 @@ export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenS
       setRefreshSignal((s) => s + 1);
       return;
     }
-    setActiveTab(key);
-    window.history.replaceState({ ...window.history.state, mypageTab: key }, "");
+    setSearchParams({ mypageTab: key }, { replace: true });
   };
   const [notificationOpen, setNotificationOpen] = useState(false);
   const notificationPopupRef = useRef(null);
