@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  RefreshCw, AlertTriangle, Plus, Minus, LocateFixed, Building2, Camera, MapPin, ShieldAlert, ChevronRight, CalendarDays, Bell, Wrench,
+  RefreshCw, AlertTriangle, Plus, Minus, LocateFixed, ChevronRight, CalendarDays, Bell, Wrench,
 } from "lucide-react";
-import { STATUS_LABEL, STATUS_STYLE, markerColorOf, formatTimeAgo, REPORT_DISASTER_TYPES, DISASTER_TYPE_COLOR } from "./constants";
+import { formatTimeAgo, REPORT_DISASTER_TYPES, DISASTER_TYPE_COLOR } from "./constants";
 import { authFetch } from "../../api/client";
 
 export default function DashboardTab({
