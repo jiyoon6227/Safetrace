@@ -7,6 +7,10 @@ import com.safetrace.domain.Member;
 import com.safetrace.dto.DailyCount;
 import com.safetrace.dto.DailyIncidentStat;
 import com.safetrace.dto.DashboardStatsResponse;
+import com.safetrace.dto.IncidentPageResponse;
+import com.safetrace.dto.IncidentSearchCondition;
+import com.safetrace.dto.IncidentSearchRequest;
+import com.safetrace.dto.IncidentStatusCounts;
 import com.safetrace.dto.TypeMonthlyCount;
 import com.safetrace.mapper.IncidentMapper;
 import com.safetrace.mapper.MemberMapper;
@@ -51,6 +55,10 @@ public class IncidentService {
     // 유형별 통계 표시 순서 (화면 제보 유형 목록과 동일)
     private static final List<String> DASHBOARD_DISASTER_TYPES =
             List.of("침수", "화재", "산사태", "강풍", "폭염", "한파", OTHER_DISASTER_TYPE);
+
+    // 사건 관리 목록 페이지 크기 (화면 기본 5건, 한 번에 너무 많이 가져가지 않도록 상한)
+    private static final int DEFAULT_SEARCH_PAGE_SIZE = 5;
+    private static final int MAX_SEARCH_PAGE_SIZE = 50;
 
     /**
      * 새 Incident 생성.
@@ -333,6 +341,67 @@ public class IncidentService {
             target.setPrevCount(target.getPrevCount() + row.getPrevCount());
         }
         return new ArrayList<>(byType.values());
+    }
+
+    /**
+     * 사건 관리 목록 - 검색/필터/정렬/페이징을 DB에서 처리.
+     * 전체 건수는 상태별 건수에서 고르므로 같은 조건으로 COUNT를 두 번 하지 않는다.
+     */
+    public IncidentPageResponse searchIncidents(IncidentSearchRequest request) {
+        IncidentSearchCondition condition = toSearchCondition(request);
+
+        List<Incident> content = incidentMapper.searchIncidents(condition);
+        IncidentStatusCounts counts = incidentMapper.countIncidentsByStatus(condition);
+        if (counts == null) {
+            counts = new IncidentStatusCounts();
+        }
+        int totalCount = counts.countOf(condition.getStatus());
+
+        // 상세패널 닫기 판단은 화면 기존 동작대로 검색어 조건만 확인
+        Boolean selectedIncluded = request.selectedId() == null
+                ? null
+                : incidentMapper.countKeywordMatch(condition.getQ(), request.selectedId()) > 0;
+
+        return new IncidentPageResponse(content, totalCount, counts, selectedIncluded);
+    }
+
+    // 화면 입력값 정리 - "ALL"/빈 값은 조건 없음, 페이지·크기는 허용 범위로 보정
+    private IncidentSearchCondition toSearchCondition(IncidentSearchRequest request) {
+        IncidentSearchCondition condition = new IncidentSearchCondition();
+
+        String q = blankToNull(request.q());
+        condition.setQ(q == null ? null : escapeLike(q.toLowerCase()));
+        condition.setStatus(allToNull(request.status()));
+        condition.setType(allToNull(request.type()));
+        String region = allToNull(request.region());
+        condition.setRegion(region == null ? null : escapeLike(region));
+        condition.setSeverity(allToNull(request.severity()));
+        condition.setFromStart(request.from() == null ? null : request.from().atStartOfDay());
+        condition.setToEnd(request.to() == null ? null : request.to().plusDays(1).atStartOfDay());
+        condition.setOldestFirst("oldest".equals(request.sort()));
+
+        int size = request.size() == null ? DEFAULT_SEARCH_PAGE_SIZE
+                : Math.min(Math.max(request.size(), 1), MAX_SEARCH_PAGE_SIZE);
+        int page = request.page() == null ? 1 : Math.max(request.page(), 1);
+        condition.setSize(size);
+        condition.setOffset((page - 1) * size);
+        return condition;
+    }
+
+    private String blankToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String allToNull(String value) {
+        String trimmed = blankToNull(value);
+        return trimmed == null || "ALL".equals(trimmed) ? null : trimmed;
+    }
+
+    // LIKE 검색에서 %, _ 를 와일드카드가 아닌 글자 그대로 찾도록 이스케이프 (ESCAPE '\')
+    private String escapeLike(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     public List<Incident> getActiveIncidentsByRegion(String region) {

@@ -32,7 +32,7 @@ export default function IncidentsTab({
   setIncidentPage,
   startNewIncidentDirect,
   loading,
-  filteredIncidents,
+  incidentTotalCount,
   pagedIncidents,
   selectedIncidentId,
   toggleIncidentDetail,
@@ -252,7 +252,7 @@ export default function IncidentsTab({
 
           {loading ? (
             <div className="py-12 text-center text-sm text-slate-400">불러오는 중...</div>
-          ) : filteredIncidents.length === 0 ? (
+          ) : incidentTotalCount === 0 ? (
             <div className="py-12 text-center text-sm text-slate-400">검색 결과가 없습니다.</div>
           ) : (
             <>
@@ -291,7 +291,7 @@ export default function IncidentsTab({
                           selectedIncidentId === inc.incidentId ? "bg-blue-50" : "bg-white hover:bg-slate-50/90"
                         }`}
                       >
-                        <td className="px-3 py-2 text-center align-middle font-bold text-[#0F2540] whitespace-nowrap">#I-{incidentRank.get(inc.incidentId)}</td>
+                        <td className="px-3 py-2 text-center align-middle font-bold text-[#0F2540] whitespace-nowrap">#I-{inc.incidentRank}</td>
                         <td className="px-3 py-2 text-center align-middle font-semibold text-slate-700" title={inc.title}><span className="mx-auto block max-w-[220px] truncate">{inc.title}</span></td>
                         <td className="px-3 py-2 text-center align-middle text-slate-500">{inc.disasterType}</td>
                         <td className="px-3 py-2 text-center align-middle text-slate-600" title={inc.region}><span className="mx-auto block max-w-[235px] truncate">{inc.region}</span></td>
@@ -340,7 +340,7 @@ export default function IncidentsTab({
               </div>
 
               <div className="px-4 py-2.5 flex items-center justify-between border-t border-slate-200 bg-slate-50/60">
-                <p className="text-xs text-slate-400">총 {filteredIncidents.length}건의 사건이 있습니다.</p>
+                <p className="text-xs text-slate-400">총 {incidentTotalCount}건의 사건이 있습니다.</p>
                 {renderTablePagination(incidentPage, incidentTotalPages, setIncidentPage)}
               </div>
             </>

@@ -5,20 +5,30 @@ import com.safetrace.domain.Member;
 import com.safetrace.dto.DailyCount;
 import com.safetrace.dto.DailyIncidentStat;
 import com.safetrace.dto.DashboardStatsResponse;
+import com.safetrace.dto.IncidentPageResponse;
+import com.safetrace.dto.IncidentSearchCondition;
+import com.safetrace.dto.IncidentSearchRequest;
+import com.safetrace.dto.IncidentStatusCounts;
 import com.safetrace.dto.TypeMonthlyCount;
 import com.safetrace.mapper.IncidentMapper;
 import com.safetrace.mapper.MemberMapper;
 import com.safetrace.websocket.IncidentWebSocketHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -272,6 +282,98 @@ class IncidentServiceTest {
         assertEquals(new TypeMonthlyCount("침수", 0, 0), result.get(0));
         assertEquals(new TypeMonthlyCount("화재", 3, 1), result.get(1));
         assertEquals(new TypeMonthlyCount("기타", 3, 2), result.get(6));
+    }
+
+    @Test
+    void 사건검색에서_ALL과_빈검색어는_조건없음으로_넘긴다() {
+        IncidentSearchCondition condition = searchAndCaptureCondition(
+                new IncidentSearchRequest("   ", "ALL", "ALL", "ALL", "ALL", null, null, "newest", 1, 5, null));
+
+        assertNull(condition.getQ());
+        assertNull(condition.getStatus());
+        assertNull(condition.getType());
+        assertNull(condition.getRegion());
+        assertNull(condition.getSeverity());
+        assertNull(condition.getFromStart());
+        assertNull(condition.getToEnd());
+        assertFalse(condition.isOldestFirst());
+    }
+
+    @Test
+    void 사건검색어는_소문자로_바꾸고_LIKE_특수문자를_이스케이프한다() {
+        IncidentSearchCondition condition = searchAndCaptureCondition(
+                new IncidentSearchRequest(" A_100%침수 ", null, null, null, null, null, null, null, null, null, null));
+
+        assertEquals("a\\_100\\%침수", condition.getQ());
+    }
+
+    @Test
+    void 사건검색_기간은_시작일_0시부터_종료일_다음날_0시_미만으로_잡는다() {
+        IncidentSearchCondition condition = searchAndCaptureCondition(new IncidentSearchRequest(
+                null, null, null, null, null, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 11),
+                "oldest", null, null, null));
+
+        assertEquals(LocalDateTime.of(2026, 11, 1, 0, 0), condition.getFromStart());
+        assertEquals(LocalDateTime.of(2026, 11, 12, 0, 0), condition.getToEnd());
+        assertTrue(condition.isOldestFirst());
+    }
+
+    @Test
+    void 사건검색_페이지와_크기는_허용범위로_보정한다() {
+        IncidentSearchCondition third = searchAndCaptureCondition(
+                new IncidentSearchRequest(null, null, null, null, null, null, null, null, 3, 5, null));
+        assertEquals(10, third.getOffset());
+        assertEquals(5, third.getSize());
+
+        IncidentSearchCondition tooLarge = searchAndCaptureCondition(
+                new IncidentSearchRequest(null, null, null, null, null, null, null, null, 0, 1000, null));
+        assertEquals(0, tooLarge.getOffset());
+        assertEquals(50, tooLarge.getSize());
+    }
+
+    @Test
+    void 상태를_고르면_전체건수는_그_상태의_건수를_쓴다() {
+        IncidentStatusCounts counts = new IncidentStatusCounts();
+        counts.setTotal(10);
+        counts.setRespondingCount(3);
+        when(incidentMapper.countIncidentsByStatus(any())).thenReturn(counts);
+
+        IncidentPageResponse responding = incidentService.searchIncidents(
+                new IncidentSearchRequest(null, "RESPONDING", null, null, null, null, null, null, 1, 5, null));
+        IncidentPageResponse all = incidentService.searchIncidents(
+                new IncidentSearchRequest(null, "ALL", null, null, null, null, null, null, 1, 5, null));
+
+        assertEquals(3, responding.totalCount());
+        assertEquals(10, all.totalCount());
+        assertSame(counts, all.statusCounts());
+    }
+
+    @Test
+    void 선택한_사건_포함여부는_검색어_조건만으로_확인한다() {
+        when(incidentMapper.countKeywordMatch("침수", 7L)).thenReturn(0);
+
+        IncidentPageResponse response = incidentService.searchIncidents(
+                new IncidentSearchRequest("침수", "CLOSED", "화재", "서울특별시", "HIGH", null, null, null, 1, 5, 7L));
+
+        assertEquals(Boolean.FALSE, response.selectedIncluded());
+        verify(incidentMapper).countKeywordMatch("침수", 7L);
+    }
+
+    @Test
+    void 선택한_사건이_없으면_포함여부를_조회하지_않는다() {
+        IncidentPageResponse response = incidentService.searchIncidents(
+                new IncidentSearchRequest("침수", null, null, null, null, null, null, null, 1, 5, null));
+
+        assertNull(response.selectedIncluded());
+        verify(incidentMapper, never()).countKeywordMatch(any(), any());
+    }
+
+    private IncidentSearchCondition searchAndCaptureCondition(IncidentSearchRequest request) {
+        clearInvocations(incidentMapper);
+        incidentService.searchIncidents(request);
+        ArgumentCaptor<IncidentSearchCondition> captor = ArgumentCaptor.forClass(IncidentSearchCondition.class);
+        verify(incidentMapper).searchIncidents(captor.capture());
+        return captor.getValue();
     }
 
     private DailyCount dailyCount(String date, int count) {

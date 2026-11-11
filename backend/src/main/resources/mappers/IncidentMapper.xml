@@ -27,11 +27,92 @@
         WHERE i.INCIDENT_ID = #{incidentId}
     </select>
 
+    <!-- 접수 순번 - 검색 조건과 무관하게 전체 사건을 접수일시(같으면 ID) 순으로 매김.
+         조건을 거는 바깥 쿼리와 분리해야 검색/페이지 이동 후에도 같은 번호가 유지됨 -->
+    <sql id="incidentRankJoin">
+        JOIN (SELECT INCIDENT_ID,
+                     ROW_NUMBER() OVER (ORDER BY CREATED_AT, INCIDENT_ID) AS INCIDENT_RANK
+              FROM SF_INCIDENT) rk ON rk.INCIDENT_ID = i.INCIDENT_ID
+    </sql>
+
     <select id="findAll" resultType="com.safetrace.domain.Incident">
-        SELECT i.*, m.NAME AS ASSIGNED_STAFF_NAME, <include refid="coverPhoto"/>
+        SELECT i.*, m.NAME AS ASSIGNED_STAFF_NAME, <include refid="coverPhoto"/>, rk.INCIDENT_RANK
         FROM SF_INCIDENT i
+        <include refid="incidentRankJoin"/>
         LEFT JOIN SF_MEMBER m ON i.ASSIGNED_STAFF_ID = m.MEMBER_ID
         ORDER BY i.CREATED_AT DESC
+    </select>
+
+    <!-- 사건 관리 검색어 - 제목/지역/재난유형 부분일치 (q는 서비스에서 소문자 + 이스케이프 처리) -->
+    <sql id="incidentKeywordCondition">
+        <if test="q != null">
+            AND (LOWER(i.TITLE) LIKE '%' || #{q} || '%' ESCAPE '\'
+              OR LOWER(i.REGION) LIKE '%' || #{q} || '%' ESCAPE '\'
+              OR LOWER(i.DISASTER_TYPE) LIKE '%' || #{q} || '%' ESCAPE '\')
+        </if>
+    </sql>
+
+    <!-- 사건 관리 필터 - 상태는 상태별 건수 집계에서 빠져야 해서 여기 넣지 않음 -->
+    <sql id="incidentFilterConditions">
+        <include refid="incidentKeywordCondition"/>
+        <if test="type != null">
+            AND i.DISASTER_TYPE = #{type}
+        </if>
+        <if test="region != null">
+            AND i.REGION LIKE #{region} || '%' ESCAPE '\'
+        </if>
+        <if test="severity != null">
+            AND i.SEVERITY = #{severity}
+        </if>
+        <if test="fromStart != null">
+            AND i.CREATED_AT &gt;= #{fromStart}
+        </if>
+        <if test="toEnd != null">
+            AND i.CREATED_AT &lt; #{toEnd}
+        </if>
+    </sql>
+
+    <!-- 사건 관리 목록 한 페이지 -->
+    <select id="searchIncidents" parameterType="com.safetrace.dto.IncidentSearchCondition"
+            resultType="com.safetrace.domain.Incident">
+        SELECT i.*, m.NAME AS ASSIGNED_STAFF_NAME, <include refid="coverPhoto"/>, rk.INCIDENT_RANK
+        FROM SF_INCIDENT i
+        <include refid="incidentRankJoin"/>
+        LEFT JOIN SF_MEMBER m ON i.ASSIGNED_STAFF_ID = m.MEMBER_ID
+        <where>
+            <include refid="incidentFilterConditions"/>
+            <if test="status != null">
+                AND i.STATUS = #{status}
+            </if>
+        </where>
+        <choose>
+            <when test="oldestFirst">ORDER BY i.CREATED_AT ASC, i.INCIDENT_ID ASC</when>
+            <otherwise>ORDER BY i.CREATED_AT DESC, i.INCIDENT_ID DESC</otherwise>
+        </choose>
+        OFFSET #{offset} ROWS FETCH NEXT #{size} ROWS ONLY
+    </select>
+
+    <!-- 상태 탭/카드 건수 - 상태 필터만 빼고 나머지 조건 적용. 0건이어도 0이 나오도록 NVL 처리 -->
+    <select id="countIncidentsByStatus" parameterType="com.safetrace.dto.IncidentSearchCondition"
+            resultType="com.safetrace.dto.IncidentStatusCounts">
+        SELECT COUNT(*) AS TOTAL,
+               NVL(SUM(CASE WHEN i.STATUS = 'RECEIVED'   THEN 1 ELSE 0 END), 0) AS RECEIVED_COUNT,
+               NVL(SUM(CASE WHEN i.STATUS = 'CONFIRMING' THEN 1 ELSE 0 END), 0) AS CONFIRMING_COUNT,
+               NVL(SUM(CASE WHEN i.STATUS = 'RESPONDING' THEN 1 ELSE 0 END), 0) AS RESPONDING_COUNT,
+               NVL(SUM(CASE WHEN i.STATUS = 'RECOVERING' THEN 1 ELSE 0 END), 0) AS RECOVERING_COUNT,
+               NVL(SUM(CASE WHEN i.STATUS = 'CLOSED'     THEN 1 ELSE 0 END), 0) AS CLOSED_COUNT
+        FROM SF_INCIDENT i
+        <where>
+            <include refid="incidentFilterConditions"/>
+        </where>
+    </select>
+
+    <!-- 열려 있는 사건이 검색어 조건에 아직 맞는지 - 상세패널 닫기 판단용이라 검색어만 봄 -->
+    <select id="countKeywordMatch" resultType="int">
+        SELECT COUNT(*)
+        FROM SF_INCIDENT i
+        WHERE i.INCIDENT_ID = #{selectedId}
+        <include refid="incidentKeywordCondition"/>
     </select>
 
     <select id="findActiveByRegion" resultType="com.safetrace.domain.Incident">

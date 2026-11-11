@@ -4,6 +4,8 @@ import com.safetrace.domain.Incident;
 import com.safetrace.domain.IncidentLog;
 import com.safetrace.dto.DailyCount;
 import com.safetrace.dto.DashboardStatsResponse;
+import com.safetrace.dto.IncidentSearchCondition;
+import com.safetrace.dto.IncidentStatusCounts;
 import com.safetrace.dto.TypeMonthlyCount;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -19,7 +21,17 @@ public interface IncidentMapper {
 
     Incident findById(@Param("incidentId") Long incidentId);
 
+    // 전체 목록 (대시보드 지도용) - 접수 순번(incidentRank) 포함
     List<Incident> findAll();
+
+    // 사건 관리 목록 한 페이지 (검색어/상태/유형/지역/위험도/기간 + 정렬 + 페이징)
+    List<Incident> searchIncidents(IncidentSearchCondition condition);
+
+    // 상태 탭/카드 건수 - 상태 조건만 빼고 나머지 조건 적용
+    IncidentStatusCounts countIncidentsByStatus(IncidentSearchCondition condition);
+
+    // 해당 사건이 검색어 조건에 맞으면 1, 아니면 0 (q가 null이면 존재 여부만 확인)
+    int countKeywordMatch(@Param("q") String q, @Param("selectedId") Long selectedId);
 
     // 시민 화면 - 관심지역 기준 활성 Incident 목록
     List<Incident> findActiveByRegion(@Param("region") String region);

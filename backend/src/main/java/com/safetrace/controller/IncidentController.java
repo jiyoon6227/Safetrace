@@ -6,7 +6,9 @@ import com.safetrace.domain.Report;
 import com.safetrace.dto.DashboardStatsResponse;
 import com.safetrace.dto.IncidentCreateRequest;
 import com.safetrace.dto.IncidentLogPublicResponse;
+import com.safetrace.dto.IncidentPageResponse;
 import com.safetrace.dto.IncidentPublicResponse;
+import com.safetrace.dto.IncidentSearchRequest;
 import com.safetrace.dto.IncidentStatusChangeRequest;
 import com.safetrace.dto.TypeMonthlyCount;
 import com.safetrace.service.IncidentService;
@@ -77,6 +79,14 @@ public class IncidentController {
     @PreAuthorize("hasRole('STAFF')")
     public List<Incident> getAll() {
         return incidentService.getAllIncidents();
+    }
+
+    // STAFF 전용 - 사건 관리 목록 (검색/필터/정렬/페이징 + 상태별 건수)
+    // 예: /api/incidents/search?q=침수&status=ALL&region=서울특별시&from=2025-11-11&to=2026-11-11&sort=newest&page=1&size=5
+    @GetMapping("/search")
+    @PreAuthorize("hasRole('STAFF')")
+    public IncidentPageResponse search(@ModelAttribute IncidentSearchRequest request) {
+        return incidentService.searchIncidents(request);
     }
 
     // 시민 화면 - "내 제보 추적" 타임라인

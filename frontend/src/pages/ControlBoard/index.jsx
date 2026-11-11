@@ -107,7 +107,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
     incidentRegionFilter, setIncidentRegionFilter, incidentSeverityFilter, setIncidentSeverityFilter,
     incidentDateFrom, incidentDateTo, incidentPage, setIncidentPage, handleIncidentDateFromChange,
     handleIncidentDateFromBlur, handleIncidentDateToChange, handleIncidentDateToBlur, applyIncidentDateFilter,
-    filteredIncidents, incidentCounts, incidentRank, incidentTotalPages, pagedIncidents,
+    incidentTotalCount, incidentCounts, incidentRank, incidentTotalPages, pagedIncidents, incidentListLoading,
   } = useIncidentFilters({ incidents, selectedIncidentId, closeDetail, setToast, todayStr });
 
   // 지도 초기화 실패 메시지를 첫 사건 조회가 지우는 순서가 있어 useDashboardMap을 useControlBoardData보다 먼저 호출한다.
@@ -345,8 +345,8 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
             setIncidentSearchQuery={setIncidentSearchQuery}
             setIncidentPage={setIncidentPage}
             startNewIncidentDirect={startNewIncidentDirect}
-            loading={loading}
-            filteredIncidents={filteredIncidents}
+            loading={loading || incidentListLoading}
+            incidentTotalCount={incidentTotalCount}
             pagedIncidents={pagedIncidents}
             selectedIncidentId={selectedIncidentId}
             toggleIncidentDetail={toggleIncidentDetail}

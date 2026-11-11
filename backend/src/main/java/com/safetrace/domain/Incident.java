@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 @Data
 public class Incident {
     private Long incidentId;
+    private Integer incidentRank;  // 접수 순번 - 전체 사건을 접수일시 순으로 매긴 번호 (STAFF 화면 "#I-n" 표시용)
     private String title;
     private String disasterType;   // 침수 / 화재 / 산사태 등
     private String severity;       // LOW / MEDIUM / HIGH

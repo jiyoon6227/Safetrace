@@ -1,6 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { authFetch } from "../../api/client";
 import { getDefaultDateRange } from "./constants";
 import { createDateRangeHandlers } from "./dateRangeFilter";
+
+const INCIDENT_PAGE_SIZE = 5;
+const SEARCH_DEBOUNCE_MS = 300; // 입력이 멈춘 뒤에만 서버 검색 (글자마다 요청 방지)
+
+const EMPTY_INCIDENT_COUNTS = { ALL: 0, RECEIVED: 0, CONFIRMING: 0, RESPONDING: 0, RECOVERING: 0, CLOSED: 0 };
+
+// 서버 상태별 건수 → 화면 탭/카드 키 형태
+const toIncidentCounts = (statusCounts) => (statusCounts ? {
+  ALL: statusCounts.total,
+  RECEIVED: statusCounts.receivedCount,
+  CONFIRMING: statusCounts.confirmingCount,
+  RESPONDING: statusCounts.respondingCount,
+  RECOVERING: statusCounts.recoveringCount,
+  CLOSED: statusCounts.closedCount,
+} : EMPTY_INCIDENT_COUNTS);
 
 export function useIncidentFilters({
   incidents, selectedIncidentId, closeDetail, setToast, todayStr,
@@ -17,24 +33,34 @@ export function useIncidentFilters({
   const [appliedIncidentDateFrom, setAppliedIncidentDateFrom] = useState(() => getDefaultDateRange(12).from); // "조회" 눌러야 실제 필터링에 반영됨
   const [appliedIncidentDateTo, setAppliedIncidentDateTo] = useState(() => getDefaultDateRange(12).to); // "조회" 눌러야 실제 필터링에 반영됨
   const [incidentPage, setIncidentPage] = useState(1);
-  const INCIDENT_PAGE_SIZE = 5;
 
-  // 검색어가 바뀌어서 지금 선택된 사건이 더 이상 목록에 안 보이면, 상세패널도 같이 닫는다.
+  // 서버 검색 결과 (현재 페이지 목록 + 조건에 맞는 전체 건수 + 상태별 건수)
+  const [pagedIncidents, setPagedIncidents] = useState([]);
+  const [incidentTotalCount, setIncidentTotalCount] = useState(0);
+  const [incidentCounts, setIncidentCounts] = useState(EMPTY_INCIDENT_COUNTS);
+  const [incidentListLoaded, setIncidentListLoaded] = useState(false);
+
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   useEffect(() => {
-    if (!selectedIncidentId) return;
-    const q = incidentSearchQuery.trim().toLowerCase();
-    const stillVisible = incidents.some((inc) => {
-      if (inc.incidentId !== selectedIncidentId) return false;
-      if (!q) return true;
-      return (
-        inc.title?.toLowerCase().includes(q) ||
-        inc.region?.toLowerCase().includes(q) ||
-        inc.disasterType?.toLowerCase().includes(q)
-      );
-    });
-    if (!stillVisible) closeDetail();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const timer = setTimeout(() => setDebouncedSearchQuery(incidentSearchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
   }, [incidentSearchQuery]);
+
+  // 검색어가 바뀌어서 지금 선택된 사건이 검색어에 안 맞게 되면 상세패널도 같이 닫는다.
+  // 다음 검색 응답의 selectedIncluded(검색어 조건만 확인)로 판단
+  const selectedIncidentIdRef = useRef(selectedIncidentId);
+  useEffect(() => {
+    selectedIncidentIdRef.current = selectedIncidentId;
+  }, [selectedIncidentId]);
+  const searchChangedRef = useRef(false);
+  const isFirstSearchRef = useRef(true);
+  useEffect(() => {
+    if (isFirstSearchRef.current) {
+      isFirstSearchRef.current = false;
+      return;
+    }
+    searchChangedRef.current = true;
+  }, [debouncedSearchQuery]);
 
   // 검색어/필터/정렬이 바뀌면 페이지를 1로 되돌림
   useEffect(() => {
@@ -68,71 +94,69 @@ export function useIncidentFilters({
     setToast,
   });
 
-  // 사건 관리 탭 - 검색/상태/재난유형/지역/위험도 필터링 + 최신 업데이트 기준 정렬
-  const filteredIncidents = incidents
-    .filter((inc) => {
-      const q = incidentSearchQuery.trim().toLowerCase();
-      const matchSearch =
-        !q ||
-        inc.title?.toLowerCase().includes(q) ||
-        inc.region?.toLowerCase().includes(q) ||
-        inc.disasterType?.toLowerCase().includes(q);
-      const matchStatus = incidentStatusFilter === "ALL" || inc.status === incidentStatusFilter;
-      const matchType = incidentTypeFilter === "ALL" || inc.disasterType === incidentTypeFilter;
-      const matchRegion = incidentRegionFilter === "ALL" || inc.region?.startsWith(incidentRegionFilter);
-      const matchSeverity = incidentSeverityFilter === "ALL" || inc.severity === incidentSeverityFilter;
-      const incDate = (inc.createdAt || "").slice(0, 10);
-      const matchDate = (!appliedIncidentDateFrom || incDate >= appliedIncidentDateFrom) && (!appliedIncidentDateTo || incDate <= appliedIncidentDateTo);
-      return matchSearch && matchStatus && matchType && matchRegion && matchSeverity && matchDate;
-    })
-    .sort((a, b) => {
-      // 접수일시(createdAt) 기준 정렬 (updatedAt 기준 시 수정할 때마다 행 위치 변동)
-      const aDate = new Date(a.createdAt);
-      const bDate = new Date(b.createdAt);
-      return incidentSortOrder === "newest" ? bDate - aDate : aDate - bDate;
+  // 사건 관리 탭 - 검색/필터/정렬(접수일시 기준)/페이징은 서버에서 처리
+  // incidents가 새로 들어오면(소켓 갱신·상태 변경·사건 생성) 같은 조건으로 다시 조회
+  const requestSeqRef = useRef(0);
+  useEffect(() => {
+    const requestSeq = ++requestSeqRef.current;
+    const searchChanged = searchChangedRef.current;
+    const checkSelected = searchChanged && selectedIncidentIdRef.current != null;
+
+    const params = new URLSearchParams({
+      status: incidentStatusFilter,
+      type: incidentTypeFilter,
+      region: incidentRegionFilter,
+      severity: incidentSeverityFilter,
+      sort: incidentSortOrder,
+      page: String(incidentPage),
+      size: String(INCIDENT_PAGE_SIZE),
     });
+    if (debouncedSearchQuery) params.set("q", debouncedSearchQuery);
+    if (appliedIncidentDateFrom) params.set("from", appliedIncidentDateFrom);
+    if (appliedIncidentDateTo) params.set("to", appliedIncidentDateTo);
+    if (checkSelected) params.set("selectedId", String(selectedIncidentIdRef.current));
 
-  // 상태 요약 카드/탭 숫자는 현재 선택한 지역·유형·위험도·기간·검색어를 기준으로 계산한다.
-  // 단, 상태 필터 자체는 제외해야 각 상태별 건수를 동시에 보여줄 수 있다.
-  const incidentsForCounts = incidents.filter((inc) => {
-    const q = incidentSearchQuery.trim().toLowerCase();
-    const matchSearch =
-      !q ||
-      inc.title?.toLowerCase().includes(q) ||
-      inc.region?.toLowerCase().includes(q) ||
-      inc.disasterType?.toLowerCase().includes(q);
-    const matchType = incidentTypeFilter === "ALL" || inc.disasterType === incidentTypeFilter;
-    const matchRegion = incidentRegionFilter === "ALL" || inc.region?.startsWith(incidentRegionFilter);
-    const matchSeverity = incidentSeverityFilter === "ALL" || inc.severity === incidentSeverityFilter;
-    const incDate = (inc.createdAt || "").slice(0, 10);
-    const matchDate =
-      (!appliedIncidentDateFrom || incDate >= appliedIncidentDateFrom) &&
-      (!appliedIncidentDateTo || incDate <= appliedIncidentDateTo);
+    authFetch(`/api/incidents/search?${params.toString()}`)
+      .then((data) => {
+        // 늦게 도착한 이전 요청 응답은 버림 (빠르게 입력할 때 옛 결과로 덮이는 것 방지)
+        if (requestSeq !== requestSeqRef.current) return;
+        if (searchChanged) searchChangedRef.current = false;
 
-    return matchSearch && matchType && matchRegion && matchSeverity && matchDate;
-  });
+        const content = Array.isArray(data?.content) ? data.content : [];
+        const totalCount = data?.totalCount ?? 0;
+        setPagedIncidents(content);
+        setIncidentTotalCount(totalCount);
+        setIncidentCounts(toIncidentCounts(data?.statusCounts));
 
-  const incidentCounts = {
-    ALL: incidentsForCounts.length,
-    RECEIVED: incidentsForCounts.filter((i) => i.status === "RECEIVED").length,
-    CONFIRMING: incidentsForCounts.filter((i) => i.status === "CONFIRMING").length,
-    RESPONDING: incidentsForCounts.filter((i) => i.status === "RESPONDING").length,
-    RECOVERING: incidentsForCounts.filter((i) => i.status === "RECOVERING").length,
-    CLOSED: incidentsForCounts.filter((i) => i.status === "CLOSED").length,
-  };
+        if (checkSelected && data?.selectedIncluded === false) closeDetail();
 
-  // 목록 정렬(최신순)과 무관하게, 제일 오래 접수된 사건이 1번이 되도록 접수일시 기준으로 번호를 매김
-  const incidentRank = new Map(
-    [...incidents]
-      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-      .map((inc, i) => [inc.incidentId, i + 1])
-  );
+        // 다른 곳에서 사건이 줄어 지금 페이지가 비면 마지막 페이지로 이동
+        const lastPage = Math.max(1, Math.ceil(totalCount / INCIDENT_PAGE_SIZE));
+        if (content.length === 0 && incidentPage > lastPage) setIncidentPage(lastPage);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (requestSeq === requestSeqRef.current) setIncidentListLoaded(true);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    debouncedSearchQuery,
+    incidentStatusFilter,
+    incidentTypeFilter,
+    incidentRegionFilter,
+    incidentSeverityFilter,
+    appliedIncidentDateFrom,
+    appliedIncidentDateTo,
+    incidentSortOrder,
+    incidentPage,
+    incidents,
+  ]);
 
-  const incidentTotalPages = Math.max(1, Math.ceil(filteredIncidents.length / INCIDENT_PAGE_SIZE));
-  const pagedIncidents = filteredIncidents.slice(
-    (incidentPage - 1) * INCIDENT_PAGE_SIZE,
-    incidentPage * INCIDENT_PAGE_SIZE
-  );
+  // 접수 순번 - 서버가 전체 사건 기준으로 매긴 값(incidentRank)을 사건 ID로 찾을 수 있게 모아둠
+  // (사건 상세 헤더, 제보 관리의 연결 사건 표시, 일괄 병합 모달에서 사용)
+  const incidentRank = new Map(incidents.map((inc) => [inc.incidentId, inc.incidentRank]));
+
+  const incidentTotalPages = Math.max(1, Math.ceil(incidentTotalCount / INCIDENT_PAGE_SIZE));
 
   return {
     incidentSearchQuery, setIncidentSearchQuery, incidentSortOrder, setIncidentSortOrder,
@@ -140,6 +164,7 @@ export function useIncidentFilters({
     incidentRegionFilter, setIncidentRegionFilter, incidentSeverityFilter, setIncidentSeverityFilter,
     incidentDateFrom, incidentDateTo, incidentPage, setIncidentPage, handleIncidentDateFromChange,
     handleIncidentDateFromBlur, handleIncidentDateToChange, handleIncidentDateToBlur, applyIncidentDateFilter,
-    filteredIncidents, incidentCounts, incidentRank, incidentTotalPages, pagedIncidents,
+    incidentTotalCount, incidentCounts, incidentRank, incidentTotalPages, pagedIncidents,
+    incidentListLoading: !incidentListLoaded,
   };
 }
