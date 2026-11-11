@@ -1,0 +1,226 @@
+package com.safetrace.service;
+
+import com.safetrace.domain.Incident;
+import com.safetrace.domain.Member;
+import com.safetrace.domain.ResourceLog;
+import com.safetrace.domain.ResourceRequest;
+import com.safetrace.domain.ResourceStock;
+import com.safetrace.dto.ResourceRequestCreateRequest;
+import com.safetrace.dto.ResourceRequestPageResponse;
+import com.safetrace.mapper.MemberMapper;
+import com.safetrace.mapper.ResourceMapper;
+import com.safetrace.mapper.ResourceRequestMapper;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * 자원 요청 생성·조회.
+ * 역할은 둘뿐이다. STAFF(사건 담당자)가 요청하고, ADMIN이 승인·반려·출고·반납 확인과 재고 관리를 한다.
+ * 승인·출고·반납 같은 재고를 바꾸는 처리는 다음 단계에서 이 서비스와 분리해서 만든다.
+ *
+ * 요청을 만들 때 잠그는 행은 사건 하나뿐이고, 재고는 잠금 없이 읽기만 한다
+ * (재고 가용 수량·사용 중지 여부는 승인 때 다시 검사한다. 설계의 잠금 순서: 사건 → 요청 → 재고).
+ * 사건 행 잠금 대기가 3초를 넘으면 락 예외가 나고, GlobalExceptionHandler가 409(LOCK_CONFLICT)로 바꿔준다.
+ */
+@Service
+@RequiredArgsConstructor
+public class ResourceRequestService {
+
+    private static final Set<String> STATUSES = Set.of(
+            "REQUESTED", "APPROVED", "REJECTED", "CANCELLED", "DISPATCHED", "SETTLED", "COMPLETED");
+    
+    static final int DEFAULT_PAGE_SIZE = 10;
+    static final int MAX_PAGE_SIZE = 50;
+    static final int MAX_PAGE = 100_000;
+    static final int MAX_REASON_LENGTH = 500;
+    // 화면에서 "지금"을 고르고 전송하는 사이의 시간 차이를 봐주는 여유
+    static final long NEEDED_AT_TOLERANCE_MINUTES = 5;
+    // 같은 내용(사건·재고·수량·사유)의 요청이 이 시간 안에 또 오면 더블클릭·재전송으로 본다.
+    // 이보다 늦게 같은 내용으로 다시 요청하는 것은 정상적인 추가 요청이다.
+    static final int DUPLICATE_CLICK_WINDOW_SECONDS = 10;
+
+    private final ResourceRequestMapper requestMapper;
+    private final MemberMapper memberMapper;
+    private final ResourceMapper resourceMapper;
+
+    /**
+     * 자원 요청 생성. 규칙:
+     *  - 요청자는 미탈퇴 STAFF여야 한다 (요청자 ID는 로그인 정보에서만 받는다). ADMIN은 요청할 수 없다
+     *  - 사건은 종료되지 않았어야 하고, 사건 담당자 본인만 요청할 수 있다
+     *  - 재고는 사용 중(ACTIVE)이어야 한다. 같은 부서 재고도 요청할 수 있다 (승인은 ADMIN이 하므로 자기 승인이 아니다)
+     *  - 수량은 해당 재고의 보유 총량 이하, 넘으면 400 (지금 가용 수량이 모자라도 요청은 가능, 가용 검사는 승인 때)
+     *  - 같은 내용의 요청이 10초 안에 또 오면 더블클릭으로 보고 거절 (그 뒤의 추가 요청은 허용)
+     * 재고 수량은 이 단계에서 줄이지 않는다 (승인 때 예약한다).
+     */
+    @Transactional
+    public ResourceRequest createRequest(Long memberId, ResourceRequestCreateRequest request) {
+        requireActiveMember(memberId, false);
+        validateCreateInput(request);
+
+        Incident incident = requestMapper.lockIncident(request.incidentId());
+        if (incident == null) {
+            throw new IllegalArgumentException("존재하지 않는 사건입니다.");
+        }
+        if ("CLOSED".equals(incident.getStatus())) {
+            throw new IllegalStateException("종료된 사건에는 자원을 요청할 수 없습니다.");
+        }
+        if (incident.getAssignedStaffId() == null) {
+            throw new IllegalStateException("담당자가 배정되지 않은 사건입니다. 먼저 담당자를 배정해주세요.");
+        }
+        if (!incident.getAssignedStaffId().equals(memberId)) {
+            throw new AccessDeniedException("이 사건의 담당자만 자원을 요청할 수 있습니다.");
+        }
+
+        // 재고는 잠금 없이 읽는다. 읽은 뒤 사용 중지돼도 승인 때 ACTIVE를 다시 검사한다.
+        ResourceStock stock = resourceMapper.findStockById(request.stockId());
+        if (stock == null) {
+            throw new IllegalArgumentException("존재하지 않는 재고입니다.");
+        }
+        if (!"ACTIVE".equals(stock.getStatus())) {
+            throw new IllegalStateException("사용이 중지된 재고는 요청할 수 없습니다.");
+        }
+
+        int quantity = request.quantity();
+        if (quantity > stock.getTotalQty()) {
+            throw new IllegalArgumentException(
+                    String.format("요청 수량이 보유 총량(%d)을 넘을 수 없습니다.", stock.getTotalQty()));
+        }
+        String reason = request.reason().trim();
+        if (requestMapper.countRecentSame(request.incidentId(), request.stockId(), memberId, quantity, reason,
+                DUPLICATE_CLICK_WINDOW_SECONDS) > 0) {
+            throw new IllegalStateException("같은 요청이 방금 접수되었습니다. 요청 목록에서 확인해주세요.");
+        }
+
+        ResourceRequest created = new ResourceRequest();
+        created.setIncidentId(request.incidentId());
+        created.setStockId(request.stockId());
+        created.setRequesterId(memberId);
+        created.setQuantity(quantity);
+        created.setReason(reason);
+        created.setNeededAt(request.neededAt());
+        requestMapper.insertRequest(created);
+
+        ResourceLog log = new ResourceLog();
+        log.setRequestId(created.getRequestId());
+        log.setPrevStatus(null);
+        log.setNewStatus("REQUESTED");
+        log.setAction("CREATE");
+        log.setChangedBy(memberId);
+        requestMapper.insertLog(log);
+
+        return requestMapper.findById(created.getRequestId());
+    }
+
+    /**
+     * 요청 목록. STAFF는 내가 보낸 요청만, ADMIN은 전부 본다.
+     * status가 없거나 ALL이면 상태 조건 없이, incidentId가 있으면 그 사건의 요청만 본다.
+     */
+    @Transactional(readOnly = true)
+    public ResourceRequestPageResponse getRequests(Long memberId, String status, Long incidentId,
+                                                   Integer page, Integer size) {
+        Member actor = requireActiveMember(memberId, true);
+
+        String safeStatus = null;
+        if (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status.trim())) {
+            safeStatus = status.trim().toUpperCase();
+            if (!STATUSES.contains(safeStatus)) {
+                throw new IllegalArgumentException("올바르지 않은 요청 상태입니다.");
+            }
+        }
+        int safePage = page == null ? 1 : Math.min(Math.max(page, 1), MAX_PAGE);
+        int safeSize = size == null ? DEFAULT_PAGE_SIZE : Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+
+        // 요청자 조건이 null이면 제한 없음(ADMIN)
+        Long requesterId = isAdmin(actor) ? null : memberId;
+
+        long total = requestMapper.countRequests(requesterId, safeStatus, incidentId);
+        List<ResourceRequest> items = total == 0
+                ? List.of()
+                : requestMapper.findRequests(requesterId, safeStatus, incidentId,
+                        (safePage - 1) * safeSize, safePage * safeSize);
+        return new ResourceRequestPageResponse(items, total, safePage, safeSize);
+    }
+
+    /** 요청 상세. 요청한 본인과 ADMIN만 볼 수 있다. */
+    @Transactional(readOnly = true)
+    public ResourceRequest getRequest(Long memberId, Long requestId) {
+        Member actor = requireActiveMember(memberId, true);
+        return loadVisibleRequest(actor, requestId);
+    }
+
+    /** 요청 처리 이력. 상세와 같은 조회 권한. */
+    @Transactional(readOnly = true)
+    public List<ResourceLog> getRequestLogs(Long memberId, Long requestId) {
+        Member actor = requireActiveMember(memberId, true);
+        loadVisibleRequest(actor, requestId);
+        return requestMapper.findLogs(requestId);
+    }
+
+    private ResourceRequest loadVisibleRequest(Member actor, Long requestId) {
+        ResourceRequest found = requestMapper.findById(requestId);
+        if (found == null) {
+            throw new IllegalArgumentException("존재하지 않는 자원 요청입니다.");
+        }
+        boolean visible = isAdmin(actor) || actor.getMemberId().equals(found.getRequesterId());
+        if (!visible) {
+            throw new AccessDeniedException("이 요청을 볼 수 있는 권한이 없습니다.");
+        }
+        return found;
+    }
+
+    private void validateCreateInput(ResourceRequestCreateRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("요청 정보가 없습니다.");
+        }
+        if (request.incidentId() == null) {
+            throw new IllegalArgumentException("사건을 선택해주세요.");
+        }
+        if (request.stockId() == null) {
+            throw new IllegalArgumentException("요청할 재고를 선택해주세요.");
+        }
+        if (request.quantity() == null || request.quantity() < 1) {
+            throw new IllegalArgumentException("요청 수량은 1 이상이어야 합니다.");
+        }
+        if (request.reason() == null || request.reason().isBlank()) {
+            throw new IllegalArgumentException("요청 사유를 입력해주세요.");
+        }
+        if (request.reason().trim().length() > MAX_REASON_LENGTH) {
+            throw new IllegalArgumentException("요청 사유는 " + MAX_REASON_LENGTH + "자 이하로 입력해주세요.");
+        }
+        if (request.neededAt() != null
+                && request.neededAt().isBefore(LocalDateTime.now().minusMinutes(NEEDED_AT_TOLERANCE_MINUTES))) {
+            throw new IllegalArgumentException("필요 시각은 현재 이후로 입력해주세요.");
+        }
+    }
+
+    // 역할은 토큰이 아니라 DB의 현재 값으로 판단한다 (탈퇴·권한 변경 직후의 오래된 토큰 방어)
+    private Member requireActiveMember(Long memberId, boolean allowAdmin) {
+        if (memberId == null) {
+            throw new IllegalArgumentException("요청자 정보가 없습니다.");
+        }
+        Member member = memberMapper.findById(memberId);
+        if (member == null) {
+            throw new IllegalArgumentException("요청자가 존재하지 않습니다.");
+        }
+        if ("Y".equals(member.getIsWithdrawn())) {
+            throw new IllegalArgumentException("탈퇴한 회원입니다.");
+        }
+        boolean roleOk = "STAFF".equals(member.getRole()) || (allowAdmin && "ADMIN".equals(member.getRole()));
+        if (!roleOk) {
+            throw new AccessDeniedException(allowAdmin
+                    ? "자원 요청은 담당 직원과 자원 관리자만 이용할 수 있습니다."
+                    : "자원 요청은 담당 직원(STAFF)만 할 수 있습니다.");
+        }
+        return member;
+    }
+
+    private boolean isAdmin(Member member) {
+        return "ADMIN".equals(member.getRole());
+    }
+}
