@@ -5,8 +5,8 @@ import {
 } from "lucide-react";
 import {
   REPORT_DISASTER_TYPES, REGION_OPTIONS, MIN_REPORT_DATE, formatDateTime, maskPhone,
-  STATUS_STYLE, STATUS_LABEL,
 } from "./constants";
+import { STATUS_LABEL, STATUS_STYLE } from "../../constants/status";
 
 export default function ReportsTab({
   reportError,

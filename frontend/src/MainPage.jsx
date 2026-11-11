@@ -20,7 +20,8 @@ import { getCurrentUser, authFetch, getNotifications } from "./api/client";
 import { connectIncidentSocket, connectSafetyCheckSocket, connectReportSocket } from "./api/socket";
 import { buildNotificationItems } from "./pages/MyPage/constants";
 import { useEscapeKey } from "./hooks/useEscapeKey";
-import { REPORT_STATE_LABEL, REPORT_STATE_STYLE, WEATHER_LOCATION_CACHE_KEY } from "./pages/Main/constants";
+import { WEATHER_LOCATION_CACHE_KEY } from "./pages/Main/constants";
+import { reportStateOf } from "./utils/reportState";
 import { readWeatherCachedLocation, distanceKm, pickPriorityIncident } from "./pages/Main/utils";
 import MainHeader from "./pages/Main/MainHeader";
 import MainHero from "./pages/Main/MainHero";
@@ -1017,17 +1018,6 @@ export default function MainPage() {
 
   // 제보 목록 모달용 - 연결 전/반려 제보까지 포함해서 실제 등장하는 재난유형을 보여준다.
   const trackingDisasterTypes = [...new Set(myReports.map((r) => r.disasterType).filter(Boolean))];
-
-  // 사건에 아직 연결되지 않은 제보의 현재 제보 상태를 그대로 표시한다.
-  // RECEIVED=등록, REVIEWING=검토중, REJECTED=반려
-  const reportStateOf = (report) => {
-    const code = report.status || (report.incidentId ? "LINKED" : "RECEIVED");
-    return {
-      code,
-      label: REPORT_STATE_LABEL[code] || code,
-      style: REPORT_STATE_STYLE[code] || REPORT_STATE_STYLE.RECEIVED,
-    };
-  };
 
   // 사건에 연결되지 않은 제보를 진행중 제보와 반려 제보로 분리한다.
   // 반려(REJECTED)는 더 이상 진행중이 아니므로 진행중 개수/탭에서 제외한다.

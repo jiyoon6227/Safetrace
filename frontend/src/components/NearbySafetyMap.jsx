@@ -9,15 +9,9 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { authFetch } from "../api/client";
+import { STATUS_LABEL } from "../constants/status";
 import { SIDO_SHORT_NAME } from "../utils/disasterRegion";
-
-const STATUS_LABEL = {
-  RECEIVED: "접수",
-  CONFIRMING: "확인중",
-  RESPONDING: "대응중",
-  RECOVERING: "복구중",
-  CLOSED: "종료",
-};
+import { LOCATION_CACHE_KEY, readCachedLocation } from "../utils/locationCache";
 
 const DEFAULT_CENTER = { lat: 36.5, lng: 127.8 };
 
@@ -79,23 +73,6 @@ function makeMyLocationElement() {
   marker.style.boxShadow =
     "0 0 0 7px rgba(37, 99, 235, .16), 0 4px 12px rgba(15, 35, 65, .28)";
   return marker;
-}
-
-
-const LOCATION_CACHE_KEY = "safetrace:last-location";
-
-function readCachedLocation() {
-  try {
-    const raw = window.sessionStorage.getItem(LOCATION_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    const lat = Number(parsed?.lat);
-    const lng = Number(parsed?.lng);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    return { lat, lng };
-  } catch {
-    return null;
-  }
 }
 
 export default function NearbySafetyMap({ mode = "compact", onOpenFullMap, focusIncidentId = null }) {

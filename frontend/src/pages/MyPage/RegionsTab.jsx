@@ -6,10 +6,12 @@ import {
 import { authFetch } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import {
-  REGION_LABELS, DISASTER_ICON, DISASTER_TYPE_STYLE,
-  SEVERITY_LABEL_KO, SEVERITY_STYLE, STATUS_LABEL_KO, REPORT_STATUS_DOT,
+  REGION_LABELS, DISASTER_TYPE_STYLE,
+  SEVERITY_LABEL_KO, SEVERITY_STYLE, REPORT_STATUS_DOT,
   formatDateTime, formatDateTimeFull,
 } from "./constants";
+import { DISASTER_ICON } from "../../constants/disaster";
+import { STATUS_LABEL as STATUS_LABEL_KO } from "../../constants/status";
 import {
   buildRegionQueries, fetchDistrictMessages, fetchSidoWideMessages, mergeDisasterMessages,
 } from "../../utils/disasterRegion";

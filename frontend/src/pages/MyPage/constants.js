@@ -10,12 +10,6 @@ import {
   Home,
   Heart,
   Clock,
-  Flame,
-  Droplets,
-  Mountain,
-  Wind,
-  Thermometer,
-  Snowflake,
   FileText,
   Building2,
 } from "lucide-react";
@@ -296,20 +290,6 @@ export const buildNotificationItems = ({
 
 
 /* ======================================================
-   사건 상태
-   접수 → 확인중 → 대응중 → 복구중 → 종료
-====================================================== */
-
-export const STATUS_LABEL_KO = {
-  RECEIVED: "접수",
-  CONFIRMING: "확인중",
-  RESPONDING: "대응중",
-  RECOVERING: "복구중",
-  CLOSED: "종료",
-};
-
-
-/* ======================================================
    다음 우편번호
 ====================================================== */
 
@@ -345,20 +325,6 @@ export function loadDaumPostcodeScript() {
 
 
 /* ======================================================
-   재난 유형 아이콘
-====================================================== */
-
-export const DISASTER_ICON = {
-  화재: Flame,
-  침수: Droplets,
-  산사태: Mountain,
-  강풍: Wind,
-  폭염: Thermometer,
-  한파: Snowflake,
-};
-
-
-/* ======================================================
    제보 상태
 
    등록 → 검토중 → 사건연결
@@ -367,13 +333,6 @@ export const DISASTER_ICON = {
    DB 상태값은 그대로 사용
    RECEIVED = 등록
 ====================================================== */
-
-export const REPORT_STATE_LABEL = {
-  RECEIVED: "등록",
-  REVIEWING: "검토중",
-  LINKED: "사건연결",
-  REJECTED: "반려",
-};
 
 export const REPORT_STATUS_FILTERS = [
   {
@@ -456,25 +415,6 @@ export const SEVERITY_STYLE = {
 
   LOW:
     "bg-blue-50 text-blue-600",
-};
-
-
-/* ======================================================
-   제보 상태 색상
-====================================================== */
-
-export const REPORT_STATE_STYLE = {
-  RECEIVED:
-    "bg-blue-50 text-blue-700",
-
-  REVIEWING:
-    "bg-amber-50 text-amber-700",
-
-  LINKED:
-    "bg-emerald-50 text-emerald-700",
-
-  REJECTED:
-    "bg-rose-50 text-rose-700",
 };
 
 

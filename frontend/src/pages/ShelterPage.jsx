@@ -11,23 +11,9 @@ import {
 } from "lucide-react";
 import { authFetch } from "../api/client";
 import ServicePageLayout from "../components/ServicePageLayout";
+import { LOCATION_CACHE_KEY, readCachedLocation } from "../utils/locationCache";
 
-const LOCATION_CACHE_KEY = "safetrace:last-location";
 const PAGE_SIZE = 6;
-
-function readCachedLocation() {
-  try {
-    const raw = window.sessionStorage.getItem(LOCATION_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    const lat = Number(parsed?.lat);
-    const lng = Number(parsed?.lng);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    return { lat, lng };
-  } catch {
-    return null;
-  }
-}
 
 function formatDistance(distanceM) {
   const value = Number(distanceM);

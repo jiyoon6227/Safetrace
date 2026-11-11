@@ -3,9 +3,10 @@ import {
   MapPin, AlertTriangle, User, Building2, Clock, Link2, Loader2, Camera,
 } from "lucide-react";
 import {
-  STATUS_LABEL, STATUS_STYLE, STATUS_ORDER, REPORT_DISASTER_TYPES, REGION_OPTIONS,
+  STATUS_ORDER, REPORT_DISASTER_TYPES, REGION_OPTIONS,
   MIN_REPORT_DATE, formatDateTime, withRo,
 } from "./constants";
+import { STATUS_LABEL, STATUS_STYLE } from "../../constants/status";
 
 export default function IncidentsTab({
   incidentCounts,

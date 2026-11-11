@@ -3,22 +3,6 @@ import {
   FileBarChart, Activity,
 } from "lucide-react";
 
-const STATUS_LABEL = {
-  RECEIVED: "접수",
-  CONFIRMING: "확인중",
-  RESPONDING: "대응중",
-  RECOVERING: "복구중",
-  CLOSED: "종료",
-};
-
-const STATUS_STYLE = {
-  RECEIVED: "bg-slate-200 text-slate-700",
-  CONFIRMING: "bg-sky-200 text-sky-800",
-  RESPONDING: "bg-rose-200 text-rose-800",
-  RECOVERING: "bg-yellow-200 text-yellow-800",
-  CLOSED: "bg-emerald-200 text-emerald-800",
-};
-
 const STATUS_ORDER = [
   "RECEIVED",
   "CONFIRMING",
@@ -338,8 +322,6 @@ const SIDO_CENTER = {
 };
 
 export {
-  STATUS_LABEL,
-  STATUS_STYLE,
   STATUS_ORDER,
   REPORT_DISASTER_TYPES,
   REGION_OPTIONS,

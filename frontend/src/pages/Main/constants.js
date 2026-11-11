@@ -1,5 +1,5 @@
 import {
-  Camera, CloudRain, Droplets, Flame, GraduationCap, Home, Mountain, Snowflake, Thermometer, Users, Waves, Wind,
+  Camera, CloudRain, Flame, GraduationCap, Home, Mountain, Snowflake, Thermometer, Users, Waves, Wind,
 } from "lucide-react";
 
 // ---- 색상/토큰 -----------------------------------------------------------
@@ -29,49 +29,6 @@ export const AI_SUGGESTED_QUESTIONS = [
   "가까운 대피시설은 어디야?",
   "침수 시 주의사항 알려줘.",
 ];
-
-// STAFF 화면(ControlBoard.jsx)과 같은 6단계 라벨/색 — 시민 화면에도 같은 기준으로 노출
-export const STATUS_LABEL = {
-  RECEIVED: "접수",
-  CONFIRMING: "확인중",
-  RESPONDING: "대응중",
-  RECOVERING: "복구중",
-  CLOSED: "종료",
-};
-
-export const STATUS_STYLE = {
-  RECEIVED: "bg-slate-200 text-slate-700",
-  CONFIRMING: "bg-sky-200 text-sky-800",
-  RESPONDING: "bg-rose-200 text-rose-800",
-  RECOVERING: "bg-yellow-200 text-yellow-800",
-  CLOSED: "bg-emerald-200 text-emerald-800",
-};
-
-// 제보 상태는 사건 상태와 분리해서 표시
-// 제보: 등록 -> 검토중 -> 사건연결 / 반려
-export const REPORT_STATE_LABEL = {
-  RECEIVED: "등록",
-  REVIEWING: "검토중",
-  LINKED: "사건연결",
-  REJECTED: "반려",
-};
-
-export const REPORT_STATE_STYLE = {
-  RECEIVED: "bg-blue-50 text-blue-700",
-  REVIEWING: "bg-amber-50 text-amber-700",
-  LINKED: "bg-emerald-50 text-emerald-700",
-  REJECTED: "bg-rose-50 text-rose-700",
-};
-
-// 제보 등록 폼(ReportForm.jsx)의 재난유형 값과 맞춘 아이콘 매핑
-export const DISASTER_ICON = {
-  화재: Flame,
-  침수: Droplets,
-  산사태: Mountain,
-  강풍: Wind,
-  폭염: Thermometer,
-  한파: Snowflake,
-};
 
 // 모달 상세화면 상단 배너 배경 (은은한 톤)
 export const STATUS_BANNER = {

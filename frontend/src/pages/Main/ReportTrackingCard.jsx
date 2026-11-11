@@ -2,7 +2,8 @@ import React from "react";
 import {
   Building2, Camera, ChevronRight, Clock, Droplets, MapPin, ShieldAlert,
 } from "lucide-react";
-import { STATUS_LABEL, STATUS_STYLE, DISASTER_ICON } from "./constants";
+import { DISASTER_ICON } from "../../constants/disaster";
+import { STATUS_LABEL, STATUS_STYLE } from "../../constants/status";
 import { formatDateTimeFull } from "./utils";
 
 // 내 현장제보 추적 카드

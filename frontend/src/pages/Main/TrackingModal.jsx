@@ -2,7 +2,9 @@ import React from "react";
 import {
   Bell, Camera, ChevronDown, ChevronLeft, ChevronRight, Clock, MapPin, ShieldAlert, X,
 } from "lucide-react";
-import { STATUS_LABEL, STATUS_STYLE, DISASTER_ICON, STATUS_BANNER, STATUS_DOT, DETAIL_PROGRESS_STEPS, DETAIL_STEP_BY_STATUS, STATUS_LOG_FALLBACK_TEXT } from "./constants";
+import { DISASTER_ICON } from "../../constants/disaster";
+import { STATUS_LABEL, STATUS_STYLE } from "../../constants/status";
+import { STATUS_BANNER, STATUS_DOT, DETAIL_PROGRESS_STEPS, DETAIL_STEP_BY_STATUS, STATUS_LOG_FALLBACK_TEXT } from "./constants";
 import { formatDateTime, formatDateTimeFull, formatRelativeTime } from "./utils";
 
 // 대응상황 추적 모달

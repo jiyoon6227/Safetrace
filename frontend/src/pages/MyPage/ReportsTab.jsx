@@ -3,10 +3,13 @@ import { MapPin, Camera, ChevronRight, X, XCircle, Clock, Search } from "lucide-
 import { authFetch } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import {
-  STATUS_LABEL_KO, DISASTER_ICON, REPORT_STATUS_FILTERS, REPORT_STATE_LABEL, REPORT_STATE_STYLE, DISASTER_TYPE_STYLE,
+  REPORT_STATUS_FILTERS, DISASTER_TYPE_STYLE,
   DISASTER_TYPE_TEXT_COLOR, REPORT_STATUS_STYLE, REPORT_STATUS_DOT,
   formatDateTime, formatDateTimeFull,
 } from "./constants";
+import { DISASTER_ICON } from "../../constants/disaster";
+import { STATUS_LABEL as STATUS_LABEL_KO } from "../../constants/status";
+import { reportStateOf } from "../../utils/reportState";
 
 // ---- 내 제보 내역 --------------------------------------------------------------
 
@@ -59,18 +62,6 @@ export default function ReportsTab({ reports = [], loading, onChanged }) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reports]);
-
-  // 제보 상태와 사건 상태를 분리한다.
-  // 제보: 등록 -> 검토중 -> 사건연결 / 반려
-  // 사건: 접수 -> 확인중 -> 대응중 -> 복구중 -> 종료
-  const reportStateOf = (report) => {
-    const code = report.status || (report.incidentId ? "LINKED" : "RECEIVED");
-    return {
-      code,
-      label: REPORT_STATE_LABEL[code] || code,
-      style: REPORT_STATE_STYLE[code] || REPORT_STATE_STYLE.RECEIVED,
-    };
-  };
 
   const incidentStateOf = (report) => {
     if (!report.incidentId) return null;
