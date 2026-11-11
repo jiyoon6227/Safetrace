@@ -2,6 +2,10 @@ package com.safetrace.service;
 
 import com.safetrace.domain.Incident;
 import com.safetrace.domain.Member;
+import com.safetrace.dto.DailyCount;
+import com.safetrace.dto.DailyIncidentStat;
+import com.safetrace.dto.DashboardStatsResponse;
+import com.safetrace.dto.TypeMonthlyCount;
 import com.safetrace.mapper.IncidentMapper;
 import com.safetrace.mapper.MemberMapper;
 import com.safetrace.websocket.IncidentWebSocketHandler;
@@ -9,6 +13,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -194,6 +200,85 @@ class IncidentServiceTest {
         List<Incident> result = incidentService.findRelatedIncidents("침수", 36.3504, 127.3845);
 
         assertEquals(List.of(near), result);
+    }
+
+    @Test
+    void 대시보드_일별통계는_0건인_날도_채워서_7일을_내려준다() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 11, 14, 30);
+        when(incidentMapper.selectDashboardSummary(anyLong(), any(), any(), any(), any()))
+                .thenReturn(new DashboardStatsResponse());
+        when(incidentMapper.countCreatedByDay(any(), any()))
+                .thenReturn(List.of(dailyCount("2026-11-05", 2), dailyCount("2026-11-11", 3)));
+        when(incidentMapper.countClosedByDay(any(), any()))
+                .thenReturn(List.of(dailyCount("2026-11-10", 1), dailyCount("2026-11-11", 4)));
+
+        List<DailyIncidentStat> daily = incidentService.getDashboardStats(now, 10L).getDaily();
+
+        assertEquals(7, daily.size());
+        assertEquals(new DailyIncidentStat("2026-11-05", 2, 0), daily.get(0));
+        assertEquals(new DailyIncidentStat("2026-11-06", 0, 0), daily.get(1));
+        assertEquals(new DailyIncidentStat("2026-11-10", 0, 1), daily.get(5));
+        assertEquals(new DailyIncidentStat("2026-11-11", 3, 4), daily.get(6));
+    }
+
+    @Test
+    void 대시보드_통계는_화면에서_보낸_현재시각으로_날짜경계를_잡는다() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 11, 0, 10);
+        when(incidentMapper.selectDashboardSummary(anyLong(), any(), any(), any(), any()))
+                .thenReturn(new DashboardStatsResponse());
+
+        incidentService.getDashboardStats(now, 10L);
+
+        verify(incidentMapper).selectDashboardSummary(
+                10L,
+                LocalDateTime.of(2026, 11, 11, 0, 0),
+                LocalDateTime.of(2026, 11, 12, 0, 0),
+                LocalDateTime.of(2026, 11, 10, 0, 0),
+                LocalDateTime.of(2026, 11, 8, 0, 10));
+        verify(incidentMapper).countCreatedByDay(
+                LocalDateTime.of(2026, 11, 5, 0, 0),
+                LocalDateTime.of(2026, 11, 12, 0, 0));
+        verify(incidentMapper).countClosedByDay(
+                LocalDateTime.of(2026, 11, 5, 0, 0),
+                LocalDateTime.of(2026, 11, 12, 0, 0));
+    }
+
+    @Test
+    void 사건이_없어도_대시보드_통계는_0건으로_내려준다() {
+        when(incidentMapper.selectDashboardSummary(anyLong(), any(), any(), any(), any())).thenReturn(null);
+
+        DashboardStatsResponse stats = incidentService.getDashboardStats(LocalDateTime.of(2026, 11, 11, 9, 0), 10L);
+
+        assertEquals(0, stats.getTotal());
+        assertEquals(7, stats.getDaily().size());
+        assertEquals(0, stats.getDaily().get(6).resolved());
+    }
+
+    @Test
+    void 유형별통계는_고정순서_7개로_내려주고_목록에_없는_유형은_기타로_합친다() {
+        when(incidentMapper.countByTypeForMonth(
+                LocalDateTime.of(2026, 10, 1, 0, 0),
+                LocalDateTime.of(2026, 11, 1, 0, 0),
+                LocalDateTime.of(2026, 12, 1, 0, 0)))
+                .thenReturn(List.of(
+                        new TypeMonthlyCount("화재", 3, 1),
+                        new TypeMonthlyCount("태풍", 2, 0),
+                        new TypeMonthlyCount("기타", 1, 2)));
+
+        List<TypeMonthlyCount> result = incidentService.getMonthlyTypeStats(YearMonth.of(2026, 11));
+
+        assertEquals(List.of("침수", "화재", "산사태", "강풍", "폭염", "한파", "기타"),
+                result.stream().map(TypeMonthlyCount::getDisasterType).toList());
+        assertEquals(new TypeMonthlyCount("침수", 0, 0), result.get(0));
+        assertEquals(new TypeMonthlyCount("화재", 3, 1), result.get(1));
+        assertEquals(new TypeMonthlyCount("기타", 3, 2), result.get(6));
+    }
+
+    private DailyCount dailyCount(String date, int count) {
+        DailyCount row = new DailyCount();
+        row.setStatDate(date);
+        row.setCnt(count);
+        return row;
     }
 
     private Incident incidentAt(Long incidentId, Double latitude, Double longitude) {

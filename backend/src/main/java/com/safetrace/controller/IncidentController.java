@@ -3,18 +3,23 @@ package com.safetrace.controller;
 import com.safetrace.domain.Incident;
 import com.safetrace.domain.IncidentLog;
 import com.safetrace.domain.Report;
+import com.safetrace.dto.DashboardStatsResponse;
 import com.safetrace.dto.IncidentCreateRequest;
 import com.safetrace.dto.IncidentLogPublicResponse;
 import com.safetrace.dto.IncidentPublicResponse;
 import com.safetrace.dto.IncidentStatusChangeRequest;
+import com.safetrace.dto.TypeMonthlyCount;
 import com.safetrace.service.IncidentService;
 import com.safetrace.service.ReportService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
 
@@ -81,13 +86,21 @@ public class IncidentController {
         return isStaff(authentication) ? logs : logs.stream().map(IncidentLogPublicResponse::from).toList();
     }
 
-    // 대시보드 "오늘 해결 완료" 카드용 - date 생략하면 오늘. 어제 값도 같이 조회해 전날 대비 추이(trend)에 씀
-    // 예: /api/incidents/stats/closed-count?date=2026-09-13
-    @GetMapping("/stats/closed-count")
+    // STAFF 전용 - 대시보드 카드/내 업무/지도 칩/최근 7일 통계
+    // now는 화면 기준 현재 시각 (서버 시간대와 어긋나지 않게). 예: /api/incidents/stats/dashboard?now=2026-11-11T14:30:00
+    @GetMapping("/stats/dashboard")
     @PreAuthorize("hasRole('STAFF')")
-    public int getClosedCount(@RequestParam(required = false) String date) {
-        java.time.LocalDate target = (date != null) ? java.time.LocalDate.parse(date) : java.time.LocalDate.now();
-        return incidentService.countClosedOn(target);
+    public DashboardStatsResponse getDashboardStats(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime now,
+            Authentication authentication) {
+        return incidentService.getDashboardStats(now, currentMemberId(authentication));
+    }
+
+    // STAFF 전용 - 대시보드 사건 유형별 통계 (선택 월 + 전월). 예: /api/incidents/stats/types?month=2026-11
+    @GetMapping("/stats/types")
+    @PreAuthorize("hasRole('STAFF')")
+    public List<TypeMonthlyCount> getMonthlyTypeStats(@RequestParam @DateTimeFormat(pattern = "yyyy-MM") YearMonth month) {
+        return incidentService.getMonthlyTypeStats(month);
     }
 
     // 시민 화면 - 내 제보가 연결된 사건의 현재 진행 상태 확인 (뱃지/모달용)

@@ -149,10 +149,9 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
   });
 
   const {
-    dashboardReceivedCount, stats, statCards, myTaskCards, mapStatusChips, dailyStats, dailyMax, typeTotal,
-    typeStats, recentActivity,
+    dashboardReceivedCount, stats, statCards, myTaskCards, mapStatusChips, dailyStats, dailyMax, recentActivity,
   } = useDashboardStats({
-    incidents, dashboardReports, today, currentUser, setActiveNav, setSelectedIncidentId,
+    incidents, dashboardReports, today, setActiveNav, setSelectedIncidentId,
     setIncidentSearchQuery, setIncidentStatusFilter, setIncidentTypeFilter, setIncidentRegionFilter,
     setIncidentSeverityFilter, setIncidentSortOrder, setIncidentPage,
   });
@@ -255,8 +254,6 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
             recentActivity={recentActivity}
             dailyStats={dailyStats}
             dailyMax={dailyMax}
-            typeTotal={typeTotal}
-            typeStats={typeStats}
             onOpenNotices={onOpenNotices}
           />
         )}

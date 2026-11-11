@@ -2,9 +2,13 @@ package com.safetrace.mapper;
 
 import com.safetrace.domain.Incident;
 import com.safetrace.domain.IncidentLog;
+import com.safetrace.dto.DailyCount;
+import com.safetrace.dto.DashboardStatsResponse;
+import com.safetrace.dto.TypeMonthlyCount;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Mapper
@@ -47,9 +51,25 @@ public interface IncidentMapper {
     // 특정 Incident의 전체 Timeline 조회 (시민 화면 "내 제보 추적"에 사용)
     List<IncidentLog> findLogsByIncidentId(@Param("incidentId") Long incidentId);
 
-    // 대시보드 "오늘 해결 완료" 카드용 - 특정 날짜에 CLOSED로 바뀐 건수.
-    // UPDATED_AT 대신 상태변경 이력 기준 (종료 후 다른 항목 수정 시 오집계 방지)
-    int countClosedOn(@Param("date") java.time.LocalDate date);
+    // 대시보드 상단 카드/내 업무/지도 칩 건수를 한 번에 집계 (daily는 비어 있음)
+    DashboardStatsResponse selectDashboardSummary(@Param("staffId") Long staffId,
+                                                  @Param("todayStart") LocalDateTime todayStart,
+                                                  @Param("tomorrowStart") LocalDateTime tomorrowStart,
+                                                  @Param("yesterdayStart") LocalDateTime yesterdayStart,
+                                                  @Param("longPendingBefore") LocalDateTime longPendingBefore);
+
+    // 기간 내 날짜별 사건 접수(생성) 건수 - 0건인 날은 결과에 없음
+    List<DailyCount> countCreatedByDay(@Param("fromStart") LocalDateTime fromStart,
+                                       @Param("toEnd") LocalDateTime toEnd);
+
+    // 기간 내 날짜별 처리완료 건수 - UPDATED_AT 대신 상태변경 이력 기준 (종료 후 다른 항목 수정 시 오집계 방지)
+    List<DailyCount> countClosedByDay(@Param("fromStart") LocalDateTime fromStart,
+                                      @Param("toEnd") LocalDateTime toEnd);
+
+    // 재난유형별 선택 월 / 전월 생성 건수 - 유형 분류(기타 합치기)는 서비스에서 처리
+    List<TypeMonthlyCount> countByTypeForMonth(@Param("prevMonthStart") LocalDateTime prevMonthStart,
+                                               @Param("monthStart") LocalDateTime monthStart,
+                                               @Param("nextMonthStart") LocalDateTime nextMonthStart);
 
     // 중복탐지용: 같은 재난유형 + 최근 N분 이내 발생한 Incident 후보 조회
     // 실제 거리 계산(하버사인 공식)은 서비스 로직에서 위경도로 계산

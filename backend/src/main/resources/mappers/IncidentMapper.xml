@@ -107,11 +107,65 @@
         ORDER BY CHANGED_AT ASC
     </select>
 
-    <!-- 특정 날짜에 CLOSED로 상태가 바뀐 건수 - 이력 기준이라 종료 후 다른 필드를 수정해도 영향 없음 -->
-    <select id="countClosedOn" resultType="int">
-        SELECT COUNT(*) FROM SF_INCIDENT_LOG
+    <!-- 대시보드 카드 집계 - 사건이 0건이면 SUM이 NULL이라 NVL로 0 처리 -->
+    <select id="selectDashboardSummary" resultType="com.safetrace.dto.DashboardStatsResponse">
+        SELECT COUNT(*) AS TOTAL,
+               NVL(SUM(CASE WHEN STATUS = 'RECEIVED'   THEN 1 ELSE 0 END), 0) AS RECEIVED_COUNT,
+               NVL(SUM(CASE WHEN STATUS = 'CONFIRMING' THEN 1 ELSE 0 END), 0) AS CONFIRMING_COUNT,
+               NVL(SUM(CASE WHEN STATUS = 'RESPONDING' THEN 1 ELSE 0 END), 0) AS RESPONDING_COUNT,
+               NVL(SUM(CASE WHEN STATUS = 'RECOVERING' THEN 1 ELSE 0 END), 0) AS RECOVERING_COUNT,
+               NVL(SUM(CASE WHEN STATUS = 'CLOSED'     THEN 1 ELSE 0 END), 0) AS CLOSED_COUNT,
+               NVL(SUM(CASE WHEN SEVERITY = 'HIGH' AND STATUS != 'CLOSED' THEN 1 ELSE 0 END), 0) AS URGENT_COUNT,
+               NVL(SUM(CASE WHEN ASSIGNED_STAFF_ID = #{staffId} AND STATUS != 'CLOSED' THEN 1 ELSE 0 END), 0) AS MY_ASSIGNED_COUNT,
+               NVL(SUM(CASE WHEN STATUS != 'CLOSED'
+                             AND COALESCE(UPDATED_AT, CREATED_AT) &lt;= #{longPendingBefore} THEN 1 ELSE 0 END), 0) AS LONG_PENDING_COUNT,
+               NVL(SUM(CASE WHEN STATUS = 'RECEIVED'
+                             AND UPDATED_AT &gt;= #{todayStart} AND UPDATED_AT &lt; #{tomorrowStart} THEN 1 ELSE 0 END), 0) AS RECEIVED_TODAY,
+               NVL(SUM(CASE WHEN STATUS = 'RECEIVED'
+                             AND UPDATED_AT &gt;= #{yesterdayStart} AND UPDATED_AT &lt; #{todayStart} THEN 1 ELSE 0 END), 0) AS RECEIVED_YESTERDAY,
+               NVL(SUM(CASE WHEN STATUS = 'CONFIRMING'
+                             AND UPDATED_AT &gt;= #{todayStart} AND UPDATED_AT &lt; #{tomorrowStart} THEN 1 ELSE 0 END), 0) AS CONFIRMING_TODAY,
+               NVL(SUM(CASE WHEN STATUS = 'CONFIRMING'
+                             AND UPDATED_AT &gt;= #{yesterdayStart} AND UPDATED_AT &lt; #{todayStart} THEN 1 ELSE 0 END), 0) AS CONFIRMING_YESTERDAY,
+               NVL(SUM(CASE WHEN STATUS = 'RESPONDING'
+                             AND UPDATED_AT &gt;= #{todayStart} AND UPDATED_AT &lt; #{tomorrowStart} THEN 1 ELSE 0 END), 0) AS RESPONDING_TODAY,
+               NVL(SUM(CASE WHEN STATUS = 'RESPONDING'
+                             AND UPDATED_AT &gt;= #{yesterdayStart} AND UPDATED_AT &lt; #{todayStart} THEN 1 ELSE 0 END), 0) AS RESPONDING_YESTERDAY,
+               NVL(SUM(CASE WHEN STATUS = 'RECOVERING'
+                             AND UPDATED_AT &gt;= #{todayStart} AND UPDATED_AT &lt; #{tomorrowStart} THEN 1 ELSE 0 END), 0) AS RECOVERING_TODAY,
+               NVL(SUM(CASE WHEN STATUS = 'RECOVERING'
+                             AND UPDATED_AT &gt;= #{yesterdayStart} AND UPDATED_AT &lt; #{todayStart} THEN 1 ELSE 0 END), 0) AS RECOVERING_YESTERDAY
+        FROM SF_INCIDENT
+    </select>
+
+    <!-- 날짜별 접수 건수 - WHERE는 범위 조건이라 CREATED_AT 인덱스 사용 가능 -->
+    <select id="countCreatedByDay" resultType="com.safetrace.dto.DailyCount">
+        SELECT TO_CHAR(CREATED_AT, 'YYYY-MM-DD') AS STAT_DATE, COUNT(*) AS CNT
+        FROM SF_INCIDENT
+        WHERE CREATED_AT &gt;= #{fromStart}
+          AND CREATED_AT &lt; #{toEnd}
+        GROUP BY TO_CHAR(CREATED_AT, 'YYYY-MM-DD')
+    </select>
+
+    <!-- 날짜별 처리완료 건수 - 이력 기준이라 종료 후 다른 필드를 수정해도 영향 없음 -->
+    <select id="countClosedByDay" resultType="com.safetrace.dto.DailyCount">
+        SELECT TO_CHAR(CHANGED_AT, 'YYYY-MM-DD') AS STAT_DATE, COUNT(*) AS CNT
+        FROM SF_INCIDENT_LOG
         WHERE NEW_STATUS = 'CLOSED'
-          AND TRUNC(CHANGED_AT) = #{date}
+          AND CHANGED_AT &gt;= #{fromStart}
+          AND CHANGED_AT &lt; #{toEnd}
+        GROUP BY TO_CHAR(CHANGED_AT, 'YYYY-MM-DD')
+    </select>
+
+    <!-- 재난유형별 선택 월 / 전월 건수 - 전월 1일 ~ 다음 달 1일 미만을 한 번에 읽어 나눠 셈 -->
+    <select id="countByTypeForMonth" resultType="com.safetrace.dto.TypeMonthlyCount">
+        SELECT DISASTER_TYPE,
+               NVL(SUM(CASE WHEN CREATED_AT &gt;= #{monthStart} THEN 1 ELSE 0 END), 0) AS CURRENT_COUNT,
+               NVL(SUM(CASE WHEN CREATED_AT &lt; #{monthStart} THEN 1 ELSE 0 END), 0) AS PREV_COUNT
+        FROM SF_INCIDENT
+        WHERE CREATED_AT &gt;= #{prevMonthStart}
+          AND CREATED_AT &lt; #{nextMonthStart}
+        GROUP BY DISASTER_TYPE
     </select>
 
     <!-- 중복탐지 1단계: 유형+시간으로 후보군을 좁힘. 거리 계산은 자바에서 처리 -->

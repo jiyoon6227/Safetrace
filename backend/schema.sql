@@ -357,6 +357,10 @@ COMMENT ON COLUMN SF_NOTICE.UPDATED_AT IS '최종 수정일시';
 
 -- 지역+상태로 사건 목록 조회할 때 자주 쓰이므로 복합 인덱스 생성
 CREATE INDEX IDX_SF_INCIDENT_REGION_STATUS ON SF_INCIDENT(REGION, STATUS);
+-- 대시보드 일별/월별 통계에서 생성일시 범위로 조회하므로 인덱스 생성
+CREATE INDEX IDX_SF_INCIDENT_CREATED_AT ON SF_INCIDENT(CREATED_AT);
+-- 처리완료(CLOSED) 이력을 날짜 범위로 집계할 때 쓰이므로 복합 인덱스 생성
+CREATE INDEX IDX_SF_INC_LOG_STATUS_TIME ON SF_INCIDENT_LOG(NEW_STATUS, CHANGED_AT);
 -- 재난유형+시간순으로 제보 조회/통계 낼 때 자주 쓰이므로 복합 인덱스 생성
 CREATE INDEX IDX_SF_REPORT_TYPE_TIME ON SF_REPORT(DISASTER_TYPE, CREATED_AT);
 -- 특정 회원 기준으로 가족 목록 조회할 때 자주 쓰이므로 인덱스 생성

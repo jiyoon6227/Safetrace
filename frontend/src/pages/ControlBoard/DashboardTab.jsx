@@ -33,8 +33,6 @@ export default function DashboardTab({
   recentActivity,
   dailyStats,
   dailyMax,
-  typeTotal,
-  typeStats,
   onOpenNotices,
 }) {
   const toggleLayer = (key) => setMapLayers((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -64,36 +62,34 @@ export default function DashboardTab({
     };
   }, []);
 
+  // 선택 월 / 전월 유형별 건수는 서버 집계 (7개 유형 고정 순서, 0건 포함)
+  // incidents가 새로 들어오면(새로고침·소켓 갱신) 같은 달도 다시 조회
+  const [typeMonthlyCounts, setTypeMonthlyCounts] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+
+    authFetch(`/api/incidents/stats/types?month=${statsMonth}`)
+      .then((data) => {
+        if (!cancelled) setTypeMonthlyCounts(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!cancelled) setTypeMonthlyCounts([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [statsMonth, incidents]);
+
   const statsSummary = useMemo(() => {
-    const fallbackTypes = ["침수", "화재", "산사태", "강풍", "폭염", "한파", "기타"];
-    const allTypes = Array.isArray(REPORT_DISASTER_TYPES) && REPORT_DISASTER_TYPES.length
-      ? REPORT_DISASTER_TYPES
-      : fallbackTypes;
+    // 응답 전에도 7개 유형 0건 행이 보이도록 기본 목록 사용
+    const sourceRows = typeMonthlyCounts.length
+      ? typeMonthlyCounts
+      : REPORT_DISASTER_TYPES.map((type) => ({ disasterType: type, currentCount: 0, prevCount: 0 }));
 
-    const [year, month] = statsMonth.split("-").map(Number);
-    const start = new Date(year, month - 1, 1);
-    const end = new Date(year, month, 1);
-    const prevStart = new Date(year, month - 2, 1);
+    const total = sourceRows.reduce((sum, row) => sum + row.currentCount, 0);
 
-    const current = Object.fromEntries(allTypes.map((type) => [type, 0]));
-    const previous = Object.fromEntries(allTypes.map((type) => [type, 0]));
-
-    incidents.forEach((incident) => {
-      const createdAt = new Date(incident.createdAt);
-      if (Number.isNaN(createdAt.getTime())) return;
-
-      const rawType = incident.disasterType || incident.type || "기타";
-      const type = allTypes.includes(rawType) ? rawType : "기타";
-
-      if (createdAt >= start && createdAt < end) current[type] += 1;
-      if (createdAt >= prevStart && createdAt < start) previous[type] += 1;
-    });
-
-    const total = Object.values(current).reduce((sum, count) => sum + count, 0);
-
-    const rows = allTypes.map((type) => {
-      const count = current[type] || 0;
-      const prevCount = previous[type] || 0;
+    const rows = sourceRows.map(({ disasterType: type, currentCount: count, prevCount }) => {
       const diff = count - prevCount;
       const pct = total > 0 ? Math.round((count / total) * 100) : 0;
 
@@ -103,7 +99,7 @@ export default function DashboardTab({
         pct,
         diff,
         changeText: diff > 0 ? `전월 +${diff}건` : diff < 0 ? `전월 ${diff}건` : "변동 없음",
-        color: DISASTER_TYPE_COLOR?.[type] || typeStats.find((t) => t.type === type)?.color || "#94A3B8",
+        color: DISASTER_TYPE_COLOR[type] || "#94A3B8",
       };
     });
 
@@ -111,7 +107,7 @@ export default function DashboardTab({
     const topType = maxCount > 0 ? rows.find((row) => row.count === maxCount)?.type : "-";
 
     return { total, rows, topType };
-  }, [incidents, statsMonth, typeStats]);
+  }, [typeMonthlyCounts]);
 
 
   return (

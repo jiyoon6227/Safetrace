@@ -4,6 +4,10 @@ import com.safetrace.domain.Incident;
 import com.safetrace.domain.IncidentLog;
 import com.safetrace.domain.IncidentStatus;
 import com.safetrace.domain.Member;
+import com.safetrace.dto.DailyCount;
+import com.safetrace.dto.DailyIncidentStat;
+import com.safetrace.dto.DashboardStatsResponse;
+import com.safetrace.dto.TypeMonthlyCount;
 import com.safetrace.mapper.IncidentMapper;
 import com.safetrace.mapper.MemberMapper;
 import com.safetrace.util.GeoUtils;
@@ -14,7 +18,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -32,6 +43,14 @@ public class IncidentService {
 
     // 대표(0번째) 포함 현장 사진은 최대 5장 - 전부 SF_INCIDENT_PHOTO 한 테이블에서만 관리
     private static final int MAX_PHOTOS = 5;
+
+    // 대시보드 통계 기준
+    private static final int LONG_PENDING_DAYS = 3;   // 3일 이상 상태 변경 없으면 장기 미처리
+    private static final int DAILY_STAT_DAYS = 7;     // 일별 사건 현황은 오늘 포함 최근 7일
+    private static final String OTHER_DISASTER_TYPE = "기타";
+    // 유형별 통계 표시 순서 (화면 제보 유형 목록과 동일)
+    private static final List<String> DASHBOARD_DISASTER_TYPES =
+            List.of("침수", "화재", "산사태", "강풍", "폭염", "한파", OTHER_DISASTER_TYPE);
 
     /**
      * 새 Incident 생성.
@@ -248,9 +267,72 @@ public class IncidentService {
         return incidentMapper.findLogsByIncidentId(incidentId);
     }
 
-    // 대시보드 "오늘 해결 완료" 카드용
-    public int countClosedOn(java.time.LocalDate date) {
-        return incidentMapper.countClosedOn(date);
+    /**
+     * 관제 대시보드 통계.
+     * 서버 시간대와 어긋나지 않도록 "오늘"은 화면에서 보낸 현재 시각(now) 기준으로 잡는다.
+     */
+    public DashboardStatsResponse getDashboardStats(LocalDateTime now, Long staffId) {
+        LocalDate today = now.toLocalDate();
+        LocalDateTime todayStart = today.atStartOfDay();
+        LocalDateTime tomorrowStart = today.plusDays(1).atStartOfDay();
+        LocalDateTime yesterdayStart = today.minusDays(1).atStartOfDay();
+        LocalDateTime longPendingBefore = now.minusDays(LONG_PENDING_DAYS);
+
+        DashboardStatsResponse stats = incidentMapper.selectDashboardSummary(
+                staffId, todayStart, tomorrowStart, yesterdayStart, longPendingBefore);
+        if (stats == null) {
+            stats = new DashboardStatsResponse();
+        }
+        stats.setDaily(buildDailyStats(today));
+        return stats;
+    }
+
+    // 오늘 포함 최근 7일 - GROUP BY 결과에 없는 날은 0건으로 채움
+    private List<DailyIncidentStat> buildDailyStats(LocalDate today) {
+        LocalDate from = today.minusDays(DAILY_STAT_DAYS - 1);
+        LocalDateTime fromStart = from.atStartOfDay();
+        LocalDateTime toEnd = today.plusDays(1).atStartOfDay();
+
+        Map<String, Integer> created = toCountMap(incidentMapper.countCreatedByDay(fromStart, toEnd));
+        Map<String, Integer> closed = toCountMap(incidentMapper.countClosedByDay(fromStart, toEnd));
+
+        List<DailyIncidentStat> daily = new ArrayList<>();
+        for (int i = 0; i < DAILY_STAT_DAYS; i++) {
+            String date = from.plusDays(i).toString();
+            daily.add(new DailyIncidentStat(date, created.getOrDefault(date, 0), closed.getOrDefault(date, 0)));
+        }
+        return daily;
+    }
+
+    private Map<String, Integer> toCountMap(List<DailyCount> rows) {
+        Map<String, Integer> map = new HashMap<>();
+        for (DailyCount row : rows) {
+            map.put(row.getStatDate(), row.getCnt());
+        }
+        return map;
+    }
+
+    /**
+     * 대시보드 "사건 유형별 통계" - 선택 월과 전월 건수.
+     * 고정 유형 7개를 항상 같은 순서로 내려주고, 목록에 없는 유형은 "기타"로 합친다.
+     */
+    public List<TypeMonthlyCount> getMonthlyTypeStats(YearMonth month) {
+        LocalDateTime monthStart = month.atDay(1).atStartOfDay();
+        LocalDateTime prevMonthStart = month.minusMonths(1).atDay(1).atStartOfDay();
+        LocalDateTime nextMonthStart = month.plusMonths(1).atDay(1).atStartOfDay();
+
+        Map<String, TypeMonthlyCount> byType = new LinkedHashMap<>();
+        for (String type : DASHBOARD_DISASTER_TYPES) {
+            byType.put(type, new TypeMonthlyCount(type, 0, 0));
+        }
+
+        for (TypeMonthlyCount row : incidentMapper.countByTypeForMonth(prevMonthStart, monthStart, nextMonthStart)) {
+            String type = byType.containsKey(row.getDisasterType()) ? row.getDisasterType() : OTHER_DISASTER_TYPE;
+            TypeMonthlyCount target = byType.get(type);
+            target.setCurrentCount(target.getCurrentCount() + row.getCurrentCount());
+            target.setPrevCount(target.getPrevCount() + row.getPrevCount());
+        }
+        return new ArrayList<>(byType.values());
     }
 
     public List<Incident> getActiveIncidentsByRegion(String region) {
