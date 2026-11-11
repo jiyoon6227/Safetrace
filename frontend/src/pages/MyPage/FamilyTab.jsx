@@ -98,8 +98,6 @@ export default function FamilyTab({ families, familiesLoading, onChanged, latest
 
   if (loading) return <p className="text-sm text-slate-400">불러오는 중...</p>;
 
-  const pendingSentCount = sent.filter((s) => s.status === "PENDING").length;
-
   // 화면에 한 목록으로 합쳐서 보여줄 항목들: 등록된 가족(ACCEPTED) + 내가 보낸 대기중 요청(PENDING)
   const combinedList = [
     ...families.map((f) => ({ ...f, kind: "ACCEPTED" })),

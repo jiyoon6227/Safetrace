@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { authFetch } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
-import { STATUS_LABEL, STATUS_ORDER } from "./constants";
+import { STATUS_ORDER } from "./constants";
 
 export function useIncidentDetail({
   incidents, resolveReportAddress,
@@ -121,15 +121,6 @@ export function useIncidentDetail({
     if (idx === -1 || idx === STATUS_ORDER.length - 1) return null;
     return STATUS_ORDER[idx + 1];
   })();
-
-  // 사건 상세의 "현장 조치 현황"은 별도 가짜 데이터를 만들지 않고
-  // 현재 상태와 가장 최근 진행 멘트를 요약해서 보여준다.
-  const latestIncidentLog = [...timeline]
-    .filter((log) => log?.changedAt)
-    .sort((a, b) => new Date(b.changedAt) - new Date(a.changedAt))[0];
-  const currentActionText = latestIncidentLog?.memo || (selectedIncident
-    ? `${STATUS_LABEL[selectedIncident.status] || selectedIncident.status} 단계가 진행 중입니다.`
-    : "-");
 
   return {
     selectedIncidentId, setSelectedIncidentId, selectedIncidentIdRef, timeline, linkedReports,

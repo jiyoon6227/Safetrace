@@ -390,7 +390,7 @@ function HorizontalBars({ rows, total, maxRows = 7 }) {
   if (!shown.length) return <EmptyChart />;
   return (
     <div className="space-y-3.5">
-      {shown.map((row, i) => (
+      {shown.map((row) => (
         <div key={row.label} className="group rounded-lg px-1 py-1 transition-colors hover:bg-slate-50">
           <div className="mb-1.5 flex items-center justify-between gap-2 text-[12px]">
             <span className="truncate font-bold text-slate-700 group-hover:text-[#0F2540]">{row.label}</span>

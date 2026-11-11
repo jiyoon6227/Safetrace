@@ -53,10 +53,6 @@ export default function PublicDisasterPage({
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [page, setPage] = useState(1);
 
-  const move = (pageName, state = {}) => {
-    if (typeof onNavigate === "function") onNavigate(pageName, state);
-  };
-
   const loadMessages = async () => {
     setLoading(true);
     setError("");

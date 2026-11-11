@@ -3,12 +3,6 @@ import {
   FileBarChart, Activity,
 } from "lucide-react";
 
-const SEVERITY_COLOR = {
-  HIGH: "#1f1b1b",
-  MEDIUM: "#F59E0B",
-  LOW: "#3B82F6",
-};
-
 const STATUS_LABEL = {
   RECEIVED: "접수",
   CONFIRMING: "확인중",
@@ -62,16 +56,6 @@ const REGION_OPTIONS = [
   "경상남도",
   "제주특별자치도",
 ];
-
-const REPORT_STATUS_LABEL = {
-  RECEIVED: "접수",
-  LINKED: "사건전환 완료",
-};
-
-const REPORT_STATUS_STYLE = {
-  RECEIVED: "bg-slate-200 text-slate-700",
-  LINKED: "bg-emerald-100 text-emerald-700",
-};
 
 const MIN_REPORT_DATE = "2020-01-01";
 
@@ -143,18 +127,6 @@ const maskPhone = (phone) => {
   const last = digits.slice(-4);
 
   return `${first}-****-${last}`;
-};
-
-const sameDay = (isoA, dateB) => {
-  if (!isoA) return false;
-
-  const a = new Date(isoA);
-
-  return (
-    a.getFullYear() === dateB.getFullYear() &&
-    a.getMonth() === dateB.getMonth() &&
-    a.getDate() === dateB.getDate()
-  );
 };
 
 const markerColorOf = (inc) => {
@@ -366,14 +338,11 @@ const SIDO_CENTER = {
 };
 
 export {
-  SEVERITY_COLOR,
   STATUS_LABEL,
   STATUS_STYLE,
   STATUS_ORDER,
   REPORT_DISASTER_TYPES,
   REGION_OPTIONS,
-  REPORT_STATUS_LABEL,
-  REPORT_STATUS_STYLE,
   MIN_REPORT_DATE,
   toDateInputValue,
   getDefaultDateRange,
@@ -381,7 +350,6 @@ export {
   formatDateTime,
   formatTimeAgo,
   maskPhone,
-  sameDay,
   markerColorOf,
   DISASTER_TYPE_COLOR,
   DISASTER_TYPE_EMOJI,

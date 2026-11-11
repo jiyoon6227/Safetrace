@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ArrowLeft,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -350,12 +349,6 @@ export default function NoticePage({ onBackToHome, onNavigate, initialNoticeId =
       setSelectedNotice(savedNotice);
     }
     await loadNotices();
-  };
-
-  const move = (pageName, state = {}) => {
-    if (typeof onNavigate === "function") {
-      onNavigate(pageName, state);
-    }
   };
 
   const sidebarItems = buildServiceSidebarItems("notices", onNavigate).map((item) =>

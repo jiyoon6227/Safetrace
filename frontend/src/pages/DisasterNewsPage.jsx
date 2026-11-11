@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ShieldAlert, Bell, ChevronRight, ArrowLeft, MapPin, Home, Users,
-  Camera, User, FileText, Search, CalendarDays, RefreshCw, Heart,
+  ShieldAlert, Bell, ChevronRight, ArrowLeft, MapPin, Users,
+  Camera, User, Search, CalendarDays, RefreshCw, Heart,
   CloudRain, Flame, Waves, Car, Info, AlertTriangle, X, SlidersHorizontal
 } from "lucide-react";
 import { authFetch } from "../api/client";

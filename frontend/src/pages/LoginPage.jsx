@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { ShieldAlert, User, Lock, Mail, Eye, EyeOff, ArrowRight, ShieldCheck, Search, Bell, X } from "lucide-react";
 
 // 아이디 찾기 - 이름+이메일 일치하면 가입한 이메일로 아이디를 보내줌

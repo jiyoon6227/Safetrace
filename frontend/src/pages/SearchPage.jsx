@@ -335,7 +335,7 @@ export default function SearchPage({ initialQuery = "", onNavigate }) {
         </form>
 
         <div className="mx-auto mt-7 grid max-w-[820px] grid-cols-5 border border-slate-300">
-          {TABS.map((tab, index) => (
+          {TABS.map((tab) => (
             <button
               key={tab.key}
               type="button"

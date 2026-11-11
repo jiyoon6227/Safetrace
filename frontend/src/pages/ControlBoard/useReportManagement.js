@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { authFetch } from "../../api/client";
-import { REPORT_DISASTER_TYPES, getDefaultDateRange } from "./constants";
+import { getDefaultDateRange } from "./constants";
 import { createDateRangeHandlers } from "./dateRangeFilter";
 
 export function useReportManagement({
@@ -185,14 +185,6 @@ export function useReportManagement({
   // 제보 관리
   // 사건으로 전환된 제보도 삭제하지 않고 원본 이력으로 계속 보관한다.
   // ----------------------------------------------------------------------
-  const unlinkedReports = reports.filter((r) => !r.incidentId);
-
-  // 전체 제보 기준 재난유형별 건수
-  const reportTypeCounts = REPORT_DISASTER_TYPES.reduce((acc, type) => {
-    acc[type] = reports.filter((r) => r.disasterType === type).length;
-    return acc;
-  }, {});
-
   const totalReports = reports.length;
   const receivedReports = reports.filter((r) => !r.incidentId && r.status === "RECEIVED").length;
   const linkedReportsCount = reports.filter((r) => !!r.incidentId || r.status === "LINKED").length;
@@ -242,13 +234,6 @@ export function useReportManagement({
         ? new Date(a.createdAt) - new Date(b.createdAt)
         : new Date(b.createdAt) - new Date(a.createdAt)
     );
-
-  // 오래 접수된 제보부터 번호 부여
-  const reportRank = new Map(
-    [...reports]
-      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-      .map((r, i) => [r.reportId, i + 1])
-  );
 
   const reportTotalPages = Math.max(1, Math.ceil(filteredReports.length / REPORT_PAGE_SIZE));
   const pagedReports = filteredReports.slice(

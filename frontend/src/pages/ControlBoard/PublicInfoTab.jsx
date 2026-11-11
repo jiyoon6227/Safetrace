@@ -146,19 +146,6 @@ const SHELTER_REGIONS = [
   { sido: "세종특별자치시", label: "세종" },
 ];
 
-// 카카오맵 자체 마커 대신 대시보드용 날씨 카드 위치를 고정해서
-// 서울/인천 등 인접 지역 카드가 서로 겹치지 않게 한다.
-const WEATHER_MAP_POSITIONS = {
-  서울: { left: "39%", top: "23%" },
-  인천: { left: "23%", top: "33%" },
-  강원: { left: "66%", top: "20%" },
-  대전: { left: "44%", top: "43%" },
-  대구: { left: "65%", top: "52%" },
-  광주: { left: "34%", top: "61%" },
-  부산: { left: "69%", top: "68%" },
-  제주: { left: "28%", top: "83%" },
-};
-
 const GRADE_ORDER = { 좋음: 1, 보통: 2, 나쁨: 3, 매우나쁨: 4 };
 
 const REGION_OPTIONS = [
@@ -921,43 +908,6 @@ function ShelterCompactList({ rows }) {
   );
 }
 
-function ShelterTable({ rows }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[720px] text-left">
-        <thead>
-          <tr className="border-b border-slate-100 text-[12px] font-bold text-slate-500">
-            <th className="pb-2.5 pr-4">시설명</th>
-            <th className="pb-2.5 pr-4">주소</th>
-            <th className="pb-2.5 pr-4 text-right w-[100px]">수용인원</th>
-            <th className="pb-2.5 text-right w-[80px]">거리</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.slice(0, 6).map((item, index) => (
-            <tr key={`${item.region}-${item.name}-${index}`} className="border-b border-slate-50 last:border-0">
-              <td className="py-2 pr-4">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                    <Home className="w-3.5 h-3.5" strokeWidth={2.3} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-bold text-[#0F2540] truncate">{item.name || "-"}</p>
-                    <p className="text-[10.5px] font-medium text-slate-400 mt-0.5">{item.region || "-"}</p>
-                  </div>
-                </div>
-              </td>
-              <td className="py-2 pr-4 text-[12px] leading-5 text-slate-500 max-w-[360px] truncate">{item.address || "-"}</td>
-              <td className="py-2 pr-4 text-[12px] font-semibold text-slate-600 text-right whitespace-nowrap">{formatCapacity(item.capacity)}</td>
-              <td className="py-2 text-[12px] font-medium text-slate-500 text-right whitespace-nowrap">{formatDistance(item.distanceM)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function ModalShell({ title, subtitle, onClose, children, maxWidth = "max-w-[900px]" }) {
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -1566,13 +1516,6 @@ function formatExternalDate(value) {
 function formatDate(date) {
   const pad = (number) => String(number).padStart(2, "0");
   return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function formatDistance(value) {
-  if (value == null || Number.isNaN(Number(value))) return "-";
-  const meters = Number(value);
-  if (meters >= 1000) return `${(meters / 1000).toFixed(1)}km`;
-  return `${Math.round(meters)}m`;
 }
 
 function formatCapacity(value) {

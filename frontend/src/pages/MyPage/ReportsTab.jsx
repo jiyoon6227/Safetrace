@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MapPin, Camera, ChevronRight, X, XCircle, Clock, Search, FileText } from "lucide-react";
+import { MapPin, Camera, ChevronRight, X, XCircle, Clock, Search } from "lucide-react";
 import { authFetch } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import {

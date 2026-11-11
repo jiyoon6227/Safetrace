@@ -3,11 +3,6 @@ import NearbySafetyMap from "../components/NearbySafetyMap";
 import ServicePageLayout from "../components/ServicePageLayout";
 
 export default function SafetyMapPage({ onBackToHome, onNavigate, focusIncidentId = null }) {
-  const move = (page, state = {}) => {
-    if (typeof onNavigate === "function") onNavigate(page, state);
-  };
-
-
   return (
     <ServicePageLayout
       activeNav="safety-map"
