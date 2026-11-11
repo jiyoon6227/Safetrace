@@ -16,6 +16,7 @@ import com.safetrace.websocket.IncidentWebSocketHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.time.LocalDate;
@@ -40,6 +41,7 @@ class IncidentServiceTest {
     private MemberMapper memberMapper;
     private IncidentWebSocketHandler webSocketHandler;
     private NotificationService notificationService;
+    private ResourceClosureService resourceClosureService;
 
     private IncidentService incidentService;
 
@@ -49,12 +51,14 @@ class IncidentServiceTest {
         memberMapper = mock(MemberMapper.class);
         webSocketHandler = mock(IncidentWebSocketHandler.class);
         notificationService = mock(NotificationService.class);
+        resourceClosureService = mock(ResourceClosureService.class);
 
         incidentService = new IncidentService(
                 incidentMapper,
                 memberMapper,
                 webSocketHandler,
-                notificationService
+                notificationService,
+                resourceClosureService
         );
     }
 
@@ -366,6 +370,96 @@ class IncidentServiceTest {
 
         assertNull(response.selectedIncluded());
         verify(incidentMapper, never()).countKeywordMatch(any(), any());
+    }
+
+    // ================= 7단계: 종료 연동 =================
+
+    @Test
+    void 종료_전환은_출고_전_요청_정리를_먼저_하고_그_뒤에_사건을_종료한다() {
+        Incident incident = incidentWithStatus("RECOVERING");
+        when(incidentMapper.findById(1L)).thenReturn(incident);
+        when(memberMapper.findById(10L)).thenReturn(activeStaff());
+        when(incidentMapper.closeIncident(1L, "RECOVERING", "조치 완료")).thenReturn(1);
+
+        incidentService.changeStatus(1L, "CLOSED", "조치 완료", 10L, List.of(5L, 6L));
+
+        InOrder order = inOrder(resourceClosureService, incidentMapper);
+        order.verify(resourceClosureService).cancelOpenRequestsForClose(1L, "RECOVERING", List.of(5L, 6L), 10L);
+        order.verify(incidentMapper).closeIncident(1L, "RECOVERING", "조치 완료");
+        order.verify(incidentMapper).insertLog(any());
+    }
+
+    @Test
+    void 기존_4개_인자_상태변경은_확인_목록_없이_종료_정리를_호출한다() {
+        Incident incident = incidentWithStatus("RECOVERING");
+        when(incidentMapper.findById(1L)).thenReturn(incident);
+        when(memberMapper.findById(10L)).thenReturn(activeStaff());
+        when(incidentMapper.closeIncident(1L, "RECOVERING", "조치 완료")).thenReturn(1);
+
+        incidentService.changeStatus(1L, "CLOSED", "조치 완료", 10L);
+
+        verify(resourceClosureService).cancelOpenRequestsForClose(1L, "RECOVERING", null, 10L);
+    }
+
+    @Test
+    void 종료가_아닌_전환은_종료_정리를_호출하지_않는다() {
+        Incident incident = incidentWithStatus("CONFIRMING");
+        when(incidentMapper.findById(1L)).thenReturn(incident);
+        when(memberMapper.findById(10L)).thenReturn(activeStaff());
+        when(incidentMapper.updateStatus(1L, "CONFIRMING", "RESPONDING")).thenReturn(1);
+
+        incidentService.changeStatus(1L, "RESPONDING", "현장 출동", 10L, List.of(5L));
+
+        verifyNoInteractions(resourceClosureService);
+        verify(incidentMapper).updateStatus(1L, "CONFIRMING", "RESPONDING");
+    }
+
+    @Test
+    void 종료_정리가_실패하면_사건을_종료하거나_이력을_남기지_않는다() {
+        Incident incident = incidentWithStatus("RECOVERING");
+        when(incidentMapper.findById(1L)).thenReturn(incident);
+        when(memberMapper.findById(10L)).thenReturn(activeStaff());
+        doThrow(new IllegalStateException("확인하지 않은 출고 전 요청이 있어 종료할 수 없습니다."))
+                .when(resourceClosureService).cancelOpenRequestsForClose(anyLong(), anyString(), any(), anyLong());
+
+        assertThrows(IllegalStateException.class,
+                () -> incidentService.changeStatus(1L, "CLOSED", "조치 완료", 10L, List.of()));
+
+        verify(incidentMapper, never()).closeIncident(anyLong(), anyString(), anyString());
+        verify(incidentMapper, never()).insertLog(any());
+        verifyNoInteractions(notificationService);
+    }
+
+    @Test
+    void 종료_사유가_없으면_종료_정리를_시작하기_전에_막는다() {
+        Incident incident = incidentWithStatus("RECOVERING");
+        when(incidentMapper.findById(1L)).thenReturn(incident);
+        when(memberMapper.findById(10L)).thenReturn(activeStaff());
+
+        assertThrows(IllegalStateException.class,
+                () -> incidentService.changeStatus(1L, "CLOSED", "  ", 10L, List.of(5L)));
+
+        verifyNoInteractions(resourceClosureService);
+    }
+
+    @Test
+    void 담당자가_아닌_STAFF의_종료_요청은_종료_정리를_호출하지_않는다() {
+        Incident incident = incidentWithStatus("RECOVERING");
+        when(incidentMapper.findById(1L)).thenReturn(incident);
+        when(memberMapper.findById(20L)).thenReturn(activeStaff());
+
+        assertThrows(AccessDeniedException.class,
+                () -> incidentService.changeStatus(1L, "CLOSED", "조치 완료", 20L, List.of(5L)));
+
+        verifyNoInteractions(resourceClosureService);
+    }
+
+    private Incident incidentWithStatus(String status) {
+        Incident incident = new Incident();
+        incident.setIncidentId(1L);
+        incident.setStatus(status);
+        incident.setAssignedStaffId(10L);
+        return incident;
     }
 
     private IncidentSearchCondition searchAndCaptureCondition(IncidentSearchRequest request) {

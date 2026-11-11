@@ -6,6 +6,7 @@ import com.safetrace.domain.Incident;
 import com.safetrace.domain.IncidentLog;
 import com.safetrace.dto.IncidentLogPublicResponse;
 import com.safetrace.dto.IncidentPublicResponse;
+import com.safetrace.dto.IncidentStatusChangeRequest;
 import com.safetrace.service.IncidentService;
 import com.safetrace.service.ReportService;
 import org.junit.jupiter.api.AfterEach;
@@ -29,7 +30,10 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class IncidentControllerTest {
@@ -142,6 +146,45 @@ class IncidentControllerTest {
     @Test
     void STAFF_근처조회는_기존_Incident를_반환한다() {
         assertSame(incident, incidentController.getNearby(37.5, 127.0, 5, staff()).get(0));
+    }
+
+    // ================= 7단계: 종료 연동 =================
+
+    @Test
+    void STAFF의_상태변경은_확인한_요청_번호와_로그인_ID를_서비스로_넘긴다() {
+        when(incidentService.changeStatus(1L, "CLOSED", "조치 완료", 10L, List.of(5L, 6L))).thenReturn(incident);
+        SecurityContextHolder.getContext().setAuthentication(staff());
+
+        Incident result = securedController().changeStatus(1L,
+                new IncidentStatusChangeRequest("CLOSED", "조치 완료", List.of(5L, 6L)), staff());
+
+        assertSame(incident, result);
+        verify(incidentService).changeStatus(1L, "CLOSED", "조치 완료", 10L, List.of(5L, 6L));
+    }
+
+    @Test
+    void 확인_목록_없이_보낸_기존_형식의_상태변경도_그대로_동작한다() {
+        when(incidentService.changeStatus(1L, "RESPONDING", "현장 출동", 10L, null)).thenReturn(incident);
+        SecurityContextHolder.getContext().setAuthentication(staff());
+
+        Incident result = securedController().changeStatus(1L,
+                new IncidentStatusChangeRequest("RESPONDING", "현장 출동"), staff());
+
+        assertSame(incident, result);
+    }
+
+    @Test
+    void 시민과_비로그인은_상태변경을_할수_없다() {
+        SecurityContextHolder.getContext().setAuthentication(user());
+        assertThrows(AccessDeniedException.class, () -> securedController().changeStatus(1L,
+                new IncidentStatusChangeRequest("CLOSED", "조치 완료", List.of(5L)), user()));
+
+        SecurityContextHolder.getContext().setAuthentication(new AnonymousAuthenticationToken(
+                "test", "anonymousUser", List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+        assertThrows(AccessDeniedException.class, () -> securedController().changeStatus(1L,
+                new IncidentStatusChangeRequest("CLOSED", "조치 완료", List.of(5L)), user()));
+
+        verify(incidentService, never()).changeStatus(any(), any(), any(), any(), any());
     }
 
     // @PreAuthorize가 실제로 적용되는 프록시

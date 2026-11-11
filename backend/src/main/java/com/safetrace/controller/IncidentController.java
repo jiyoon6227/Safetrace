@@ -148,13 +148,14 @@ public class IncidentController {
 
     // STAFF 전용 - 상태 전이 (Workflow 핵심 API)
     // body 예시: { "status": "RESPONDING", "memo": "현장 도착, 도로 통제 시작" }
+    // 종료(CLOSED)할 때 출고 전 자원 요청이 있으면 cancelRequestIds에 화면에서 확인한 요청 번호를 함께 보낸다 (종료 전 확인 목록: closure-preview)
     @PatchMapping("/{incidentId}/status")
     @PreAuthorize("hasRole('STAFF')")
     public Incident changeStatus(@PathVariable Long incidentId,
                                   @RequestBody @Valid IncidentStatusChangeRequest request,
                                   Authentication authentication) {
         Long staffId = currentMemberId(authentication);
-        return incidentService.changeStatus(incidentId, request.status(), request.memo(), staffId);
+        return incidentService.changeStatus(incidentId, request.status(), request.memo(), staffId, request.cancelRequestIds());
     }
 
     // STAFF 전용 - 관련 있을 만한 기존 Incident 후보 조회 (중복탐지)

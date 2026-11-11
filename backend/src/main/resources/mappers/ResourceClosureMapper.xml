@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.safetrace.mapper.ResourceClosureMapper">
+
+    <!-- 잠금용 조회: 조인 없이 요청 한 테이블만 읽는다. 사건 행을 잠근 뒤에 실행하므로 이 사이 새 요청이 생기지 않는다 -->
+    <select id="lockOpenRequests" resultType="ResourceRequest">
+        SELECT REQUEST_ID, STOCK_ID, REQUESTER_ID, QUANTITY, STATUS
+        FROM SF_RESOURCE_REQUEST
+        WHERE INCIDENT_ID = #{incidentId}
+          AND STATUS IN ('REQUESTED', 'APPROVED')
+        ORDER BY REQUEST_ID
+        FOR UPDATE WAIT 3
+    </select>
+
+    <select id="countOpenRequests" resultType="int">
+        SELECT COUNT(*)
+        FROM SF_RESOURCE_REQUEST
+        WHERE INCIDENT_ID = #{incidentId}
+          AND STATUS IN ('REQUESTED', 'APPROVED')
+    </select>
+
+    <select id="findOpenRequests" resultType="ResourceRequest">
+        SELECT R.REQUEST_ID, R.INCIDENT_ID, R.STOCK_ID, S.DEPARTMENT_ID, D.NAME AS DEPARTMENT_NAME,
+               S.ITEM_ID, I.NAME AS ITEM_NAME, I.CATEGORY, I.UNIT, I.RETURNABLE,
+               R.REQUESTER_ID, M.NAME AS REQUESTER_NAME,
+               R.QUANTITY, R.STATUS, R.REASON, R.NEEDED_AT, R.CREATED_AT
+        FROM SF_RESOURCE_REQUEST R
+        JOIN SF_RESOURCE_STOCK S ON S.STOCK_ID = R.STOCK_ID
+        JOIN SF_DEPARTMENT D ON D.DEPARTMENT_ID = S.DEPARTMENT_ID
+        JOIN SF_RESOURCE_ITEM I ON I.ITEM_ID = S.ITEM_ID
+        JOIN SF_MEMBER M ON M.MEMBER_ID = R.REQUESTER_ID
+        WHERE R.INCIDENT_ID = #{incidentId}
+          AND R.STATUS IN ('REQUESTED', 'APPROVED')
+        ORDER BY R.REQUEST_ID
+    </select>
+
+    <select id="countDispatched" resultType="int">
+        SELECT COUNT(*)
+        FROM SF_RESOURCE_REQUEST
+        WHERE INCIDENT_ID = #{incidentId}
+          AND STATUS = 'DISPATCHED'
+    </select>
+
+</mapper>

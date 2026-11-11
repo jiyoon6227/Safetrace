@@ -40,6 +40,7 @@ public class IncidentService {
     private final MemberMapper memberMapper;
     private final IncidentWebSocketHandler webSocketHandler;
     private final NotificationService notificationService;
+    private final ResourceClosureService resourceClosureService;
 
     // 중복 제보 판단 기준: 반경 500m, 30분 이내
     private static final double DUPLICATE_RADIUS_METERS = 500.0;
@@ -105,9 +106,17 @@ public class IncidentService {
      *  - 담당자 미배정 시 어떤 상태로도 전환 불가 (먼저 담당자 배정부터)
      *  - 단계를 건너뛸 수 없음 (IncidentStatus.canTransitionTo에서 검증)
      *  - CLOSED 전환 시 조치내역(memo) 필수
+     *  - CLOSED 전환 시 출고 전 자원 요청(REQUESTED·APPROVED)을 같은 트랜잭션에서 취소한다 (cancelRequestIds로 확인한 목록 안에 있어야 한다)
      */
     @Transactional
     public Incident changeStatus(Long incidentId, String targetStatusStr, String memo, Long staffId) {
+        return changeStatus(incidentId, targetStatusStr, memo, staffId, null);
+    }
+
+    // 종료 확인 목록(cancelRequestIds)을 함께 받는 상태 전이. 목록은 CLOSED 전환에서만 쓰인다.
+    @Transactional
+    public Incident changeStatus(Long incidentId, String targetStatusStr, String memo, Long staffId,
+                                 List<Long> cancelRequestIds) {
         Incident incident = incidentMapper.findById(incidentId);
         if (incident == null) {
             throw new IllegalArgumentException("존재하지 않는 Incident 입니다: " + incidentId);
@@ -148,6 +157,13 @@ public class IncidentService {
 
         if (target == IncidentStatus.CLOSED && (memo == null || memo.isBlank())) {
             throw new IllegalStateException("종료 처리에는 조치내역(종료사유)이 필요합니다.");
+        }
+
+        // 종료할 때는 먼저 출고 전 자원 요청을 정리한다 (사건 행 잠금 → 요청 잠금 → 재고 복구).
+        // 확인하지 않은 출고 전 요청이 있으면 409로 전체를 되돌리고, 출고 전 요청이 없으면 아무것도 바꾸지 않는다.
+        // 출고된 자원(DISPATCHED)은 종료를 막지 않고 미반납으로 남는다.
+        if (target == IncidentStatus.CLOSED) {
+            resourceClosureService.cancelOpenRequestsForClose(incidentId, current.name(), cancelRequestIds, staffId);
         }
 
         // 읽은 시점의 상태(current)가 아직 그대로일 때만 변경 (같은 요청 중복 방지)
