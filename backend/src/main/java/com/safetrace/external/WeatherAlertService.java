@@ -115,6 +115,9 @@ public class WeatherAlertService {
                 if (type.isBlank()) type = detectWeatherType(item);
                 if (level.isBlank()) level = detectLevel(item);
 
+                // 종류·등급을 하나도 못 찾았다면 "o 없음" 같은 '특보 없음' 안내 문장이므로 특보로 세지 않는다.
+                if (type.isBlank() && level.isBlank()) continue;
+
                 String rawText = flattenText(item);
 
                 // 특보현황 API는 한 항목의 지역 필드에 여러 구역을 쉼표로 묶어서 내려줄 수 있다.
