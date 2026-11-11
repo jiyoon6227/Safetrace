@@ -1,5 +1,6 @@
 package com.safetrace.config;
 
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -41,5 +42,14 @@ public class GlobalExceptionHandler {
             message = "권한이 없습니다.";
         }
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", message));
+    }
+
+    // DB 락 대기 시간 초과(ORA-30006·ORA-00054)나 교착(ORA-00060)은 재고 부족 같은 업무 규칙 위반이 아니라
+    // 다른 처리와 동시에 부딪힌 일시적 충돌이다. 같은 409지만 code로 구분하고, 다시 시도하라고 안내한다.
+    @ExceptionHandler(PessimisticLockingFailureException.class)
+    public ResponseEntity<Map<String, String>> handleLockFailure(PessimisticLockingFailureException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "code", "LOCK_CONFLICT",
+                "message", "다른 처리와 겹쳤습니다. 잠시 후 다시 시도해 주세요."));
     }
 }

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.safetrace.mapper.ResourceMapper">
+
+    <sql id="stockColumns">
+        S.STOCK_ID,
+        S.DEPARTMENT_ID,
+        D.NAME AS DEPARTMENT_NAME,
+        S.ITEM_ID,
+        I.NAME AS ITEM_NAME,
+        I.CATEGORY,
+        I.UNIT,
+        I.RETURNABLE,
+        S.TOTAL_QTY,
+        S.AVAILABLE_QTY,
+        S.STATUS,
+        S.UPDATED_AT
+    </sql>
+
+    <select id="findItems" resultType="ResourceItem">
+        SELECT ITEM_ID, NAME, CATEGORY, UNIT, RETURNABLE, DESCRIPTION, CREATED_AT
+        FROM SF_RESOURCE_ITEM
+        ORDER BY ITEM_ID
+    </select>
+
+    <select id="findStocks" resultType="ResourceStock">
+        SELECT <include refid="stockColumns"/>
+        FROM SF_RESOURCE_STOCK S
+        JOIN SF_DEPARTMENT D ON D.DEPARTMENT_ID = S.DEPARTMENT_ID
+        JOIN SF_RESOURCE_ITEM I ON I.ITEM_ID = S.ITEM_ID
+        <where>
+            <if test="!includeInactive">
+                S.STATUS = 'ACTIVE'
+            </if>
+            <if test="departmentId != null">
+                AND S.DEPARTMENT_ID = #{departmentId}
+            </if>
+            <if test="itemId != null">
+                AND S.ITEM_ID = #{itemId}
+            </if>
+            <if test="category != null">
+                AND I.CATEGORY = #{category}
+            </if>
+        </where>
+        ORDER BY S.DEPARTMENT_ID, S.ITEM_ID
+    </select>
+
+    <select id="findStockById" resultType="ResourceStock">
+        SELECT <include refid="stockColumns"/>
+        FROM SF_RESOURCE_STOCK S
+        JOIN SF_DEPARTMENT D ON D.DEPARTMENT_ID = S.DEPARTMENT_ID
+        JOIN SF_RESOURCE_ITEM I ON I.ITEM_ID = S.ITEM_ID
+        WHERE S.STOCK_ID = #{stockId}
+    </select>
+
+    <!-- 안쪽에서 최신순 정렬 후 바깥에서 ROWNUM으로 자른다 (오래된 Oracle 버전에서도 동작) -->
+    <select id="findStockLogs" resultType="ResourceStockLog">
+        SELECT LOG_ID, STOCK_ID, ACTION, TOTAL_BEFORE, TOTAL_AFTER, AVAILABLE_BEFORE, AVAILABLE_AFTER,
+               REQUEST_ID, REASON, CHANGED_BY, CHANGED_BY_NAME, CHANGED_AT
+        FROM (
+            SELECT L.LOG_ID, L.STOCK_ID, L.ACTION, L.TOTAL_BEFORE, L.TOTAL_AFTER,
+                   L.AVAILABLE_BEFORE, L.AVAILABLE_AFTER, L.REQUEST_ID, L.REASON,
+                   L.CHANGED_BY, M.NAME AS CHANGED_BY_NAME, L.CHANGED_AT
+            FROM SF_RESOURCE_STOCK_LOG L
+            JOIN SF_MEMBER M ON M.MEMBER_ID = L.CHANGED_BY
+            WHERE L.STOCK_ID = #{stockId}
+            ORDER BY L.LOG_ID DESC
+        )
+        WHERE ROWNUM &lt;= #{limit}
+    </select>
+
+</mapper>
