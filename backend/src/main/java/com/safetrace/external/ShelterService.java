@@ -26,6 +26,7 @@ import java.util.Map;
  */
 @Service
 public class ShelterService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ShelterService.class);
 
     private static final String BASE_URL = "https://apis.data.go.kr/1741000/civil_defense_shelter_info/info";
 
@@ -64,12 +65,15 @@ public class ShelterService {
             JsonNode header = root.path("response").path("header");
             String resultCode = header.path("resultCode").asText("");
             if (!("0".equals(resultCode) || "00".equals(resultCode))) {
+                log.warn("대피시설 요약 API 오류 응답: httpStatus={}, resultCode={}, resultMsg={}",
+                        response.statusCode(), resultCode, header.path("resultMsg").asText());
                 return Map.of("available", false);
             }
 
             JsonNode body = root.path("response").path("body");
             long totalCount = body.path("totalCount").asLong(-1L);
             if (totalCount < 0) {
+                log.warn("대피시설 요약 API: totalCount 없음, httpStatus={}", response.statusCode());
                 return Map.of("available", false);
             }
 
@@ -78,9 +82,11 @@ public class ShelterService {
                     "totalCount", totalCount
             );
         } catch (HttpTimeoutException e) {
+            log.warn("대피시설 요약 API 타임아웃(5초 초과)");
             return Map.of("available", false);
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.warn("대피시설 요약 API 호출 실패: 원인={}", e.toString());
             return Map.of("available", false);
         }
     }
@@ -228,10 +234,13 @@ public class ShelterService {
             JsonNode root = objectMapper.readTree(response.body());
             JsonNode header = root.path("response").path("header");
             if (!"0".equals(header.path("resultCode").asText())) {
+                log.warn("대피시설 API 오류 응답: guName={}, resultCode={}, resultMsg={}",
+                        guName, header.path("resultCode").asText(), header.path("resultMsg").asText());
                 return List.of();
             }
 
             JsonNode items = root.path("response").path("body").path("items").path("item");
+            log.info("대피시설 API 응답: guName={}, 받은 건수={}", guName, items.isArray() ? items.size() : 0);
             List<Map<String, Object>> shelters = new ArrayList<>();
             if (items.isArray()) {
                 for (JsonNode item : items) {
@@ -257,8 +266,10 @@ public class ShelterService {
             shelters.sort(Comparator.comparingDouble(s -> ((Number) s.get("distanceM")).doubleValue()));
             return shelters.size() > limit ? shelters.subList(0, limit) : shelters;
         } catch (HttpTimeoutException e) {
+            log.warn("대피시설 API 타임아웃(5초 초과): guName={}", guName);
             return List.of();
         } catch (IOException | InterruptedException e) {
+            log.warn("대피시설 API 호출 실패: guName={}, 원인={}", guName, e.toString());
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             return List.of();
         }
