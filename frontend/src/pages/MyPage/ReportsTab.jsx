@@ -13,7 +13,7 @@ import { reportStateOf } from "../../utils/reportState";
 
 // ---- 내 제보 내역 --------------------------------------------------------------
 
-export default function ReportsTab({ reports = [], loading, onChanged }) {
+export default function ReportsTab({ reports = [], loading }) {
   const [incidentInfo, setIncidentInfo] = useState({});
   const [filter, setFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");

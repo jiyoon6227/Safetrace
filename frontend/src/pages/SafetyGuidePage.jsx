@@ -29,7 +29,6 @@ const ICONS = {
 
 export default function SafetyGuidePage({
   initialGuideKey = "FLOOD",
-  onBackToHome,
   onOpenShelters,
   onNavigate,
 }) {

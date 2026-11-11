@@ -80,7 +80,7 @@ function createLocationMarker() {
   return el;
 }
 
-export default function ShelterPage({ initialRegionId, initialFocusShelter, onBackToHome, onLogin, onNavigate }) {
+export default function ShelterPage({ initialRegionId, initialFocusShelter, onNavigate }) {
   const [location, setLocation] = useState(() => readCachedLocation());
   const [locationLabel, setLocationLabel] = useState("현재 위치");
   const [locating, setLocating] = useState(false);

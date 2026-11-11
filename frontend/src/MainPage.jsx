@@ -1381,8 +1381,6 @@ export default function MainPage() {
             key={location.search}
             initialRegionId={readNumberParam(searchParams, "shelterRegionId")}
             initialFocusShelter={shelterFocus}
-            onBackToHome={() => goTo("home")}
-            onLogin={() => goTo("login")}
             onNavigate={goTo}
           />
         )}
@@ -1393,7 +1391,6 @@ export default function MainPage() {
           <SafetyGuidePage
             key={location.search}
             initialGuideKey={searchParams.get("safetyGuideKey") || "FLOOD"}
-            onBackToHome={() => goTo("home")}
             onOpenShelters={() => goTo("shelters")}
             onNavigate={goTo}
           />
@@ -1404,7 +1401,6 @@ export default function MainPage() {
         element={renderWithFooter(
           <SafetyMapPage
             key={location.search}
-            onBackToHome={() => goTo("home")}
             onNavigate={goTo}
             focusIncidentId={readNumberParam(searchParams, "focusIncidentId")}
           />
@@ -1416,7 +1412,6 @@ export default function MainPage() {
           <PublicDisasterPage
             key={location.search}
             initialMessageSn={searchParams.get("disasterSn")}
-            onBackToHome={() => goTo("home")}
             onOpenShelters={() => goTo("shelters", { shelterRegionId: null })}
             onOpenReport={() => requireLogin(() => goTo("home", { openReport: true }))}
             onNavigate={goTo}
@@ -1485,7 +1480,6 @@ export default function MainPage() {
           <NoticePage
             key={location.search}
             initialNoticeId={readNumberParam(searchParams, "noticeId")}
-            onBackToHome={() => goTo("home")}
             onNavigate={goTo}
           />
         )}

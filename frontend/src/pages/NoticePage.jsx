@@ -244,7 +244,7 @@ function NoticeFormModal({ initialNotice, onClose, onSaved }) {
   );
 }
 
-export default function NoticePage({ onBackToHome, onNavigate, initialNoticeId = null }) {
+export default function NoticePage({ onNavigate, initialNoticeId = null }) {
   const currentUser = getCurrentUser();
   const isStaff = currentUser?.role === "STAFF";
 

@@ -39,7 +39,6 @@ function DisasterTypeBadge({ message }) {
 
 export default function PublicDisasterPage({
   initialMessageSn,
-  onBackToHome,
   onOpenShelters,
   onOpenReport,
   onNavigate,

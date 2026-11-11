@@ -18,7 +18,7 @@ import {
 
 // ---- 관심 지역 --------------------------------------------------------------
 
-export default function RegionsTab({ regions = [], onChanged, member, onOpenShelters, onOpenSafetyNews, refreshSignal }) {
+export default function RegionsTab({ regions = [], onChanged, onOpenShelters, onOpenSafetyNews, refreshSignal }) {
   const [selectedLabel, setSelectedLabel] = useState("관심지역");
   const [geocoding, setGeocoding] = useState(false);
   const [error, setError] = useState("");

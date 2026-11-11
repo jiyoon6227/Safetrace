@@ -250,7 +250,6 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
             loading={loading}
             incidents={incidents}
             setActiveNav={setActiveNav}
-            openIncidentDetail={openIncidentDetail}
             recentActivity={recentActivity}
             dailyStats={dailyStats}
             dailyMax={dailyMax}

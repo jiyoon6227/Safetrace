@@ -29,7 +29,6 @@ export default function DashboardTab({
   loading,
   incidents,
   setActiveNav,
-  openIncidentDetail,
   recentActivity,
   dailyStats,
   dailyMax,

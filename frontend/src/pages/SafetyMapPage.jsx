@@ -2,7 +2,7 @@ import React from "react";
 import NearbySafetyMap from "../components/NearbySafetyMap";
 import ServicePageLayout from "../components/ServicePageLayout";
 
-export default function SafetyMapPage({ onBackToHome, onNavigate, focusIncidentId = null }) {
+export default function SafetyMapPage({ onNavigate, focusIncidentId = null }) {
   return (
     <ServicePageLayout
       activeNav="safety-map"

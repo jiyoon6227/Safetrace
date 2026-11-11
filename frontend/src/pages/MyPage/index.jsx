@@ -463,8 +463,8 @@ export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenS
           <FamilyTab key={refreshSignal} families={families} familiesLoading={familiesLoading} onChanged={loadFamilies} latestStatusFor={latestStatusFor} />
         )}
         {activeTab === "safety" && <SafetyTab key={refreshSignal} sentChecks={sentChecks} receivedChecks={receivedChecks} families={families} onChanged={loadSafetyChecks} />}
-        {activeTab === "reports" && <ReportsTab key={refreshSignal} reports={myReports} loading={reportsLoading} onChanged={loadReports} />}
-        {activeTab === "regions" && <RegionsTab key={refreshSignal} regions={regions} onChanged={loadRegions} member={member} onOpenShelters={onOpenShelters} onOpenSafetyNews={onOpenSafetyNews} refreshSignal={refreshSignal} />}
+        {activeTab === "reports" && <ReportsTab key={refreshSignal} reports={myReports} loading={reportsLoading} />}
+        {activeTab === "regions" && <RegionsTab key={refreshSignal} regions={regions} onChanged={loadRegions} onOpenShelters={onOpenShelters} onOpenSafetyNews={onOpenSafetyNews} refreshSignal={refreshSignal} />}
         {activeTab === "notify" && (
           <NotifyTab
             key={refreshSignal}
