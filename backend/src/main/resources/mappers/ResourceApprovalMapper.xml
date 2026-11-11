@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.safetrace.mapper.ResourceApprovalMapper">
+
+    <!-- 잠금용 조회: 조인 없이 요청 한 테이블만 읽는다 (조인하면 다른 테이블 행까지 잠글 수 있음) -->
+    <select id="lockRequest" resultType="ResourceRequest">
+        SELECT REQUEST_ID, INCIDENT_ID, STOCK_ID, REQUESTER_ID, QUANTITY, STATUS
+        FROM SF_RESOURCE_REQUEST
+        WHERE REQUEST_ID = #{requestId}
+        FOR UPDATE WAIT 3
+    </select>
+
+    <!-- 잠금 없는 읽기: 승인은 사건 행을 잠그지 않는다 (잠금 순서 사건 → 요청 → 재고에서 사건 단계를 건너뛰어도 순환은 생기지 않는다) -->
+    <select id="findIncidentStatus" resultType="string">
+        SELECT STATUS FROM SF_INCIDENT WHERE INCIDENT_ID = #{incidentId}
+    </select>
+
+    <!-- 상태가 expectedStatus일 때만 바꾼다. 0행이면 이미 다른 처리가 끝난 것 (중복 승인·중복 취소 방어) -->
+    <update id="updateRequestStatus">
+        UPDATE SF_RESOURCE_REQUEST
+        SET STATUS = #{newStatus},
+            REJECT_REASON = #{rejectReason,jdbcType=VARCHAR},
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE REQUEST_ID = #{requestId}
+          AND STATUS = #{expectedStatus}
+    </update>
+
+    <!-- 가용이 모자라거나 사용 중지면 0행. CK_SF_RES_STOCK_AVAILABLE(가용 0 이상)이 마지막 방어선 -->
+    <update id="reserveStock">
+        UPDATE SF_RESOURCE_STOCK
+        SET AVAILABLE_QTY = AVAILABLE_QTY - #{quantity},
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE STOCK_ID = #{stockId}
+          AND STATUS = 'ACTIVE'
+          AND AVAILABLE_QTY &gt;= #{quantity}
+    </update>
+
+    <!-- 복구 후 가용이 총보유량을 넘으면 0행 (같은 취소가 두 번 반영되는 것을 막는 마지막 방어선) -->
+    <update id="releaseStock">
+        UPDATE SF_RESOURCE_STOCK
+        SET AVAILABLE_QTY = AVAILABLE_QTY + #{quantity},
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE STOCK_ID = #{stockId}
+          AND AVAILABLE_QTY + #{quantity} &lt;= TOTAL_QTY
+    </update>
+
+    <insert id="insertStockLog" parameterType="ResourceStockLog">
+        <selectKey keyProperty="logId" resultType="Long" order="BEFORE">
+            SELECT SEQ_SF_RESOURCE_STOCK_LOG.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO SF_RESOURCE_STOCK_LOG
+            (LOG_ID, STOCK_ID, ACTION, TOTAL_BEFORE, TOTAL_AFTER, AVAILABLE_BEFORE, AVAILABLE_AFTER,
+             REQUEST_ID, REASON, CHANGED_BY)
+        VALUES
+            (#{logId}, #{stockId}, #{action}, #{totalBefore}, #{totalAfter}, #{availableBefore}, #{availableAfter},
+             #{requestId}, #{reason,jdbcType=VARCHAR}, #{changedBy})
+    </insert>
+
+</mapper>
