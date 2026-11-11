@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.safetrace.mapper.ResourceAdminMapper">
+
+    <insert id="insertItem" parameterType="ResourceItem">
+        <selectKey keyProperty="itemId" resultType="Long" order="BEFORE">
+            SELECT SEQ_SF_RESOURCE_ITEM.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO SF_RESOURCE_ITEM (ITEM_ID, NAME, CATEGORY, UNIT, RETURNABLE, DESCRIPTION)
+        VALUES (#{itemId}, #{name}, #{category}, #{unit}, #{returnable}, #{description,jdbcType=VARCHAR})
+    </insert>
+
+    <select id="findItemById" resultType="ResourceItem">
+        SELECT ITEM_ID, NAME, CATEGORY, UNIT, RETURNABLE, DESCRIPTION, CREATED_AT
+        FROM SF_RESOURCE_ITEM
+        WHERE ITEM_ID = #{itemId}
+    </select>
+
+    <select id="countDepartment" resultType="int">
+        SELECT COUNT(*) FROM SF_DEPARTMENT WHERE DEPARTMENT_ID = #{departmentId}
+    </select>
+
+    <insert id="insertStock" parameterType="ResourceStock">
+        <selectKey keyProperty="stockId" resultType="Long" order="BEFORE">
+            SELECT SEQ_SF_RESOURCE_STOCK.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO SF_RESOURCE_STOCK (STOCK_ID, DEPARTMENT_ID, ITEM_ID, TOTAL_QTY, AVAILABLE_QTY, STATUS)
+        VALUES (#{stockId}, #{departmentId}, #{itemId}, #{totalQty}, #{availableQty}, 'ACTIVE')
+    </insert>
+
+    <!-- 잠금용 조회: 조인 없이 재고 한 테이블만 읽는다 (조인하면 다른 테이블 행까지 잠글 수 있음) -->
+    <select id="lockStock" resultType="ResourceStock">
+        SELECT STOCK_ID, DEPARTMENT_ID, ITEM_ID, TOTAL_QTY, AVAILABLE_QTY, STATUS
+        FROM SF_RESOURCE_STOCK
+        WHERE STOCK_ID = #{stockId}
+        FOR UPDATE WAIT 3
+    </select>
+
+    <!-- 총보유량이 컬럼 한도(NUMBER(8))를 넘지 않게 마지막으로 한 번 더 막는다 -->
+    <update id="receiveStock">
+        UPDATE SF_RESOURCE_STOCK
+        SET TOTAL_QTY = TOTAL_QTY + #{quantity},
+            AVAILABLE_QTY = AVAILABLE_QTY + #{quantity},
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE STOCK_ID = #{stockId}
+          AND STATUS = 'ACTIVE'
+          AND TOTAL_QTY + #{quantity} &lt;= 99999999
+    </update>
+
+    <update id="adjustStock">
+        UPDATE SF_RESOURCE_STOCK
+        SET TOTAL_QTY = TOTAL_QTY + #{delta},
+            AVAILABLE_QTY = AVAILABLE_QTY + #{delta},
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE STOCK_ID = #{stockId}
+          AND AVAILABLE_QTY + #{delta} &gt;= 0
+          AND TOTAL_QTY + #{delta} &lt;= 99999999
+    </update>
+
+    <update id="changeStockStatus">
+        UPDATE SF_RESOURCE_STOCK
+        SET STATUS = #{newStatus},
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE STOCK_ID = #{stockId}
+          AND STATUS = #{expectedStatus}
+    </update>
+
+    <insert id="insertStockLog" parameterType="ResourceStockLog">
+        <selectKey keyProperty="logId" resultType="Long" order="BEFORE">
+            SELECT SEQ_SF_RESOURCE_STOCK_LOG.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO SF_RESOURCE_STOCK_LOG
+            (LOG_ID, STOCK_ID, ACTION, TOTAL_BEFORE, TOTAL_AFTER, AVAILABLE_BEFORE, AVAILABLE_AFTER, REASON, CHANGED_BY)
+        VALUES
+            (#{logId}, #{stockId}, #{action}, #{totalBefore}, #{totalAfter}, #{availableBefore}, #{availableAfter},
+             #{reason,jdbcType=VARCHAR}, #{changedBy})
+    </insert>
+
+</mapper>
