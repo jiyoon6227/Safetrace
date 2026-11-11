@@ -40,7 +40,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
   const tabParam = searchParams.get("tab");
   const activeNav = CONTROL_BOARD_TABS.has(tabParam) ? tabParam : "dashboard";
   const setActiveNav = (nextTab) => {
-    setSearchParams(nextTab === "dashboard" ? {} : { tab: nextTab }, { replace: true });
+    setSearchParams(nextTab === "dashboard" ? {} : { tab: nextTab });
   };
 
   const handleBackToHome = useCallback(() => {

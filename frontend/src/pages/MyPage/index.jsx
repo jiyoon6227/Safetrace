@@ -33,7 +33,7 @@ export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenS
       setRefreshSignal((s) => s + 1);
       return;
     }
-    setSearchParams({ mypageTab: key }, { replace: true });
+    setSearchParams({ mypageTab: key });
   };
   const [notificationOpen, setNotificationOpen] = useState(false);
   const notificationPopupRef = useRef(null);
