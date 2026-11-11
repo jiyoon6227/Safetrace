@@ -11,7 +11,7 @@ public class ResourceLog {
     private Long requestId;
     private String prevStatus;          // 생성 시 null
     private String newStatus;
-    private String action;              // CREATE / APPROVE / REJECT / CANCEL / CANCEL_BY_CLOSE / DISPATCH / ARRIVE / SETTLE
+    private String action;              // CREATE / APPROVE / REJECT / CANCEL / CANCEL_BY_CLOSE / DISPATCH / ARRIVE / RETURN_APPLY / RETURN_CONFIRM / RETURN_REJECT / LOSS
     private String memo;
     private Long changedBy;
     private String changedByName;

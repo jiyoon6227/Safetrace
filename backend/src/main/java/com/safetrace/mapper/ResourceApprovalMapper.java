@@ -6,12 +6,13 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 // 요청 승인·반려·취소 전용 매퍼 (요청 행 잠금, 상태 조건부 변경, 재고 예약·복구, 요청으로 생긴 재고 이력).
+// 출고·반납·손실 처리(ResourceFulfillmentService)도 요청 행 잠금·상태 변경·가용 복구·재고 이력 INSERT를 그대로 쓴다.
 // 재고 행 잠금은 ResourceAdminMapper.lockStock, 요청 이력 INSERT·조회는 ResourceRequestMapper를 그대로 쓴다.
 @Mapper
 public interface ResourceApprovalMapper {
 
     // 요청 행을 잠그고 읽는다 (최대 3초 대기, 넘으면 락 예외). 조인 없이 이 테이블만 읽는다.
-    // 채워지는 값: requestId, incidentId, stockId, requesterId, quantity, status
+    // 채워지는 값: requestId, incidentId, stockId, requesterId, quantity, status, returnedQty, lostQty, arrivedAt
     ResourceRequest lockRequest(@Param("requestId") Long requestId);
 
     // 요청 상태 변경: 지금 상태가 expectedStatus일 때만 newStatus로 바꾼다. rejectReason은 반려일 때만 값이 있다.

@@ -14,7 +14,7 @@ BEGIN
          WHERE TABLE_NAME IN ('SF_NOTICE', 'SF_NOTIFICATION', 'SF_SAFETY_CHECK', 'SF_FAMILY_RELATION',
                               'SF_MEMBER_REGION', 'SF_REPORT_PHOTO', 'SF_INCIDENT_PHOTO', 'SF_INCIDENT_LOG',
                               'SF_REPORT', 'SF_INCIDENT', 'SF_MEMBER', 'SF_DEPARTMENT',
-                              'SF_RESOURCE_SETTLEMENT', 'SF_RESOURCE_STOCK_LOG', 'SF_RESOURCE_LOG',
+                              'SF_RESOURCE_SETTLEMENT', 'SF_RESOURCE_RETURN', 'SF_RESOURCE_STOCK_LOG', 'SF_RESOURCE_LOG',
                               'SF_RESOURCE_REQUEST', 'SF_RESOURCE_STOCK', 'SF_RESOURCE_ITEM')
     ) LOOP
         EXECUTE IMMEDIATE 'DROP TABLE ' || t.TABLE_NAME || ' CASCADE CONSTRAINTS';
@@ -26,7 +26,8 @@ BEGIN
                                  'SEQ_SF_INCIDENT_LOG', 'SEQ_SF_INCIDENT_PHOTO', 'SEQ_SF_REPORT', 'SEQ_SF_REPORT_PHOTO',
                                  'SEQ_SF_FAMILY_RELATION', 'SEQ_SF_SAFETY_CHECK', 'SEQ_SF_NOTIFICATION', 'SEQ_SF_NOTICE',
                                  'SEQ_SF_RESOURCE_ITEM', 'SEQ_SF_RESOURCE_STOCK', 'SEQ_SF_RESOURCE_REQUEST',
-                                 'SEQ_SF_RESOURCE_LOG', 'SEQ_SF_RESOURCE_STOCK_LOG', 'SEQ_SF_RESOURCE_SETTLEMENT')
+                                 'SEQ_SF_RESOURCE_LOG', 'SEQ_SF_RESOURCE_STOCK_LOG', 'SEQ_SF_RESOURCE_SETTLEMENT',
+                                 'SEQ_SF_RESOURCE_RETURN')
     ) LOOP
         EXECUTE IMMEDIATE 'DROP SEQUENCE ' || s.SEQUENCE_NAME;
     END LOOP;
@@ -534,11 +535,10 @@ VALUES (SEQ_SF_NOTICE.NEXTVAL, '재난 행동요령 메뉴 이용 안내', '재�
 
 -- ============================================================
 -- 8. 부서 간 재난 대응 자원 요청·배정
---    요청 → 승인(가용 예약) → 출고 → 반납·손실 정산(반납형) / 출고 즉시 소모(소모품)
+--    요청 → 승인(가용 예약) → 출고 → 반납 신청(STAFF)·ADMIN 확인(분할 가능)·손실 확정(반납형) / 출고 즉시 소모(소모품)
 --    재고 불변식: 가용 + (APPROVED 수량 + DISPATCHED 미정산 수량) = 총보유량
 --    재고·품목·요청은 물리 삭제하지 않는다 (사용 중지로 관리, 이력 보존)
---    이 8번 블록은 migration-resource.sql에 똑같이 들어 있다 (기존 DB에 추가할 때 사용)
---    그래서 시드 INSERT마다 "이미 있으면 건너뜀" 조건을 둔다 - 한쪽을 고치면 다른 쪽도 같이 고칠 것
+--    시드 INSERT마다 "이미 있으면 건너뜀" 조건을 둔다 (schema.sql을 다시 실행해도 중복되지 않게)
 -- ============================================================
 
 -- 8-1. 시퀀스
@@ -547,7 +547,7 @@ CREATE SEQUENCE SEQ_SF_RESOURCE_STOCK START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_RESOURCE_REQUEST START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_RESOURCE_LOG START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_RESOURCE_STOCK_LOG START WITH 1 INCREMENT BY 1 NOCACHE;
-CREATE SEQUENCE SEQ_SF_RESOURCE_SETTLEMENT START WITH 1 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_SF_RESOURCE_RETURN START WITH 1 INCREMENT BY 1 NOCACHE;
 
 -- 8-2. 품목 마스터============================================
 --      등록만 하고 수정 API는 두지 않는다 (RETURNABLE이 바뀌면 기존 재고·요청의 해석이 깨짐)
@@ -647,17 +647,17 @@ COMMENT ON COLUMN SF_RESOURCE_REQUEST.CREATED_AT IS '요청일시';
 COMMENT ON COLUMN SF_RESOURCE_REQUEST.UPDATED_AT IS '최종 변경일시';
 
 -- 8-5. 요청 처리 이력============================================
---      상태가 그대로인 처리(도착 확인, 일부 정산)도 ACTION으로 한 줄씩 남긴다
+--      상태가 그대로인 처리(도착 확인, 반납 신청·반려, 일부 반납 확인·손실 확정)도 ACTION으로 한 줄씩 남긴다
 CREATE TABLE SF_RESOURCE_LOG (
     LOG_ID        NUMBER          PRIMARY KEY,                                          -- 로그 PK (SEQ_SF_RESOURCE_LOG로 채번)
     REQUEST_ID    NUMBER          NOT NULL REFERENCES SF_RESOURCE_REQUEST(REQUEST_ID),  -- 대상 요청 FK
     PREV_STATUS   VARCHAR2(20),                                                         -- 변경 전 상태 (생성 시 NULL)
     NEW_STATUS    VARCHAR2(20)    NOT NULL,                                             -- 변경 후 상태
     ACTION        VARCHAR2(20)    NOT NULL,                                             -- 처리 종류
-    MEMO          VARCHAR2(500),                                                        -- 메모 (반려 사유, 정산 수량·손실 사유 등)
+    MEMO          VARCHAR2(500),                                                        -- 메모 (반려 사유, 신청·확인한 반납 수량, 손실 수량과 사유)
     CHANGED_BY    NUMBER          NOT NULL REFERENCES SF_MEMBER(MEMBER_ID),             -- 처리자 FK
     CHANGED_AT    TIMESTAMP       DEFAULT SYSTIMESTAMP NOT NULL,                        -- 처리일시
-    CONSTRAINT CK_SF_RES_LOG_ACTION CHECK (ACTION IN ('CREATE', 'APPROVE', 'REJECT', 'CANCEL', 'CANCEL_BY_CLOSE', 'DISPATCH', 'ARRIVE', 'SETTLE')),
+    CONSTRAINT CK_SF_RES_LOG_ACTION CHECK (ACTION IN ('CREATE', 'APPROVE', 'REJECT', 'CANCEL', 'CANCEL_BY_CLOSE', 'DISPATCH', 'ARRIVE', 'RETURN_APPLY', 'RETURN_CONFIRM', 'RETURN_REJECT', 'LOSS')),
     CONSTRAINT CK_SF_RES_LOG_NEW_STATUS CHECK (NEW_STATUS IN ('REQUESTED', 'APPROVED', 'REJECTED', 'CANCELLED', 'DISPATCHED', 'SETTLED', 'COMPLETED'))
 );
 
@@ -666,8 +666,8 @@ COMMENT ON COLUMN SF_RESOURCE_LOG.LOG_ID IS '로그 PK (SEQ_SF_RESOURCE_LOG로 �
 COMMENT ON COLUMN SF_RESOURCE_LOG.REQUEST_ID IS '대상 요청 FK';
 COMMENT ON COLUMN SF_RESOURCE_LOG.PREV_STATUS IS '변경 전 상태 (생성 시 NULL)';
 COMMENT ON COLUMN SF_RESOURCE_LOG.NEW_STATUS IS '변경 후 상태';
-COMMENT ON COLUMN SF_RESOURCE_LOG.ACTION IS 'CREATE / APPROVE / REJECT / CANCEL / CANCEL_BY_CLOSE(사건 종료로 취소) / DISPATCH / ARRIVE / SETTLE';
-COMMENT ON COLUMN SF_RESOURCE_LOG.MEMO IS '메모 (반려 사유, 정산 수량·손실 사유 등)';
+COMMENT ON COLUMN SF_RESOURCE_LOG.ACTION IS 'CREATE / APPROVE / REJECT / CANCEL / CANCEL_BY_CLOSE(사건 종료로 취소) / DISPATCH / ARRIVE / RETURN_APPLY(반납 신청) / RETURN_CONFIRM(반납 확인) / RETURN_REJECT(반납 신청 반려) / LOSS(손실 확정)';
+COMMENT ON COLUMN SF_RESOURCE_LOG.MEMO IS '메모 (반려 사유, 신청·확인한 반납 수량, 손실 수량과 사유)';
 COMMENT ON COLUMN SF_RESOURCE_LOG.CHANGED_BY IS '처리자 FK';
 COMMENT ON COLUMN SF_RESOURCE_LOG.CHANGED_AT IS '처리일시';
 
@@ -686,14 +686,14 @@ CREATE TABLE SF_RESOURCE_STOCK_LOG (
     REASON            VARCHAR2(500),                                                       -- 변경 사유
     CHANGED_BY        NUMBER          NOT NULL REFERENCES SF_MEMBER(MEMBER_ID),            -- 변경한 사람 FK
     CHANGED_AT        TIMESTAMP       DEFAULT SYSTIMESTAMP NOT NULL,                       -- 변경 시각
-    CONSTRAINT CK_SF_RES_SLOG_ACTION CHECK (ACTION IN ('REGISTER', 'RECEIVE', 'ADJUST', 'DEACTIVATE', 'REACTIVATE', 'RESERVE', 'RELEASE', 'CONSUME', 'SETTLE')),
+    CONSTRAINT CK_SF_RES_SLOG_ACTION CHECK (ACTION IN ('REGISTER', 'RECEIVE', 'ADJUST', 'DEACTIVATE', 'REACTIVATE', 'RESERVE', 'RELEASE', 'CONSUME', 'RETURN', 'LOSS')),
     CONSTRAINT CK_SF_RES_SLOG_QTY CHECK (
         TOTAL_BEFORE >= 0 AND AVAILABLE_BEFORE >= 0 AND AVAILABLE_BEFORE <= TOTAL_BEFORE
         AND TOTAL_AFTER >= 0 AND AVAILABLE_AFTER >= 0 AND AVAILABLE_AFTER <= TOTAL_AFTER
     ),
-    -- 요청으로 생긴 변경(RESERVE/RELEASE/CONSUME/SETTLE)만 REQUEST_ID가 있고, 직접 변경은 없음
+    -- 요청으로 생긴 변경(RESERVE/RELEASE/CONSUME/RETURN/LOSS)만 REQUEST_ID가 있고, 직접 변경은 없음
     CONSTRAINT CK_SF_RES_SLOG_REQUEST CHECK (
-        (ACTION IN ('RESERVE', 'RELEASE', 'CONSUME', 'SETTLE') AND REQUEST_ID IS NOT NULL)
+        (ACTION IN ('RESERVE', 'RELEASE', 'CONSUME', 'RETURN', 'LOSS') AND REQUEST_ID IS NOT NULL)
         OR (ACTION IN ('REGISTER', 'RECEIVE', 'ADJUST', 'DEACTIVATE', 'REACTIVATE') AND REQUEST_ID IS NULL)
     ),
     -- 수량 조정·사용 중지·재개는 사유 필수
@@ -703,7 +703,7 @@ CREATE TABLE SF_RESOURCE_STOCK_LOG (
 COMMENT ON TABLE SF_RESOURCE_STOCK_LOG IS '재고 변경 이력 - 재고가 바뀔 때마다 같은 트랜잭션에서 전·후 수량 기록';
 COMMENT ON COLUMN SF_RESOURCE_STOCK_LOG.LOG_ID IS '로그 PK (SEQ_SF_RESOURCE_STOCK_LOG로 채번)';
 COMMENT ON COLUMN SF_RESOURCE_STOCK_LOG.STOCK_ID IS '대상 재고 FK';
-COMMENT ON COLUMN SF_RESOURCE_STOCK_LOG.ACTION IS 'REGISTER / RECEIVE / ADJUST / DEACTIVATE / REACTIVATE / RESERVE(승인) / RELEASE(승인 후 취소) / CONSUME(소모품 출고) / SETTLE(반납·손실 정산)';
+COMMENT ON COLUMN SF_RESOURCE_STOCK_LOG.ACTION IS 'REGISTER / RECEIVE / ADJUST / DEACTIVATE / REACTIVATE / RESERVE(승인) / RELEASE(승인 후 취소) / CONSUME(소모품 출고) / RETURN(반납 확인) / LOSS(손실 확정)';
 COMMENT ON COLUMN SF_RESOURCE_STOCK_LOG.TOTAL_BEFORE IS '총보유량 변경 전';
 COMMENT ON COLUMN SF_RESOURCE_STOCK_LOG.TOTAL_AFTER IS '총보유량 변경 후';
 COMMENT ON COLUMN SF_RESOURCE_STOCK_LOG.AVAILABLE_BEFORE IS '가용 수량 변경 전';
@@ -713,53 +713,48 @@ COMMENT ON COLUMN SF_RESOURCE_STOCK_LOG.REASON IS '변경 사유 (조정·사용
 COMMENT ON COLUMN SF_RESOURCE_STOCK_LOG.CHANGED_BY IS '변경한 사람 FK';
 COMMENT ON COLUMN SF_RESOURCE_STOCK_LOG.CHANGED_AT IS '변경 시각';
 
--- 8-7. 정산 결과============================================
---      반납형 요청의 정산 한 번 = 한 줄. 같은 정산이 다시 와도(재전송) 이 행의 결과를 그대로 돌려준다
---      IDEMPOTENCY_KEY가 NOT NULL이라 "NULL끼리 중복" 문제가 생기지 않는다
---      UK_SF_RES_SETTLE_BEFORE: 같은 "정산 전 처리 수량"에서 정산이 두 번 일어날 수 없음 (expectedProcessedQty의 DB 방어선)
-CREATE TABLE SF_RESOURCE_SETTLEMENT (
-    SETTLEMENT_ID         NUMBER          PRIMARY KEY,                                         -- 정산 PK (SEQ_SF_RESOURCE_SETTLEMENT로 채번)
-    REQUEST_ID            NUMBER          NOT NULL REFERENCES SF_RESOURCE_REQUEST(REQUEST_ID), -- 대상 요청 FK
-    IDEMPOTENCY_KEY       VARCHAR2(36)    NOT NULL,                                            -- 화면이 정산 모달을 열 때 만든 UUID
-    PROCESSED_BEFORE      NUMBER(8)       NOT NULL,                                            -- 정산 전 누적 처리 수량(반납 + 손실) = expectedProcessedQty
-    RETURNED_QTY          NUMBER(8)       NOT NULL,                                            -- 이번 반납 수량
-    LOST_QTY              NUMBER(8)       NOT NULL,                                            -- 이번 손실 수량
-    LOST_REASON           VARCHAR2(500),                                                       -- 손실 사유
-    RETURNED_TOTAL_AFTER  NUMBER(8)       NOT NULL,                                            -- 정산 후 누적 반납 수량
-    LOST_TOTAL_AFTER      NUMBER(8)       NOT NULL,                                            -- 정산 후 누적 손실 수량
-    STATUS_AFTER          VARCHAR2(20)    NOT NULL,                                            -- 정산 후 요청 상태
-    SETTLED_BY            NUMBER          NOT NULL REFERENCES SF_MEMBER(MEMBER_ID),            -- 정산한 STAFF FK
-    SETTLED_AT            TIMESTAMP       DEFAULT SYSTIMESTAMP NOT NULL,                       -- 정산 시각
-    CONSTRAINT UK_SF_RES_SETTLE_KEY UNIQUE (REQUEST_ID, IDEMPOTENCY_KEY),
-    CONSTRAINT UK_SF_RES_SETTLE_BEFORE UNIQUE (REQUEST_ID, PROCESSED_BEFORE),
-    CONSTRAINT CK_SF_RES_SETTLE_KEY CHECK (LENGTH(IDEMPOTENCY_KEY) = 36),
-    CONSTRAINT CK_SF_RES_SETTLE_QTY CHECK (
-        PROCESSED_BEFORE >= 0 AND RETURNED_QTY >= 0 AND LOST_QTY >= 0 AND RETURNED_QTY + LOST_QTY > 0
-        AND RETURNED_TOTAL_AFTER >= RETURNED_QTY AND LOST_TOTAL_AFTER >= LOST_QTY
-        AND RETURNED_TOTAL_AFTER + LOST_TOTAL_AFTER = PROCESSED_BEFORE + RETURNED_QTY + LOST_QTY
+-- 8-7. 반납 신청============================================
+--      반납형 요청의 반납 신청 한 번 = 한 줄. STAFF(요청자)가 실제로 돌려보낼 수량을 신청하고 ADMIN이 확인·반려한다.
+--      재고와 요청의 누적 반납 수량은 STATUS가 CONFIRMED로 바뀔 때만 움직인다 (PENDING·REJECTED는 재고에 영향 없음)
+--      같은 신청을 두 번 확인하는 일은 UPDATE ... AND STATUS = 'PENDING' 조건이 막는다 (멱등성 키 컬럼은 두지 않는다)
+--      손실 확정은 신청 행 없이 요청 행의 LOST_QTY와 이력(ACTION = LOSS)으로 남는다
+CREATE TABLE SF_RESOURCE_RETURN (
+    RETURN_ID       NUMBER          PRIMARY KEY,                                         -- 반납 신청 PK (SEQ_SF_RESOURCE_RETURN로 채번)
+    REQUEST_ID      NUMBER          NOT NULL REFERENCES SF_RESOURCE_REQUEST(REQUEST_ID), -- 대상 요청 FK (출고된 반납형 요청)
+    APPLIED_QTY     NUMBER(8)       NOT NULL,                                            -- 신청 수량 (확인되면 그대로 반납으로 반영)
+    STATUS          VARCHAR2(10)    DEFAULT 'PENDING' NOT NULL,                          -- 신청 상태
+    APPLY_MEMO      VARCHAR2(500),                                                       -- 신청 메모 (선택)
+    APPLICANT_ID    NUMBER          NOT NULL REFERENCES SF_MEMBER(MEMBER_ID),            -- 신청한 STAFF FK
+    APPLIED_AT      TIMESTAMP       DEFAULT SYSTIMESTAMP NOT NULL,                       -- 신청 시각
+    PROCESSED_BY    NUMBER          REFERENCES SF_MEMBER(MEMBER_ID),                     -- 확인·반려한 ADMIN FK
+    PROCESSED_AT    TIMESTAMP,                                                           -- 처리 시각
+    REJECT_REASON   VARCHAR2(500),                                                       -- 반려 사유 (REJECTED면 필수)
+    CONSTRAINT CK_SF_RES_RETURN_QTY CHECK (APPLIED_QTY > 0),
+    CONSTRAINT CK_SF_RES_RETURN_STATUS CHECK (STATUS IN ('PENDING', 'CONFIRMED', 'REJECTED')),
+    -- 대기 중이면 처리자·처리시각이 비어 있고, 확인·반려됐으면 둘 다 채워진다
+    CONSTRAINT CK_SF_RES_RETURN_PROCESSED CHECK (
+        (STATUS = 'PENDING' AND PROCESSED_BY IS NULL AND PROCESSED_AT IS NULL)
+        OR (STATUS IN ('CONFIRMED', 'REJECTED') AND PROCESSED_BY IS NOT NULL AND PROCESSED_AT IS NOT NULL)
     ),
-    CONSTRAINT CK_SF_RES_SETTLE_REASON CHECK (LOST_QTY = 0 OR LOST_REASON IS NOT NULL),
-    CONSTRAINT CK_SF_RES_SETTLE_STATUS CHECK (STATUS_AFTER IN ('DISPATCHED', 'SETTLED'))
+    CONSTRAINT CK_SF_RES_RETURN_REJECT CHECK (STATUS <> 'REJECTED' OR REJECT_REASON IS NOT NULL)
 );
 
-COMMENT ON TABLE SF_RESOURCE_SETTLEMENT IS '반납·손실 정산 결과 - 정산 1회당 1행, 재전송 시 원래 결과 반환용';
-COMMENT ON COLUMN SF_RESOURCE_SETTLEMENT.SETTLEMENT_ID IS '정산 PK (SEQ_SF_RESOURCE_SETTLEMENT로 채번)';
-COMMENT ON COLUMN SF_RESOURCE_SETTLEMENT.REQUEST_ID IS '대상 요청 FK';
-COMMENT ON COLUMN SF_RESOURCE_SETTLEMENT.IDEMPOTENCY_KEY IS '화면이 정산 모달을 열 때 만든 UUID (요청별 UNIQUE)';
-COMMENT ON COLUMN SF_RESOURCE_SETTLEMENT.PROCESSED_BEFORE IS '정산 전 누적 처리 수량(반납 + 손실) - 요청별 UNIQUE';
-COMMENT ON COLUMN SF_RESOURCE_SETTLEMENT.RETURNED_QTY IS '이번 반납 수량';
-COMMENT ON COLUMN SF_RESOURCE_SETTLEMENT.LOST_QTY IS '이번 손실 수량';
-COMMENT ON COLUMN SF_RESOURCE_SETTLEMENT.LOST_REASON IS '손실 사유 (손실이 있으면 필수)';
-COMMENT ON COLUMN SF_RESOURCE_SETTLEMENT.RETURNED_TOTAL_AFTER IS '정산 후 누적 반납 수량';
-COMMENT ON COLUMN SF_RESOURCE_SETTLEMENT.LOST_TOTAL_AFTER IS '정산 후 누적 손실 수량';
-COMMENT ON COLUMN SF_RESOURCE_SETTLEMENT.STATUS_AFTER IS '정산 후 요청 상태: DISPATCHED(남은 수량 있음) / SETTLED';
-COMMENT ON COLUMN SF_RESOURCE_SETTLEMENT.SETTLED_BY IS '정산한 STAFF FK';
-COMMENT ON COLUMN SF_RESOURCE_SETTLEMENT.SETTLED_AT IS '정산 시각';
+COMMENT ON TABLE SF_RESOURCE_RETURN IS '반납 신청 - 신청 1회당 1행, ADMIN이 확인(CONFIRMED)할 때만 재고에 반영';
+COMMENT ON COLUMN SF_RESOURCE_RETURN.RETURN_ID IS '반납 신청 PK (SEQ_SF_RESOURCE_RETURN로 채번)';
+COMMENT ON COLUMN SF_RESOURCE_RETURN.REQUEST_ID IS '대상 요청 FK';
+COMMENT ON COLUMN SF_RESOURCE_RETURN.APPLIED_QTY IS '신청 수량 (STAFF가 실제로 반납할 수량)';
+COMMENT ON COLUMN SF_RESOURCE_RETURN.STATUS IS 'PENDING(대기) / CONFIRMED(ADMIN 확인, 재고 반영됨) / REJECTED(반려, 재고 변화 없음)';
+COMMENT ON COLUMN SF_RESOURCE_RETURN.APPLY_MEMO IS '신청 메모 (선택)';
+COMMENT ON COLUMN SF_RESOURCE_RETURN.APPLICANT_ID IS '신청한 STAFF FK';
+COMMENT ON COLUMN SF_RESOURCE_RETURN.APPLIED_AT IS '신청 시각';
+COMMENT ON COLUMN SF_RESOURCE_RETURN.PROCESSED_BY IS '확인·반려한 ADMIN FK';
+COMMENT ON COLUMN SF_RESOURCE_RETURN.PROCESSED_AT IS '처리 시각';
+COMMENT ON COLUMN SF_RESOURCE_RETURN.REJECT_REASON IS '반려 사유 (REJECTED면 필수)';
 
 -- 8-8. 인덱스
 -- 사건 종료 시 그 사건의 출고 전 요청을 찾고, 사건 상세에서 요청 목록을 볼 때 사용
 CREATE INDEX IDX_SF_RES_REQ_INCIDENT ON SF_RESOURCE_REQUEST(INCIDENT_ID, STATUS);
--- 보유 부서 요청함(받은 요청)을 재고·상태로 조회
+-- 재고별 요청의 상태 조회 (재고 행을 가리키는 요청 개수·상태 확인)
 CREATE INDEX IDX_SF_RES_REQ_STOCK ON SF_RESOURCE_REQUEST(STOCK_ID, STATUS);
 -- 보낸 요청을 요청자·최신순으로 조회
 CREATE INDEX IDX_SF_RES_REQ_REQUESTER ON SF_RESOURCE_REQUEST(REQUESTER_ID, CREATED_AT);
@@ -767,6 +762,10 @@ CREATE INDEX IDX_SF_RES_REQ_REQUESTER ON SF_RESOURCE_REQUEST(REQUESTER_ID, CREAT
 CREATE INDEX IDX_SF_RES_LOG_REQUEST ON SF_RESOURCE_LOG(REQUEST_ID, LOG_ID);
 -- 재고별 변경 이력 조회 + 이력 연속성 점검
 CREATE INDEX IDX_SF_RES_SLOG_STOCK ON SF_RESOURCE_STOCK_LOG(STOCK_ID, LOG_ID);
+-- 요청별 반납 신청 조회·대기 중 신청 합계 계산
+CREATE INDEX IDX_SF_RES_RETURN_REQUEST ON SF_RESOURCE_RETURN(REQUEST_ID, STATUS);
+-- ADMIN 반납 확인함 (상태별 신청 시각 순)
+CREATE INDEX IDX_SF_RES_RETURN_STATUS ON SF_RESOURCE_RETURN(STATUS, APPLIED_AT);
 
 -- 8-9. 시드 데이터 (이미 있으면 건너뜀)
 -- 부서 3개 추가 (기존 재난안전과 포함 4개)

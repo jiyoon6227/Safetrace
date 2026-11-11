@@ -4,7 +4,7 @@
 
     <!-- 잠금용 조회: 조인 없이 요청 한 테이블만 읽는다 (조인하면 다른 테이블 행까지 잠글 수 있음) -->
     <select id="lockRequest" resultType="ResourceRequest">
-        SELECT REQUEST_ID, INCIDENT_ID, STOCK_ID, REQUESTER_ID, QUANTITY, STATUS
+        SELECT REQUEST_ID, INCIDENT_ID, STOCK_ID, REQUESTER_ID, QUANTITY, STATUS, RETURNED_QTY, LOST_QTY, ARRIVED_AT
         FROM SF_RESOURCE_REQUEST
         WHERE REQUEST_ID = #{requestId}
         FOR UPDATE WAIT 3

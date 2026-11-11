@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.safetrace.mapper.ResourceFulfillmentMapper">
+
+    <!-- 품목은 수정하지 않으므로 잠그지 않고 읽는다 (재고 행은 서비스가 따로 잠근다) -->
+    <select id="findReturnable" resultType="string">
+        SELECT I.RETURNABLE
+        FROM SF_RESOURCE_STOCK S
+        JOIN SF_RESOURCE_ITEM I ON I.ITEM_ID = S.ITEM_ID
+        WHERE S.STOCK_ID = #{stockId}
+    </select>
+
+    <!-- 감소 후에도 총보유량 >= 가용이어야 한다. 아니면 0행 (소모품 출고·손실을 두 번 반영하는 버그를 막는 앞단 방어) -->
+    <update id="reduceTotal">
+        UPDATE SF_RESOURCE_STOCK
+        SET TOTAL_QTY = TOTAL_QTY - #{quantity},
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE STOCK_ID = #{stockId}
+          AND TOTAL_QTY - #{quantity} &gt;= AVAILABLE_QTY
+    </update>
+
+    <!-- 출고 이후 상태에서 한 번만. CK_SF_RES_REQ_ARRIVED가 출고 전 기록을 DB에서도 막는다 -->
+    <update id="markArrived">
+        UPDATE SF_RESOURCE_REQUEST
+        SET ARRIVED_AT = SYSTIMESTAMP,
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE REQUEST_ID = #{requestId}
+          AND ARRIVED_AT IS NULL
+          AND STATUS IN ('DISPATCHED', 'SETTLED', 'COMPLETED')
+    </update>
+
+    <select id="sumPendingReturnQty" resultType="int">
+        SELECT NVL(SUM(APPLIED_QTY), 0)
+        FROM SF_RESOURCE_RETURN
+        WHERE REQUEST_ID = #{requestId}
+          AND STATUS = 'PENDING'
+    </select>
+
+    <!-- 요청 행을 잠근 뒤 실행하므로 같은 신청이 동시에 두 번 와도 한쪽만 통과한다 -->
+    <select id="countRecentSameReturn" resultType="int">
+        SELECT COUNT(*)
+        FROM SF_RESOURCE_RETURN
+        WHERE REQUEST_ID = #{requestId}
+          AND APPLICANT_ID = #{applicantId}
+          AND APPLIED_QTY = #{appliedQty}
+          AND STATUS = 'PENDING'
+          AND APPLIED_AT &gt;= SYSTIMESTAMP - NUMTODSINTERVAL(#{withinSeconds}, 'SECOND')
+    </select>
+
+    <insert id="insertReturn" parameterType="ResourceReturn">
+        <selectKey keyProperty="returnId" resultType="Long" order="BEFORE">
+            SELECT SEQ_SF_RESOURCE_RETURN.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO SF_RESOURCE_RETURN
+            (RETURN_ID, REQUEST_ID, APPLIED_QTY, STATUS, APPLY_MEMO, APPLICANT_ID)
+        VALUES
+            (#{returnId}, #{requestId}, #{appliedQty}, 'PENDING', #{applyMemo,jdbcType=VARCHAR}, #{applicantId})
+    </insert>
+
+    <sql id="returnColumns">
+        RT.RETURN_ID, RT.REQUEST_ID, RT.APPLIED_QTY, RT.STATUS, RT.APPLY_MEMO,
+        RT.APPLICANT_ID, AM.NAME AS APPLICANT_NAME, RT.APPLIED_AT,
+        RT.PROCESSED_BY, PM.NAME AS PROCESSED_BY_NAME, RT.PROCESSED_AT, RT.REJECT_REASON,
+        R.INCIDENT_ID, INC.TITLE AS INCIDENT_TITLE, I.NAME AS ITEM_NAME, I.UNIT, D.NAME AS DEPARTMENT_NAME,
+        R.QUANTITY AS REQUEST_QUANTITY, R.STATUS AS REQUEST_STATUS, R.RETURNED_QTY, R.LOST_QTY
+    </sql>
+
+    <sql id="returnJoins">
+        FROM SF_RESOURCE_RETURN RT
+        JOIN SF_RESOURCE_REQUEST R ON R.REQUEST_ID = RT.REQUEST_ID
+        JOIN SF_INCIDENT INC ON INC.INCIDENT_ID = R.INCIDENT_ID
+        JOIN SF_RESOURCE_STOCK S ON S.STOCK_ID = R.STOCK_ID
+        JOIN SF_DEPARTMENT D ON D.DEPARTMENT_ID = S.DEPARTMENT_ID
+        JOIN SF_RESOURCE_ITEM I ON I.ITEM_ID = S.ITEM_ID
+        JOIN SF_MEMBER AM ON AM.MEMBER_ID = RT.APPLICANT_ID
+        LEFT JOIN SF_MEMBER PM ON PM.MEMBER_ID = RT.PROCESSED_BY
+    </sql>
+
+    <select id="findReturnById" resultType="ResourceReturn">
+        SELECT <include refid="returnColumns"/>
+        <include refid="returnJoins"/>
+        WHERE RT.RETURN_ID = #{returnId}
+    </select>
+
+    <!-- 신청 상태가 expectedStatus일 때만 바꾼다. 0행이면 이미 다른 처리가 끝난 것 (같은 신청의 중복 확인·반려 방어) -->
+    <update id="updateReturnStatus">
+        UPDATE SF_RESOURCE_RETURN
+        SET STATUS = #{newStatus},
+            PROCESSED_BY = #{processedBy},
+            PROCESSED_AT = SYSTIMESTAMP,
+            REJECT_REASON = #{rejectReason,jdbcType=VARCHAR}
+        WHERE RETURN_ID = #{returnId}
+          AND STATUS = #{expectedStatus}
+    </update>
+
+    <!-- SET 오른쪽 식은 갱신 전 값으로 계산되므로 CASE의 합계는 "이번 반납을 더한 값"이다 -->
+    <update id="applyReturnToRequest">
+        UPDATE SF_RESOURCE_REQUEST
+        SET RETURNED_QTY = RETURNED_QTY + #{quantity},
+            STATUS = CASE WHEN RETURNED_QTY + LOST_QTY + #{quantity} = QUANTITY THEN 'SETTLED' ELSE 'DISPATCHED' END,
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE REQUEST_ID = #{requestId}
+          AND STATUS = 'DISPATCHED'
+          AND RETURNED_QTY + LOST_QTY + #{quantity} &lt;= QUANTITY
+    </update>
+
+    <!-- 화면이 본 처리 완료 수량과 지금 값이 다르면 0행 (같은 손실 확정이 두 번 반영되는 것을 막는다) -->
+    <update id="applyLossToRequest">
+        UPDATE SF_RESOURCE_REQUEST
+        SET LOST_QTY = LOST_QTY + #{lostQty},
+            STATUS = CASE WHEN RETURNED_QTY + LOST_QTY + #{lostQty} = QUANTITY THEN 'SETTLED' ELSE 'DISPATCHED' END,
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE REQUEST_ID = #{requestId}
+          AND STATUS = 'DISPATCHED'
+          AND RETURNED_QTY + LOST_QTY = #{expectedProcessedQty}
+          AND RETURNED_QTY + LOST_QTY + #{lostQty} &lt;= QUANTITY
+    </update>
+
+    <select id="findReturnsByRequest" resultType="ResourceReturn">
+        SELECT <include refid="returnColumns"/>
+        <include refid="returnJoins"/>
+        WHERE RT.REQUEST_ID = #{requestId}
+        ORDER BY RT.APPLIED_AT, RT.RETURN_ID
+    </select>
+
+    <!-- 확인함: 오래 기다린 신청이 먼저 보이도록 신청 시각 오름차순. 안쪽에서 정렬한 뒤 ROWNUM으로 자른다 -->
+    <select id="findReturns" resultType="ResourceReturn">
+        SELECT * FROM (
+            SELECT a.*, ROWNUM AS RN FROM (
+                SELECT <include refid="returnColumns"/>
+                <include refid="returnJoins"/>
+                <where>
+                    <if test="status != null">
+                        RT.STATUS = #{status}
+                    </if>
+                </where>
+                ORDER BY RT.APPLIED_AT, RT.RETURN_ID
+            ) a
+            WHERE ROWNUM &lt;= #{endRow}
+        )
+        WHERE RN &gt; #{startRow}
+    </select>
+
+    <select id="countReturns" resultType="long">
+        SELECT COUNT(*)
+        FROM SF_RESOURCE_RETURN RT
+        <where>
+            <if test="status != null">
+                RT.STATUS = #{status}
+            </if>
+        </where>
+    </select>
+
+</mapper>
