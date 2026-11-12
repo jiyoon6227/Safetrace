@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
 import { authFetch, authUpload } from "../../api/client";
+import { needsClosureConfirm } from "../../constants/resource";
 
 export function useIncidentActions({
   currentUser, selectedIncident, nextStatus, memo, setMemo, setActionLoading, setDetailError, incidentPhotos,
-  setIncidentPhotos, loadIncidents, openIncidentDetail, setToast,
+  setIncidentPhotos, loadIncidents, openIncidentDetail, setToast, afterStatusChange,
 }) {
   // 상세패널 "현장 사진 추가" - 여러 장 한번에 선택 가능, 최대 5장
   const [fieldPhotoUploading, setFieldPhotoUploading] = useState(false);
@@ -74,6 +75,29 @@ export function useIncidentActions({
     }
   };
 
+  // 사건 종료 확인 창 - 종료할 때 출고 전 자원 요청이나 미반납 출고 건이 있으면 먼저 보여준다
+  const [closurePreview, setClosurePreview] = useState(null);
+  const [closureSubmitting, setClosureSubmitting] = useState(false);
+  const [closureError, setClosureError] = useState("");
+
+  // 상태 변경 요청만 보낸다. cancelRequestIds는 종료 확인 창에서 담당자가 확인한 출고 전 요청 번호다.
+  const sendStatus = async (cancelRequestIds) => {
+    const body = { status: nextStatus, memo };
+    if (cancelRequestIds && cancelRequestIds.length > 0) body.cancelRequestIds = cancelRequestIds;
+    await authFetch(`/api/incidents/${selectedIncident.incidentId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    // 종료하면 출고 전 요청이 취소되므로, 사건 상세의 자원 요청 목록도 다시 불러온다
+    afterStatusChange?.(selectedIncident.incidentId);
+  };
+
+  const refreshAfterStatusChange = async () => {
+    setMemo("");
+    await loadIncidents();
+    await openIncidentDetail(selectedIncident.incidentId);
+  };
+
   const handleChangeStatus = async () => {
     if (!selectedIncident || !nextStatus) return;
     if (nextStatus === "CLOSED" && memo.trim() === "") {
@@ -83,13 +107,18 @@ export function useIncidentActions({
     setActionLoading(true);
     setDetailError("");
     try {
-      await authFetch(`/api/incidents/${selectedIncident.incidentId}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: nextStatus, memo }),
-      });
-      setMemo("");
-      await loadIncidents();
-      await openIncidentDetail(selectedIncident.incidentId);
+      if (nextStatus === "CLOSED") {
+        // 종료 전에 취소될 자원 요청이 있는지 먼저 확인한다
+        const preview = await authFetch(`/api/incidents/${selectedIncident.incidentId}/closure-preview`);
+        if (needsClosureConfirm(preview)) {
+          // 확인 창에서 "확인하고 종료"를 눌러야 실제로 종료된다
+          setClosureError("");
+          setClosurePreview(preview);
+          return;
+        }
+      }
+      await sendStatus(null);
+      await refreshAfterStatusChange();
     } catch (err) {
       setDetailError(err.message);
     } finally {
@@ -97,8 +126,36 @@ export function useIncidentActions({
     }
   };
 
+  // 종료 확인 창의 "확인하고 종료" - 화면에서 확인한 출고 전 요청 번호를 함께 보낸다
+  const confirmClosure = async () => {
+    if (!closurePreview || !selectedIncident) return;
+    setClosureSubmitting(true);
+    setClosureError("");
+    try {
+      await sendStatus((closurePreview.openRequests || []).map((request) => request.requestId));
+    } catch (err) {
+      // 서버 메시지를 확인 창 안에 그대로 보여준다 (그 사이 요청이 바뀐 경우 등)
+      setClosureError(err.message);
+      setClosureSubmitting(false);
+      return;
+    }
+    setClosurePreview(null);
+    setClosureSubmitting(false);
+    try {
+      await refreshAfterStatusChange();
+    } catch (err) {
+      setDetailError(err.message);
+    }
+  };
+
+  const cancelClosure = () => {
+    if (closureSubmitting) return;
+    setClosurePreview(null);
+    setClosureError("");
+  };
+
   return {
     fieldPhotoUploading, fieldPhotoInputRef, MAX_INCIDENT_PHOTOS, handleFieldPhotoSelected, handleAssignToMe,
-    handleChangeStatus,
+    handleChangeStatus, closurePreview, closureSubmitting, closureError, confirmClosure, cancelClosure,
   };
 }

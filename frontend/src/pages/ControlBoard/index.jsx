@@ -14,6 +14,8 @@ import RejectModal from "./RejectModal";
 import LinkedReportsModal from "./LinkedReportsModal";
 import PhotoViewerModal from "./PhotoViewerModal";
 import BulkMergeModal from "./BulkMergeModal";
+import ResourceRequestModal from "./ResourceRequestModal";
+import IncidentCloseConfirmModal from "./IncidentCloseConfirmModal";
 import ControlBoardHeader from "./ControlBoardHeader";
 import ControlBoardSidebar from "./ControlBoardSidebar";
 import TablePagination from "./TablePagination";
@@ -26,6 +28,7 @@ import { useHeaderMenus } from "./useHeaderMenus";
 import { useIncidentActions } from "./useIncidentActions";
 import { useIncidentDetail } from "./useIncidentDetail";
 import { useIncidentFilters } from "./useIncidentFilters";
+import { useIncidentResources } from "./useIncidentResources";
 import { useReportBulkActions } from "./useReportBulkActions";
 import { useReportManagement } from "./useReportManagement";
 
@@ -124,12 +127,16 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
     selectedIncidentIdRef, openIncidentDetail,
   });
 
+  // 사건 상세의 자원 요청 영역 (요청 목록·요청 모달·취소)
+  const resources = useIncidentResources({ selectedIncidentId, setToast });
+
   const {
     fieldPhotoUploading, fieldPhotoInputRef, MAX_INCIDENT_PHOTOS, handleFieldPhotoSelected, handleAssignToMe,
-    handleChangeStatus,
+    handleChangeStatus, closurePreview, closureSubmitting, closureError, confirmClosure, cancelClosure,
   } = useIncidentActions({
     currentUser, selectedIncident, nextStatus, memo, setMemo, setActionLoading, setDetailError,
     incidentPhotos, setIncidentPhotos, loadIncidents, openIncidentDetail, setToast,
+    afterStatusChange: resources.loadRequests,
   });
 
   const {
@@ -379,6 +386,8 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
             fieldPhotoInputRef={fieldPhotoInputRef}
             handleFieldPhotoSelected={handleFieldPhotoSelected}
             MAX_INCIDENT_PHOTOS={MAX_INCIDENT_PHOTOS}
+            currentUser={currentUser}
+            resources={resources}
           />
         )}
 
@@ -470,6 +479,34 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
           incidentRank={incidentRank}
           handleBulkLinkToIncident={handleBulkLinkToIncident}
           startBulkNewIncident={startBulkNewIncident}
+        />
+      )}
+
+      {/* 자원 요청 모달 - 사건 상세의 "자원 요청" 버튼으로 열림 */}
+      {resources.requestModalOpen && selectedIncident && (
+        <ResourceRequestModal
+          incident={selectedIncident}
+          incidentLabel={`#I-${incidentRank.get(selectedIncident.incidentId)}`}
+          stocks={resources.stocks}
+          stocksLoading={resources.stocksLoading}
+          stocksError={resources.stocksError}
+          submitting={resources.submitting}
+          submitError={resources.submitError}
+          onSubmit={resources.submitRequest}
+          onClose={resources.closeRequestModal}
+        />
+      )}
+
+      {/* 사건 종료 확인 모달 - 취소될 출고 전 요청이나 미반납 출고 건이 있을 때만 열림 */}
+      {closurePreview && selectedIncident && (
+        <IncidentCloseConfirmModal
+          incidentLabel={`#I-${incidentRank.get(selectedIncident.incidentId)}`}
+          incident={selectedIncident}
+          preview={closurePreview}
+          submitting={closureSubmitting}
+          error={closureError}
+          onConfirm={confirmClosure}
+          onCancel={cancelClosure}
         />
       )}
 

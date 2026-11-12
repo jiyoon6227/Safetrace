@@ -7,6 +7,7 @@ import {
   MIN_REPORT_DATE, formatDateTime, withRo,
 } from "./constants";
 import { STATUS_LABEL, STATUS_STYLE } from "../../constants/status";
+import IncidentResourcesSection from "./IncidentResourcesSection";
 
 export default function IncidentsTab({
   incidentCounts,
@@ -67,6 +68,8 @@ export default function IncidentsTab({
   fieldPhotoInputRef,
   handleFieldPhotoSelected,
   MAX_INCIDENT_PHOTOS,
+  currentUser,
+  resources,
 }) {
   return (
     <main className="px-5 py-4 bg-[#F7F9FC] min-h-[calc(100vh-64px)]">
@@ -556,6 +559,20 @@ export default function IncidentsTab({
                       </>
                     )}
                   </div>
+
+                  {/* 자원 요청: 이 사건에 보낸 요청 목록과 요청/취소 */}
+                  <IncidentResourcesSection
+                    incident={selectedIncident}
+                    currentUser={currentUser}
+                    requests={resources.requests}
+                    requestsTotal={resources.requestsTotal}
+                    requestsLoading={resources.requestsLoading}
+                    requestsError={resources.requestsError}
+                    loadRequests={resources.loadRequests}
+                    cancellingId={resources.cancellingId}
+                    cancelRequest={resources.cancelRequest}
+                    openRequestModal={resources.openRequestModal}
+                  />
                 </div>
 
                 {/* 오른쪽: 연결 제보/사진 */}
