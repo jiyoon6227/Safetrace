@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import ControlBoard from "./pages/ControlBoard";
+import AdminPage from "./pages/Admin/AdminPage";
 import ReportForm from "./pages/ReportForm";
 import ReportPage from "./pages/ReportPage";
 import MyPage from "./pages/MyPage";
@@ -48,6 +49,7 @@ const PAGE_PATHS = {
   search: "/search",
   notices: "/notices",
   staff: "/staff",
+  admin: "/admin",
   "safety-check-response": "/safety-check",
 };
 
@@ -113,6 +115,7 @@ function RequireLogin({ children }) {
 export default function MainPage() {
   const currentUser = getCurrentUser();
   const isStaff = currentUser?.role === "STAFF";
+  const isAdmin = currentUser?.role === "ADMIN";
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -1119,6 +1122,7 @@ export default function MainPage() {
       <MainHeader
         currentUser={currentUser}
         isStaff={isStaff}
+        isAdmin={isAdmin}
         token={token}
         profileMenuOpen={profileMenuOpen}
         setProfileMenuOpen={setProfileMenuOpen}
@@ -1460,6 +1464,20 @@ export default function MainPage() {
                   onBackToHome={() => goTo("home")}
                   onLogout={handleLogout}
                   onOpenNotices={(noticeId) => goTo("notices", noticeId ? { noticeId } : {})}
+                />
+              )
+            : <Navigate to="/" replace />
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          isAdmin
+            ? (
+                <AdminPage
+                  currentUser={currentUser}
+                  onBackToHome={() => goTo("home")}
+                  onLogout={handleLogout}
                 />
               )
             : <Navigate to="/" replace />

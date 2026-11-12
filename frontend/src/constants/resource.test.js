@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  ADMIN_STATUS_FILTERS,
   formatQty,
+  getAdminConfirmMessage,
+  getAdminRequestActions,
   getResourceRequestAvailability,
   needsClosureConfirm,
+  validateRejectReason,
   validateResourceRequestForm,
 } from "./resource";
 
@@ -95,5 +99,58 @@ describe("formatQty", () => {
   it("단위가 없으면 수량만, 값이 없으면 -를 돌려준다", () => {
     expect(formatQty(5)).toBe("5");
     expect(formatQty(null, "개")).toBe("-");
+  });
+});
+
+describe("getAdminRequestActions", () => {
+  it("승인 대기 요청은 승인·반려를 할 수 있다", () => {
+    expect(getAdminRequestActions({ status: "REQUESTED" })).toEqual(["approve", "reject"]);
+  });
+
+  it("승인된 요청은 출고·승인 취소를 할 수 있다", () => {
+    expect(getAdminRequestActions({ status: "APPROVED" })).toEqual(["dispatch", "cancel"]);
+  });
+
+  it("그 외 상태와 빈 값은 할 수 있는 일이 없다", () => {
+    ["REJECTED", "CANCELLED", "DISPATCHED", "SETTLED", "COMPLETED"].forEach((status) => {
+      expect(getAdminRequestActions({ status })).toEqual([]);
+    });
+    expect(getAdminRequestActions(null)).toEqual([]);
+  });
+});
+
+describe("getAdminConfirmMessage", () => {
+  it("반납 대상 물품과 소모품의 출고 안내가 다르다", () => {
+    const returnable = getAdminConfirmMessage("dispatch", { returnable: "Y" });
+    const consumable = getAdminConfirmMessage("dispatch", { returnable: "N" });
+    expect(returnable).toContain("반납");
+    expect(consumable).toContain("총 보유량");
+    expect(returnable).not.toBe(consumable);
+  });
+
+  it("승인 취소 안내가 있고, 모르는 동작은 빈 문구다", () => {
+    expect(getAdminConfirmMessage("cancel", { returnable: "Y" })).not.toBe("");
+    expect(getAdminConfirmMessage("approve", { returnable: "Y" })).toBe("");
+    expect(getAdminConfirmMessage("dispatch", null)).toBe("");
+  });
+});
+
+describe("validateRejectReason", () => {
+  it("빈 사유와 공백만 있는 사유는 거절한다", () => {
+    expect(validateRejectReason("")).not.toBe("");
+    expect(validateRejectReason("   ")).not.toBe("");
+  });
+
+  it("500자까지는 통과하고 501자부터 거절한다", () => {
+    expect(validateRejectReason("가".repeat(500))).toBe("");
+    expect(validateRejectReason("가".repeat(501))).not.toBe("");
+  });
+});
+
+describe("ADMIN_STATUS_FILTERS", () => {
+  it("전체 필터가 맨 앞에 있고 값이 겹치지 않는다", () => {
+    expect(ADMIN_STATUS_FILTERS[0].value).toBe("");
+    const values = ADMIN_STATUS_FILTERS.map((f) => f.value);
+    expect(new Set(values).size).toBe(values.length);
   });
 });

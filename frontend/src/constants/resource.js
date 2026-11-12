@@ -84,3 +84,57 @@ export function validateResourceRequestForm({ stock, quantity, reason }) {
   }
   return "";
 }
+
+// ---- ADMIN(자원 관리자) 화면용 ----
+
+// ADMIN 요청 목록의 상태 필터. value가 빈 문자열이면 전체.
+export const ADMIN_STATUS_FILTERS = [
+  { value: "", label: "전체" },
+  { value: "REQUESTED", label: REQUEST_STATUS_LABEL.REQUESTED },
+  { value: "APPROVED", label: REQUEST_STATUS_LABEL.APPROVED },
+  { value: "DISPATCHED", label: REQUEST_STATUS_LABEL.DISPATCHED },
+  { value: "SETTLED", label: REQUEST_STATUS_LABEL.SETTLED },
+  { value: "COMPLETED", label: REQUEST_STATUS_LABEL.COMPLETED },
+  { value: "REJECTED", label: REQUEST_STATUS_LABEL.REJECTED },
+  { value: "CANCELLED", label: REQUEST_STATUS_LABEL.CANCELLED },
+];
+
+export const ADMIN_ACTION_LABEL = {
+  approve: "승인",
+  reject: "반려",
+  dispatch: "출고",
+  cancel: "승인 취소",
+};
+
+// 요청 상태별로 ADMIN이 누를 수 있는 버튼.
+// 승인 대기 → 승인/반려, 승인됨 → 출고/승인 취소, 그 외에는 이 화면에서 할 일이 없다.
+// (서버도 같은 규칙으로 다시 검사한다. 화면은 못 누르는 버튼을 보여주지 않는 용도다.)
+export function getAdminRequestActions(request) {
+  if (!request) return [];
+  if (request.status === "REQUESTED") return ["approve", "reject"];
+  if (request.status === "APPROVED") return ["dispatch", "cancel"];
+  return [];
+}
+
+// 출고·승인 취소 확인 창에 보여줄 안내 문구
+export function getAdminConfirmMessage(action, request) {
+  if (!request) return "";
+  if (action === "dispatch") {
+    return request.returnable === "Y"
+      ? "출고하면 '출고됨(반납 전)' 상태가 되고, 이후 담당자가 도착 확인과 반납 신청을 할 수 있습니다."
+      : "소모품이라 출고하면 총 보유량이 요청 수량만큼 줄고 '출고 완료'로 끝납니다. 되돌릴 수 없습니다.";
+  }
+  if (action === "cancel") {
+    return "승인을 취소하면 예약해 둔 재고가 다시 사용 가능 수량으로 돌아가고, 요청은 '취소'가 됩니다.";
+  }
+  return "";
+}
+
+// 반려 사유 검사. 문제가 없으면 빈 문자열.
+export function validateRejectReason(reason) {
+  if (!reason || !reason.trim()) return "반려 사유를 입력해주세요.";
+  if (reason.trim().length > MAX_REASON_LENGTH) {
+    return `반려 사유는 ${MAX_REASON_LENGTH}자 이하로 입력해주세요.`;
+  }
+  return "";
+}
