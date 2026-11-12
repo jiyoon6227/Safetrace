@@ -138,3 +138,65 @@ export function validateRejectReason(reason) {
   }
   return "";
 }
+
+// ---- STAFF 도착 확인·반납 신청용 ----
+
+// 반납 신청 진행 상태 이름표
+export const RETURN_STATUS_LABEL = {
+  PENDING: "확인 대기",
+  CONFIRMED: "반납 확인됨",
+  REJECTED: "반려",
+};
+
+export const RETURN_STATUS_STYLE = {
+  PENDING: "bg-amber-100 text-amber-700",
+  CONFIRMED: "bg-emerald-100 text-emerald-700",
+  REJECTED: "bg-rose-100 text-rose-700",
+};
+
+// 도착 확인을 할 수 있는 요청 상태 (서버 규칙과 같다)
+const ARRIVAL_STATUSES = ["DISPATCHED", "SETTLED", "COMPLETED"];
+
+function isOwnRequest(request, currentUser) {
+  return Boolean(request && currentUser && request.requesterId === currentUser.memberId);
+}
+
+// 내 요청이 출고되었고 아직 도착 확인을 안 했으면 true
+export function canConfirmArrival(request, currentUser) {
+  return isOwnRequest(request, currentUser)
+    && currentUser.role === "STAFF"
+    && ARRIVAL_STATUSES.includes(request.status)
+    && !request.arrivedAt;
+}
+
+// 내 요청이 반납 대상 물품이고 출고 뒤 정산이 끝나지 않았으면 true (소모품은 반납하지 않는다)
+export function canApplyReturn(request, currentUser) {
+  return isOwnRequest(request, currentUser)
+    && currentUser.role === "STAFF"
+    && request.returnable === "Y"
+    && request.status === "DISPATCHED";
+}
+
+// 지금 새로 신청할 수 있는 반납 수량 = 요청 수량 - 반납 확인 - 손실 - 확인 대기 중인 신청.
+// 서버가 같은 계산으로 다시 검사한다. 화면에서는 입력 기본값과 안내용이다.
+export function getApplicableReturnQty(request, applications) {
+  if (!request) return 0;
+  const pending = (Array.isArray(applications) ? applications : [])
+    .filter((app) => app.status === "PENDING")
+    .reduce((sum, app) => sum + (Number(app.appliedQty) || 0), 0);
+  const left = (Number(request.quantity) || 0) - (Number(request.returnedQty) || 0)
+    - (Number(request.lostQty) || 0) - pending;
+  return Math.max(left, 0);
+}
+
+// 반납 신청 입력값 검사. 문제가 없으면 빈 문자열.
+export function validateReturnForm({ quantity, applicableQty, memo, unit }) {
+  const qty = Number(quantity);
+  if (!Number.isInteger(qty) || qty < 1) return "반납 수량은 1 이상의 정수로 입력해주세요.";
+  if (applicableQty < 1) return "신청할 수 있는 수량이 없습니다.";
+  if (qty > applicableQty) return `신청할 수 있는 수량(${formatQty(applicableQty, unit)})을 넘을 수 없습니다.`;
+  if (memo && memo.trim().length > MAX_REASON_LENGTH) {
+    return `메모는 ${MAX_REASON_LENGTH}자 이하로 입력해주세요.`;
+  }
+  return "";
+}

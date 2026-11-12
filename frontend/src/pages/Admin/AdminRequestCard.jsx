@@ -49,6 +49,10 @@ export default function AdminRequestCard({ request, busy, onAction }) {
         </p>
       )}
 
+      {request.arrivedAt && (
+        <p className="text-xs text-slate-500 mt-1">담당자 도착 확인 {formatDateTime(request.arrivedAt)}</p>
+      )}
+
       {actions.length > 0 && (
         <div className="flex justify-end gap-2 mt-3">
           {actions.map((action) => (

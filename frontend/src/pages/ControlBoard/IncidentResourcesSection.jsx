@@ -2,13 +2,13 @@ import { Loader2, Package, Plus, RefreshCw } from "lucide-react";
 import { formatDateTime } from "./constants";
 import {
   CANCELLABLE_REQUEST_STATUSES, REQUEST_STATUS_LABEL, REQUEST_STATUS_STYLE, formatQty,
-  getResourceRequestAvailability,
+  canApplyReturn, canConfirmArrival, getResourceRequestAvailability,
 } from "../../constants/resource";
 
 // 사건 상세의 "자원 요청" 영역 - 이 사건에 보낸 자원 요청 목록과 요청/취소 버튼
 export default function IncidentResourcesSection({
   incident, currentUser, requests, requestsTotal, requestsLoading, requestsError, loadRequests,
-  cancellingId, cancelRequest, openRequestModal,
+  cancellingId, cancelRequest, openRequestModal, arrivingId, arriveRequest, openReturnModal,
 }) {
   const availability = getResourceRequestAvailability(currentUser, incident);
 
@@ -62,6 +62,8 @@ export default function IncidentResourcesSection({
           {requests.map((request) => {
             const cancellable = CANCELLABLE_REQUEST_STATUSES.includes(request.status)
               && request.requesterId === currentUser?.memberId;
+            const arrivable = canConfirmArrival(request, currentUser);
+            const returnApplicable = canApplyReturn(request, currentUser);
             return (
               <li key={request.requestId} className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2.5">
                 <div className="flex items-start justify-between gap-2">
@@ -93,6 +95,34 @@ export default function IncidentResourcesSection({
                   <p className="text-[11px] text-slate-500 mt-1">
                     반납 {formatQty(request.returnedQty || 0, request.unit)} · 손실 {formatQty(request.lostQty || 0, request.unit)}
                   </p>
+                )}
+
+                {request.arrivedAt && (
+                  <p className="text-[11px] text-slate-500 mt-1">도착 확인 {formatDateTime(request.arrivedAt)}</p>
+                )}
+
+                {(arrivable || returnApplicable) && (
+                  <div className="flex justify-end gap-2 mt-1.5">
+                    {arrivable && (
+                      <button
+                        type="button"
+                        onClick={() => arriveRequest(request.requestId)}
+                        disabled={arrivingId !== null}
+                        className="text-[11px] font-semibold text-white bg-[#0F2540] rounded-md px-2.5 py-1 hover:bg-[#193A5B] disabled:opacity-50 cursor-pointer"
+                      >
+                        {arrivingId === request.requestId ? "확인 중..." : "도착 확인"}
+                      </button>
+                    )}
+                    {returnApplicable && (
+                      <button
+                        type="button"
+                        onClick={() => openReturnModal(request)}
+                        className="text-[11px] font-semibold text-[#0F2540] border border-[#0F2540] bg-white rounded-md px-2.5 py-1 hover:bg-slate-100 cursor-pointer"
+                      >
+                        반납 신청
+                      </button>
+                    )}
+                  </div>
                 )}
 
                 {cancellable && (

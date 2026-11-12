@@ -15,6 +15,7 @@ import LinkedReportsModal from "./LinkedReportsModal";
 import PhotoViewerModal from "./PhotoViewerModal";
 import BulkMergeModal from "./BulkMergeModal";
 import ResourceRequestModal from "./ResourceRequestModal";
+import ReturnApplyModal from "./ReturnApplyModal";
 import IncidentCloseConfirmModal from "./IncidentCloseConfirmModal";
 import ControlBoardHeader from "./ControlBoardHeader";
 import ControlBoardSidebar from "./ControlBoardSidebar";
@@ -494,6 +495,20 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
           submitError={resources.submitError}
           onSubmit={resources.submitRequest}
           onClose={resources.closeRequestModal}
+        />
+      )}
+
+      {/* 반납 신청 모달 - 출고된 반납 대상 물품의 "반납 신청" 버튼으로 열림 */}
+      {resources.returnTarget && (
+        <ReturnApplyModal
+          request={resources.requests.find((r) => r.requestId === resources.returnTarget.requestId) || resources.returnTarget}
+          applications={resources.returnApplications}
+          applicationsLoading={resources.returnLoading}
+          applicationsError={resources.returnLoadError}
+          submitting={resources.returnSubmitting}
+          submitError={resources.returnSubmitError}
+          onSubmit={resources.submitReturn}
+          onClose={resources.closeReturnModal}
         />
       )}
 

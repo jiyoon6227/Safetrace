@@ -572,6 +572,9 @@ export default function IncidentsTab({
                     cancellingId={resources.cancellingId}
                     cancelRequest={resources.cancelRequest}
                     openRequestModal={resources.openRequestModal}
+                    arrivingId={resources.arrivingId}
+                    arriveRequest={resources.arriveRequest}
+                    openReturnModal={resources.openReturnModal}
                   />
                 </div>
 
