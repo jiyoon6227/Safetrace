@@ -1,14 +1,13 @@
-import { Loader2, Package, Plus, RefreshCw } from "lucide-react";
+import { ArrowRight, Loader2, Package, Plus, RefreshCw } from "lucide-react";
 import { formatDateTime } from "./constants";
-import {
-  CANCELLABLE_REQUEST_STATUSES, REQUEST_STATUS_LABEL, REQUEST_STATUS_STYLE, formatQty,
-  canApplyReturn, canConfirmArrival, getResourceRequestAvailability,
-} from "../../constants/resource";
+import RequestStatusBadge from "./RequestStatusBadge";
+import { REQUEST_STATUS_LABEL, REQUEST_STATUS_STYLE, formatQty, getResourceRequestAvailability } from "../../constants/resource";
 
-// 사건 상세의 "자원 요청" 영역 - 이 사건에 보낸 자원 요청 목록과 요청/취소 버튼
+// 사건 상세의 "자원 요청" 요약 - 상태별 건수(서버 집계), 최근 요청 3건, 요청 버튼.
+// 취소·도착 확인·반납 신청 같은 처리는 "자원 관리" 탭에서 한다.
 export default function IncidentResourcesSection({
-  incident, currentUser, requests, requestsTotal, requestsLoading, requestsError, loadRequests,
-  cancellingId, cancelRequest, openRequestModal, arrivingId, arriveRequest, openReturnModal,
+  incident, currentUser, requests, requestsTotal, requestCounts, requestsLoading, requestsError, loadRequests,
+  openRequestModal, onOpenResourceTab,
 }) {
   const availability = getResourceRequestAvailability(currentUser, incident);
 
@@ -58,95 +57,48 @@ export default function IncidentResourcesSection({
           <div className="text-xs text-slate-400 py-5 text-center">이 사건에 보낸 자원 요청이 없습니다.</div>
         )
       ) : (
-        <ul className="space-y-2">
-          {requests.map((request) => {
-            const cancellable = CANCELLABLE_REQUEST_STATUSES.includes(request.status)
-              && request.requesterId === currentUser?.memberId;
-            const arrivable = canConfirmArrival(request, currentUser);
-            const returnApplicable = canApplyReturn(request, currentUser);
-            return (
-              <li key={request.requestId} className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2.5">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold text-slate-700">
-                      {request.itemName} {formatQty(request.quantity, request.unit)}
-                      <span className="ml-1.5 font-normal text-slate-400">· {request.departmentName}</span>
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      요청 {formatDateTime(request.createdAt)}
-                      {request.neededAt && ` · 필요 ${formatDateTime(request.neededAt)}`}
-                    </div>
+        <>
+          <div className="flex flex-wrap gap-1.5 mb-2.5">
+            {Object.entries(requestCounts).filter(([, count]) => count > 0).map(([status, count]) => (
+              <span
+                key={status}
+                className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${REQUEST_STATUS_STYLE[status] || "bg-slate-100 text-slate-600"}`}
+              >
+                {REQUEST_STATUS_LABEL[status] || status} {count}
+              </span>
+            ))}
+          </div>
+
+          <ul className="space-y-1.5">
+            {requests.map((request) => (
+              <li
+                key={request.requestId}
+                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-slate-700 truncate">
+                    {request.itemName} {formatQty(request.quantity, request.unit)}
+                    <span className="ml-1.5 font-normal text-slate-400">· {request.departmentName}</span>
                   </div>
-                  <span
-                    className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      REQUEST_STATUS_STYLE[request.status] || "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {REQUEST_STATUS_LABEL[request.status] || request.status}
-                  </span>
+                  <div className="text-[11px] text-slate-400">요청 {formatDateTime(request.createdAt)}</div>
                 </div>
-
-                <p className="text-[11px] text-slate-600 mt-1.5 break-words">{request.reason}</p>
-
-                {request.status === "REJECTED" && request.rejectReason && (
-                  <p className="text-[11px] text-rose-600 mt-1 break-words">반려 사유: {request.rejectReason}</p>
-                )}
-                {request.returnable === "Y" && ["DISPATCHED", "SETTLED"].includes(request.status) && (
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    반납 {formatQty(request.returnedQty || 0, request.unit)} · 손실 {formatQty(request.lostQty || 0, request.unit)}
-                  </p>
-                )}
-
-                {request.arrivedAt && (
-                  <p className="text-[11px] text-slate-500 mt-1">도착 확인 {formatDateTime(request.arrivedAt)}</p>
-                )}
-
-                {(arrivable || returnApplicable) && (
-                  <div className="flex justify-end gap-2 mt-1.5">
-                    {arrivable && (
-                      <button
-                        type="button"
-                        onClick={() => arriveRequest(request.requestId)}
-                        disabled={arrivingId !== null}
-                        className="text-[11px] font-semibold text-white bg-[#0F2540] rounded-md px-2.5 py-1 hover:bg-[#193A5B] disabled:opacity-50 cursor-pointer"
-                      >
-                        {arrivingId === request.requestId ? "확인 중..." : "도착 확인"}
-                      </button>
-                    )}
-                    {returnApplicable && (
-                      <button
-                        type="button"
-                        onClick={() => openReturnModal(request)}
-                        className="text-[11px] font-semibold text-[#0F2540] border border-[#0F2540] bg-white rounded-md px-2.5 py-1 hover:bg-slate-100 cursor-pointer"
-                      >
-                        반납 신청
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {cancellable && (
-                  <div className="flex justify-end mt-1.5">
-                    <button
-                      type="button"
-                      onClick={() => cancelRequest(request.requestId)}
-                      disabled={cancellingId !== null}
-                      className="text-[11px] font-semibold text-slate-500 border border-slate-300 bg-white rounded-md px-2.5 py-1 hover:bg-slate-100 disabled:opacity-50 cursor-pointer"
-                    >
-                      {cancellingId === request.requestId ? "취소 중..." : "요청 취소"}
-                    </button>
-                  </div>
-                )}
+                <RequestStatusBadge status={request.status} className="px-2 py-0.5 text-[10px]" />
               </li>
-            );
-          })}
-        </ul>
+            ))}
+          </ul>
+        </>
       )}
 
-      {requestsTotal > requests.length && (
-        <p className="text-[11px] text-slate-400 mt-2 text-center">
-          {requests.length}건만 표시합니다. (전체 {requestsTotal}건)
-        </p>
+      {requestsTotal > 0 && (
+        <div className="flex justify-end mt-2.5">
+          <button
+            type="button"
+            onClick={() => onOpenResourceTab(incident.incidentId)}
+            className="flex items-center gap-1 text-[11px] font-bold text-[#244D7C] hover:underline cursor-pointer"
+          >
+            자원 관리에서 전체 보기 <ArrowRight className="w-3 h-3" />
+          </button>
+        </div>
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, FileText, ClipboardList,
-  FileBarChart, Activity,
+  FileBarChart, Activity, Package,
 } from "lucide-react";
 
 const STATUS_ORDER = [
@@ -204,6 +204,11 @@ const NAV_ITEMS = [
     key: "incidents",
     icon: FileText,
     label: "사건 관리",
+  },
+  {
+    key: "resources",
+    icon: Package,
+    label: "자원 관리",
   },
   {
     key: "publicInfo",

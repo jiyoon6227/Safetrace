@@ -2,8 +2,7 @@ import { useState } from "react";
 import { Loader2, Undo2, X } from "lucide-react";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import {
-  MAX_REASON_LENGTH, RETURN_STATUS_LABEL, RETURN_STATUS_STYLE, formatQty, getApplicableReturnQty,
-  validateReturnForm,
+  MAX_REASON_LENGTH, RETURN_STATUS_LABEL, RETURN_STATUS_STYLE, formatQty, validateReturnForm,
 } from "../../constants/resource";
 import { formatDateTime } from "./constants";
 
@@ -12,7 +11,8 @@ import { formatDateTime } from "./constants";
 export default function ReturnApplyModal({
   request, applications, applicationsLoading, applicationsError, submitting, submitError, onSubmit, onClose,
 }) {
-  const applicableQty = getApplicableReturnQty(request, applications);
+  // 신청 가능 수량은 서버가 계산해서 요청 응답에 담아 준다 (확인 대기 중인 신청까지 뺀 값)
+  const applicableQty = request.applicableReturnQty ?? 0;
   const [quantity, setQuantity] = useState("");
   const [memo, setMemo] = useState("");
   const [localError, setLocalError] = useState("");
@@ -53,7 +53,7 @@ export default function ReturnApplyModal({
             반납 확인 {formatQty(request.returnedQty || 0, request.unit)} · 손실 {formatQty(request.lostQty || 0, request.unit)}
           </div>
           <div className="font-semibold text-[#0F2540]">
-            지금 신청할 수 있는 수량 {applicationsLoading ? "확인 중..." : formatQty(applicableQty, request.unit)}
+            지금 신청할 수 있는 수량 {formatQty(applicableQty, request.unit)}
           </div>
         </div>
 

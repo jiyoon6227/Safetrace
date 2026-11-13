@@ -87,8 +87,8 @@ export function validateResourceRequestForm({ stock, quantity, reason }) {
 
 // ---- ADMIN(자원 관리자) 화면용 ----
 
-// ADMIN 요청 목록의 상태 필터. value가 빈 문자열이면 전체.
-export const ADMIN_STATUS_FILTERS = [
+// 요청 목록의 상태 필터. value가 빈 문자열이면 전체.
+export const REQUEST_STATUS_FILTERS = [
   { value: "", label: "전체" },
   { value: "REQUESTED", label: REQUEST_STATUS_LABEL.REQUESTED },
   { value: "APPROVED", label: REQUEST_STATUS_LABEL.APPROVED },
@@ -98,6 +98,9 @@ export const ADMIN_STATUS_FILTERS = [
   { value: "REJECTED", label: REQUEST_STATUS_LABEL.REJECTED },
   { value: "CANCELLED", label: REQUEST_STATUS_LABEL.CANCELLED },
 ];
+
+// ADMIN 화면과 STAFF 자원 관리 화면이 같은 필터를 쓴다
+export const ADMIN_STATUS_FILTERS = REQUEST_STATUS_FILTERS;
 
 export const ADMIN_ACTION_LABEL = {
   approve: "승인",
@@ -154,41 +157,6 @@ export const RETURN_STATUS_STYLE = {
   REJECTED: "bg-rose-100 text-rose-700",
 };
 
-// 도착 확인을 할 수 있는 요청 상태 (서버 규칙과 같다)
-const ARRIVAL_STATUSES = ["DISPATCHED", "SETTLED", "COMPLETED"];
-
-function isOwnRequest(request, currentUser) {
-  return Boolean(request && currentUser && request.requesterId === currentUser.memberId);
-}
-
-// 내 요청이 출고되었고 아직 도착 확인을 안 했으면 true
-export function canConfirmArrival(request, currentUser) {
-  return isOwnRequest(request, currentUser)
-    && currentUser.role === "STAFF"
-    && ARRIVAL_STATUSES.includes(request.status)
-    && !request.arrivedAt;
-}
-
-// 내 요청이 반납 대상 물품이고 출고 뒤 정산이 끝나지 않았으면 true (소모품은 반납하지 않는다)
-export function canApplyReturn(request, currentUser) {
-  return isOwnRequest(request, currentUser)
-    && currentUser.role === "STAFF"
-    && request.returnable === "Y"
-    && request.status === "DISPATCHED";
-}
-
-// 지금 새로 신청할 수 있는 반납 수량 = 요청 수량 - 반납 확인 - 손실 - 확인 대기 중인 신청.
-// 서버가 같은 계산으로 다시 검사한다. 화면에서는 입력 기본값과 안내용이다.
-export function getApplicableReturnQty(request, applications) {
-  if (!request) return 0;
-  const pending = (Array.isArray(applications) ? applications : [])
-    .filter((app) => app.status === "PENDING")
-    .reduce((sum, app) => sum + (Number(app.appliedQty) || 0), 0);
-  const left = (Number(request.quantity) || 0) - (Number(request.returnedQty) || 0)
-    - (Number(request.lostQty) || 0) - pending;
-  return Math.max(left, 0);
-}
-
 // 반납 신청 입력값 검사. 문제가 없으면 빈 문자열.
 export function validateReturnForm({ quantity, applicableQty, memo, unit }) {
   const qty = Number(quantity);
@@ -199,4 +167,13 @@ export function validateReturnForm({ quantity, applicableQty, memo, unit }) {
     return `메모는 ${MAX_REASON_LENGTH}자 이하로 입력해주세요.`;
   }
   return "";
+}
+
+// ---- STAFF 자원 관리 탭 · 사건 상세 요약용 (건수 집계·검색·페이징·버튼 가능 여부·처리 이력 단계는 서버가 한다) ----
+
+// 주소의 incidentId 값을 숫자로 바꾼다. 비었거나 숫자가 아니면 null.
+export function parseIncidentIdParam(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
 }

@@ -1,13 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { getCurrentUser } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import { toDateInputValue } from "./constants";
+import { parseIncidentIdParam } from "../../constants/resource";
 import DashboardTab from "./DashboardTab";
-import ReportsTab from "./ReportsTab";
-import IncidentsTab from "./IncidentsTab";
-import PublicInfoTab from "./PublicInfoTab";
-import StatisticsReportTab from "./StatisticsReportTab";
 import CreateIncidentModal from "./CreateIncidentModal";
 import EditIncidentModal from "./EditIncidentModal";
 import RejectModal from "./RejectModal";
@@ -15,7 +12,6 @@ import LinkedReportsModal from "./LinkedReportsModal";
 import PhotoViewerModal from "./PhotoViewerModal";
 import BulkMergeModal from "./BulkMergeModal";
 import ResourceRequestModal from "./ResourceRequestModal";
-import ReturnApplyModal from "./ReturnApplyModal";
 import IncidentCloseConfirmModal from "./IncidentCloseConfirmModal";
 import ControlBoardHeader from "./ControlBoardHeader";
 import ControlBoardSidebar from "./ControlBoardSidebar";
@@ -33,7 +29,14 @@ import { useIncidentResources } from "./useIncidentResources";
 import { useReportBulkActions } from "./useReportBulkActions";
 import { useReportManagement } from "./useReportManagement";
 
-const CONTROL_BOARD_TABS = new Set(["dashboard", "reports", "incidents", "publicInfo", "statistics"]);
+// 처음 보이는 대시보드 외의 탭은 열 때 내려받는다
+const ReportsTab = lazy(() => import("./ReportsTab"));
+const IncidentsTab = lazy(() => import("./IncidentsTab"));
+const ResourcesTab = lazy(() => import("./ResourcesTab"));
+const PublicInfoTab = lazy(() => import("./PublicInfoTab"));
+const StatisticsReportTab = lazy(() => import("./StatisticsReportTab"));
+
+const CONTROL_BOARD_TABS = new Set(["dashboard", "reports", "incidents", "resources", "publicInfo", "statistics"]);
 
 export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) {
   const currentUser = getCurrentUser();
@@ -45,6 +48,11 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
   const activeNav = CONTROL_BOARD_TABS.has(tabParam) ? tabParam : "dashboard";
   const setActiveNav = (nextTab) => {
     setSearchParams(nextTab === "dashboard" ? {} : { tab: nextTab });
+  };
+
+  // 사건 상세의 "자원 관리에서 전체 보기" - 그 사건으로 걸러서 자원 관리 탭을 연다
+  const openResourceTab = (incidentId) => {
+    setSearchParams({ tab: "resources", incidentId: String(incidentId) });
   };
 
   const handleBackToHome = useCallback(() => {
@@ -233,6 +241,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
           onLogout={onLogout}
         />
 
+        <Suspense fallback={null}>
         {activeNav === "dashboard" && (
           <DashboardTab
             error={error}
@@ -389,11 +398,27 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
             MAX_INCIDENT_PHOTOS={MAX_INCIDENT_PHOTOS}
             currentUser={currentUser}
             resources={resources}
+            onOpenResourceTab={openResourceTab}
           />
         )}
 
+        {activeNav === "resources" && (
+          <ResourcesTab
+            currentUser={currentUser}
+            incidents={incidents}
+            incidentRank={incidentRank}
+            initialIncidentId={parseIncidentIdParam(searchParams.get("incidentId"))}
+            onOpenIncident={(incidentId) => {
+              setActiveNav("incidents");
+              openIncidentDetail(incidentId);
+            }}
+            onGoIncidents={() => setActiveNav("incidents")}
+            setToast={setToast}
+          />
+        )}
         {activeNav === "publicInfo" && <PublicInfoTab />}
         {activeNav === "statistics" && <StatisticsReportTab />}
+        </Suspense>
 
       </div>
 
@@ -495,20 +520,6 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
           submitError={resources.submitError}
           onSubmit={resources.submitRequest}
           onClose={resources.closeRequestModal}
-        />
-      )}
-
-      {/* 반납 신청 모달 - 출고된 반납 대상 물품의 "반납 신청" 버튼으로 열림 */}
-      {resources.returnTarget && (
-        <ReturnApplyModal
-          request={resources.requests.find((r) => r.requestId === resources.returnTarget.requestId) || resources.returnTarget}
-          applications={resources.returnApplications}
-          applicationsLoading={resources.returnLoading}
-          applicationsError={resources.returnLoadError}
-          submitting={resources.returnSubmitting}
-          submitError={resources.returnSubmitError}
-          onSubmit={resources.submitReturn}
-          onClose={resources.closeReturnModal}
         />
       )}
 

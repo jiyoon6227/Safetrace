@@ -70,6 +70,7 @@ export default function IncidentsTab({
   MAX_INCIDENT_PHOTOS,
   currentUser,
   resources,
+  onOpenResourceTab,
 }) {
   return (
     <main className="px-5 py-4 bg-[#F7F9FC] min-h-[calc(100vh-64px)]">
@@ -560,21 +561,18 @@ export default function IncidentsTab({
                     )}
                   </div>
 
-                  {/* 자원 요청: 이 사건에 보낸 요청 목록과 요청/취소 */}
+                  {/* 자원 요청: 이 사건의 요청 요약과 요청 버튼 (전체 목록·처리는 자원 관리 탭) */}
                   <IncidentResourcesSection
                     incident={selectedIncident}
                     currentUser={currentUser}
                     requests={resources.requests}
                     requestsTotal={resources.requestsTotal}
+                    requestCounts={resources.requestCounts}
                     requestsLoading={resources.requestsLoading}
                     requestsError={resources.requestsError}
                     loadRequests={resources.loadRequests}
-                    cancellingId={resources.cancellingId}
-                    cancelRequest={resources.cancelRequest}
                     openRequestModal={resources.openRequestModal}
-                    arrivingId={resources.arrivingId}
-                    arriveRequest={resources.arriveRequest}
-                    openReturnModal={resources.openReturnModal}
+                    onOpenResourceTab={onOpenResourceTab}
                   />
                 </div>
 

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_STATUS_FILTERS,
-  canApplyReturn,
-  canConfirmArrival,
-  getApplicableReturnQty,
+  REQUEST_STATUS_FILTERS,
+  parseIncidentIdParam,
   validateReturnForm,
   formatQty,
   getAdminConfirmMessage,
@@ -159,57 +158,6 @@ describe("ADMIN_STATUS_FILTERS", () => {
   });
 });
 
-describe("canConfirmArrival", () => {
-  const own = { requesterId: 1, status: "DISPATCHED", arrivedAt: null };
-
-  it("내 요청이 출고됐고 아직 도착 확인 전이면 할 수 있다", () => {
-    expect(canConfirmArrival(own, staff)).toBe(true);
-    expect(canConfirmArrival({ ...own, status: "COMPLETED" }, staff)).toBe(true);
-  });
-
-  it("이미 도착 확인했거나 출고 전이면 할 수 없다", () => {
-    expect(canConfirmArrival({ ...own, arrivedAt: "2026-11-13T01:00:00" }, staff)).toBe(false);
-    expect(canConfirmArrival({ ...own, status: "APPROVED" }, staff)).toBe(false);
-  });
-
-  it("남의 요청이거나 STAFF가 아니면 할 수 없다", () => {
-    expect(canConfirmArrival({ ...own, requesterId: 9 }, staff)).toBe(false);
-    expect(canConfirmArrival(own, { memberId: 1, role: "ADMIN" })).toBe(false);
-    expect(canConfirmArrival(own, null)).toBe(false);
-  });
-});
-
-describe("canApplyReturn", () => {
-  const own = { requesterId: 1, status: "DISPATCHED", returnable: "Y" };
-
-  it("내 반납 대상 물품이 출고됨 상태일 때만 할 수 있다", () => {
-    expect(canApplyReturn(own, staff)).toBe(true);
-    expect(canApplyReturn({ ...own, returnable: "N" }, staff)).toBe(false);
-    expect(canApplyReturn({ ...own, status: "SETTLED" }, staff)).toBe(false);
-    expect(canApplyReturn({ ...own, requesterId: 2 }, staff)).toBe(false);
-  });
-});
-
-describe("getApplicableReturnQty", () => {
-  const request = { quantity: 10, returnedQty: 2, lostQty: 1 };
-
-  it("확인 대기 중인 신청만 빼고 계산한다", () => {
-    const apps = [
-      { status: "PENDING", appliedQty: 3 },
-      { status: "CONFIRMED", appliedQty: 2 },
-      { status: "REJECTED", appliedQty: 4 },
-    ];
-    expect(getApplicableReturnQty(request, apps)).toBe(4);
-  });
-
-  it("신청 목록이 없으면 남은 수량 전부이고, 음수는 0으로 맞춘다", () => {
-    expect(getApplicableReturnQty(request, [])).toBe(7);
-    expect(getApplicableReturnQty(request, undefined)).toBe(7);
-    expect(getApplicableReturnQty(request, [{ status: "PENDING", appliedQty: 99 }])).toBe(0);
-    expect(getApplicableReturnQty(null, [])).toBe(0);
-  });
-});
-
 describe("validateReturnForm", () => {
   it("정상 입력은 통과한다", () => {
     expect(validateReturnForm({ quantity: "3", applicableQty: 5, memo: "", unit: "대" })).toBe("");
@@ -229,5 +177,20 @@ describe("validateReturnForm", () => {
   it("메모가 500자를 넘으면 거절한다", () => {
     expect(validateReturnForm({ quantity: "1", applicableQty: 5, memo: "가".repeat(501) })).not.toBe("");
     expect(validateReturnForm({ quantity: "1", applicableQty: 5, memo: "가".repeat(500) })).toBe("");
+  });
+});
+
+describe("parseIncidentIdParam", () => {
+  it("양의 정수만 숫자로 바꾼다", () => {
+    expect(parseIncidentIdParam("12")).toBe(12);
+    ["", null, undefined, "abc", "0", "-3", "1.5"].forEach((value) => {
+      expect(parseIncidentIdParam(value)).toBeNull();
+    });
+  });
+});
+
+describe("REQUEST_STATUS_FILTERS", () => {
+  it("ADMIN 필터와 같은 목록을 쓴다", () => {
+    expect(REQUEST_STATUS_FILTERS).toBe(ADMIN_STATUS_FILTERS);
   });
 });
