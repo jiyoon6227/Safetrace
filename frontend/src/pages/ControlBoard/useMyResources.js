@@ -142,16 +142,18 @@ export function useMyResources({ initialIncidentId, setToast }) {
     if (historiesRef.current[requestId]?.open) await loadHistory(requestId);
   };
 
-  // ---- 취소 · 도착 확인 ----
-  // 다른 곳에서 먼저 바뀌었을 수 있어 성공·실패와 상관없이 목록을 다시 불러온다.
-  const act = async (requestId, path, doneMessage) => {
-    if (actingId !== null) return;
+  // ---- 취소 · 도착 확인 (ADMIN 화면은 승인·반려·출고도 이 함수로 보낸다) ----
+  // 성공하면 true. 다른 곳에서 먼저 바뀌었을 수 있어 성공·실패와 상관없이 목록을 다시 불러온다.
+  const act = async (requestId, path, doneMessage, options = {}) => {
+    if (actingId !== null) return false;
     setActingId(requestId);
     try {
-      await authFetch(`/api/resources/requests/${requestId}/${path}`, { method: "PATCH" });
+      await authFetch(`/api/resources/requests/${requestId}/${path}`, { method: "PATCH", ...options });
       setToast(doneMessage);
+      return true;
     } catch (err) {
       setToast(err.message);
+      return false;
     } finally {
       setActingId(null);
       await Promise.all([reload(), refreshOpenHistory(requestId)]);
@@ -221,7 +223,7 @@ export function useMyResources({ initialIncidentId, setToast }) {
   return {
     status, changeStatus, incidentId, changeIncident, keyword, keywordInput, setKeywordInput, page, setPage,
     items, total, summary, loading, error, reload,
-    actingId, cancelRequest, arriveRequest,
+    actingId, act, cancelRequest, arriveRequest,
     histories, toggleHistory,
     returnTarget, returnApplications, returnLoading, returnLoadError, returnSubmitting, returnSubmitError,
     openReturnModal, closeReturnModal, submitReturn,

@@ -3,6 +3,7 @@ import { NAV_ITEMS } from "./constants";
 
 export default function ControlBoardSidebar({
   sidebarOpen, handleBackToHome, activeNav, handleNavClick, member, currentUser, onLogout,
+  navItems = NAV_ITEMS, roleLabel = "담당자", // ADMIN 화면은 자기 메뉴와 역할 이름을 넘긴다
 }) {
   return (
     <aside
@@ -20,7 +21,7 @@ export default function ControlBoardSidebar({
           <span className="font-bold text-white">세이프트레이스</span>
         </button>
         <nav className="flex-1 px-3 space-y-1">
-          {NAV_ITEMS.map(({ key, icon: Icon, label }) => (
+          {navItems.map(({ key, icon: Icon, label }) => (
             <button
               key={label}
               onClick={() => handleNavClick(key)}
@@ -42,7 +43,7 @@ export default function ControlBoardSidebar({
           </div>
           <div className="min-w-0">
             <div className="text-sm font-semibold text-white truncate">{(currentUser?.name || member?.name || "담당자")}님</div>
-            <div className="text-[11px] text-slate-400 truncate">담당자</div>
+            <div className="text-xs text-slate-400 truncate">{roleLabel}</div>
           </div>
         </div>
         <div className="px-3 pb-5 space-y-3">

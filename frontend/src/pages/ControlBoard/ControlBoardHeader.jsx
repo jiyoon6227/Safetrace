@@ -3,6 +3,7 @@ import { ChevronDown, ClipboardList, Menu, User } from "lucide-react";
 export default function ControlBoardHeader({
   setSidebarOpen, notifRef, notifOpen, setNotifOpen, dashboardReceivedCount, setActiveNav, profileRef,
   profileOpen, setProfileOpen, member, currentUser, handleBackToHome, onLogout,
+  roleLabel, // 사용자 이름 아래 줄. 없으면 부서(주소). 미확인 제보 아이콘은 setNotifOpen을 넘길 때만(STAFF) 나온다
 }) {
   return (
     <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
@@ -17,40 +18,42 @@ export default function ControlBoardHeader({
         </button>
       </div>
       <div className="flex items-center gap-4">
-        <div className="relative" ref={notifRef}>
-          <button
-            type="button"
-            onClick={() => setNotifOpen((v) => !v)}
-            className="relative text-slate-400 hover:text-slate-600 cursor-pointer"
-            aria-label="미확인 제보"
-          >
-            {/* 종 대신 클립보드 아이콘 (실시간 접수대기 제보 수, 알림 피드와 구분) */}
-            <ClipboardList className="w-4.5 h-4.5" />
-            {dashboardReceivedCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center ring-2 ring-white">
-                {dashboardReceivedCount > 9 ? "9+" : dashboardReceivedCount}
-              </span>
-            )}
-          </button>
-          {notifOpen && (
-            <div className="absolute right-0 top-8 w-72 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden">
-              <div className="px-4 py-3 border-b border-slate-100">
-                <h3 className="text-sm font-extrabold text-[#0F2540]">미확인 제보</h3>
-                <p className="text-[11px] text-slate-400 mt-0.5">현재 확인이 필요한 제보 {dashboardReceivedCount}건</p>
+        {setNotifOpen && (
+          <div className="relative" ref={notifRef}>
+            <button
+              type="button"
+              onClick={() => setNotifOpen((v) => !v)}
+              className="relative text-slate-400 hover:text-slate-600 cursor-pointer"
+              aria-label="미확인 제보"
+            >
+              {/* 종 대신 클립보드 아이콘 (실시간 접수대기 제보 수, 알림 피드와 구분) */}
+              <ClipboardList className="w-4.5 h-4.5" />
+              {dashboardReceivedCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center ring-2 ring-white">
+                  {dashboardReceivedCount > 9 ? "9+" : dashboardReceivedCount}
+                </span>
+              )}
+            </button>
+            {notifOpen && (
+              <div className="absolute right-0 top-8 w-72 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100">
+                  <h3 className="text-sm font-extrabold text-[#0F2540]">미확인 제보</h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">현재 확인이 필요한 제보 {dashboardReceivedCount}건</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNotifOpen(false);
+                    setActiveNav("reports");
+                  }}
+                  className="w-full text-left px-4 py-3 text-xs font-semibold text-[#0F2540] hover:bg-slate-50 cursor-pointer"
+                >
+                  제보 관리에서 확인하기 →
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setNotifOpen(false);
-                  setActiveNav("reports");
-                }}
-                className="w-full text-left px-4 py-3 text-xs font-semibold text-[#0F2540] hover:bg-slate-50 cursor-pointer"
-              >
-                제보 관리에서 확인하기 →
-              </button>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         <div className="relative" ref={profileRef}>
           <button
@@ -65,9 +68,9 @@ export default function ControlBoardHeader({
                 <User className="w-4 h-4 text-slate-400" />
               )}
             </div>
-            <div className="text-left leading-tight hidden sm:block max-w-[120px]">
-              <div className="text-xs font-bold text-[#0F2540] truncate">{(currentUser?.name || member?.name || "담당자")}님</div>
-              <div className="text-[10px] text-slate-400 truncate">{member?.address || "담당자"}</div>
+            <div className="text-left leading-tight hidden sm:block max-w-[140px]">
+              <div className="text-[13px] font-bold text-[#0F2540] truncate">{(currentUser?.name || member?.name || "담당자")}님</div>
+              <div className="text-xs text-slate-500 truncate">{roleLabel || member?.address || "담당자"}</div>
             </div>
             <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${profileOpen ? "rotate-180" : ""}`} />
           </button>

@@ -1,12 +1,12 @@
-import { Loader2, Package, RefreshCw, Search } from "lucide-react";
-import { REQUEST_STATUS_FILTERS } from "../../constants/resource";
+import { Loader2, Package } from "lucide-react";
 import { MY_RESOURCES_PAGE_SIZE, useMyResources } from "./useMyResources";
+import ResourceFilterBar from "./ResourceFilterBar";
 import ResourceRequestCard from "./ResourceRequestCard";
 import ResourceSummaryCards from "./ResourceSummaryCards";
 import ReturnApplyModal from "./ReturnApplyModal";
 import TablePagination from "./TablePagination";
 
-const CONTROL = "border border-slate-300 rounded-lg bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:border-[#0F2540]";
+const CONTROL = "border border-slate-300 rounded-lg bg-white px-3 py-2 text-[13px] text-slate-700 focus:outline-none focus:border-[#0F2540]";
 
 // 사이드바 "자원 관리" 탭 - 내가 보낸 전체 자원 요청을 상태·사건·검색어로 찾고, 취소·도착 확인·반납 신청을 한다.
 export default function ResourcesTab({
@@ -14,7 +14,6 @@ export default function ResourcesTab({
 }) {
   const data = useMyResources({ initialIncidentId, setToast });
   const totalPages = Math.max(1, Math.ceil(data.total / MY_RESOURCES_PAGE_SIZE));
-  const counts = data.summary?.counts || {};
 
   // 사건 선택 목록: 사건 관리와 같은 번호(#I-n)와 제목. 주소로 들어온 사건이 목록에 없어도 선택값은 유지한다.
   const incidentOptions = Array.isArray(incidents) ? incidents : [];
@@ -35,58 +34,22 @@ export default function ResourcesTab({
 
         <ResourceSummaryCards summary={data.summary} />
 
-        <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-3">
-          <div className="flex flex-wrap gap-1.5">
-            {REQUEST_STATUS_FILTERS.map((filter) => (
-              <button
-                key={filter.value || "all"}
-                type="button"
-                onClick={() => data.changeStatus(filter.value)}
-                className={`text-xs font-bold rounded-full px-3.5 py-1.5 transition cursor-pointer ${
-                  data.status === filter.value ? "bg-[#0F2540] text-white" : "bg-white border border-slate-300 text-slate-500 hover:bg-slate-100"
-                }`}
-              >
-                {filter.label} ({filter.value ? counts[filter.value] || 0 : data.summary?.total || 0})
-              </button>
+        <ResourceFilterBar data={data}>
+          <select
+            value={data.incidentId ?? ""}
+            onChange={(e) => data.changeIncident(e.target.value ? Number(e.target.value) : null)}
+            aria-label="사건 선택"
+            className={`${CONTROL} font-semibold sm:w-60 max-w-full`}
+          >
+            <option value="">전체 사건</option>
+            {selectedMissing && <option value={data.incidentId}>사건 {data.incidentId}</option>}
+            {incidentOptions.map((inc) => (
+              <option key={inc.incidentId} value={inc.incidentId}>
+                #I-{incidentRank.get(inc.incidentId)} {inc.title}
+              </option>
             ))}
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            <select
-              value={data.incidentId ?? ""}
-              onChange={(e) => data.changeIncident(e.target.value ? Number(e.target.value) : null)}
-              aria-label="사건 선택"
-              className={`${CONTROL} font-semibold sm:w-60 max-w-full`}
-            >
-              <option value="">전체 사건</option>
-              {selectedMissing && <option value={data.incidentId}>사건 {data.incidentId}</option>}
-              {incidentOptions.map((inc) => (
-                <option key={inc.incidentId} value={inc.incidentId}>
-                  #I-{incidentRank.get(inc.incidentId)} {inc.title}
-                </option>
-              ))}
-            </select>
-            <div className="relative flex-1 min-w-0">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={data.keywordInput}
-                onChange={(e) => data.setKeywordInput(e.target.value)}
-                maxLength={50}
-                placeholder="품목명, 사유, 사건명으로 검색하세요."
-                aria-label="자원 요청 검색"
-                className={`${CONTROL} w-full pl-8`}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={data.reload}
-              disabled={data.loading}
-              className="flex items-center justify-center gap-1.5 border border-slate-300 rounded-lg bg-white px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${data.loading ? "animate-spin" : ""}`} /> 새로고침
-            </button>
-          </div>
-        </div>
+          </select>
+        </ResourceFilterBar>
 
         {data.error && <div className="bg-red-50 text-red-600 text-xs px-3 py-2 rounded-lg">{data.error}</div>}
 
