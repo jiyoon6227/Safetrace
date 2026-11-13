@@ -77,6 +77,7 @@ class ResourceFulfillmentControllerTest {
         // ADMIN 전용 기능은 모두 403
         assertThrows(AccessDeniedException.class, () -> controller.dispatch(1L, staff));
         assertThrows(AccessDeniedException.class, () -> controller.getReturnInbox(null, null, null, staff));
+        assertThrows(AccessDeniedException.class, () -> controller.getReturnSummary(staff));
         assertThrows(AccessDeniedException.class, () -> controller.confirmReturn(1L, staff));
         assertThrows(AccessDeniedException.class, () -> controller.rejectReturn(1L, REJECT, staff));
         assertThrows(AccessDeniedException.class, () -> controller.confirmLoss(1L, LOSS, staff));
@@ -104,6 +105,7 @@ class ResourceFulfillmentControllerTest {
         controller.arrive(2L, admin);
         controller.getReturnApplications(3L, admin);
         controller.getReturnInbox("PENDING", 2, 20, admin);
+        controller.getReturnSummary(admin);
         controller.confirmReturn(4L, admin);
         controller.rejectReturn(5L, REJECT, admin);
         controller.confirmLoss(6L, LOSS, admin);
@@ -113,6 +115,7 @@ class ResourceFulfillmentControllerTest {
         verify(service).arrive(9L, 2L);
         verify(queryService).getReturnApplications(9L, 3L);
         verify(queryService).getReturnInbox(9L, "PENDING", 2, 20);
+        verify(queryService).getReturnSummary(9L);
         verify(service).confirmReturn(9L, 4L);
         verify(service).rejectReturn(9L, 5L, REJECT);
         verify(service).confirmLoss(9L, 6L, LOSS);
@@ -126,6 +129,7 @@ class ResourceFulfillmentControllerTest {
                 a -> controller.applyReturn(1L, APPLY, a),
                 a -> controller.getReturnApplications(1L, a),
                 a -> controller.getReturnInbox(null, null, null, a),
+                a -> controller.getReturnSummary(a),
                 a -> controller.confirmReturn(1L, a),
                 a -> controller.rejectReturn(1L, REJECT, a),
                 a -> controller.confirmLoss(1L, LOSS, a));

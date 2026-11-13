@@ -4,6 +4,7 @@ import com.safetrace.domain.ResourceRequest;
 import com.safetrace.domain.ResourceReturn;
 import com.safetrace.dto.ResourceLossRequest;
 import com.safetrace.dto.ResourceRequestRejectRequest;
+import com.safetrace.dto.ResourceRequestSummaryResponse;
 import com.safetrace.dto.ResourceReturnApplyRequest;
 import com.safetrace.dto.ResourceReturnPageResponse;
 import com.safetrace.service.ResourceFulfillmentService;
@@ -69,6 +70,13 @@ public class ResourceFulfillmentController {
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     public List<ResourceReturn> getReturnApplications(@PathVariable Long requestId, Authentication authentication) {
         return returnQueryService.getReturnApplications(currentMemberId(authentication), requestId);
+    }
+
+    // 반납 상태별 건수 - ADMIN만. 현황 카드용으로 한 번에 돌려준다.
+    @GetMapping("/admin/return-applications/summary")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResourceRequestSummaryResponse getReturnSummary(Authentication authentication) {
+        return returnQueryService.getReturnSummary(currentMemberId(authentication));
     }
 
     // 반납 확인함 - ADMIN만. 예: /api/resources/admin/return-applications?status=PENDING&page=1&size=10

@@ -567,15 +567,12 @@ class ResourceRequestServiceTest {
     void 타임라인은_기록된_처리_뒤에_남은_단계를_붙이고_첫_단계를_현재로_표시한다() {
         ResourceRequest found = request(77L, STAFF_ID, OTHER_DEPT);
         found.setStatus("REQUESTED");
-        found.setReturnable("Y");
         when(requestMapper.findById(77L)).thenReturn(found);
         when(requestMapper.findLogs(77L)).thenReturn(List.of(log(1L, "CREATE", null)));
 
         List<ResourceTimelineStep> steps = service.getRequestTimeline(STAFF_ID, 77L);
 
-        // 반납형이면 아직 안 한 도착 확인·반납 신청까지 예정 단계로 처음부터 보여준다
-        assertEquals(List.of("요청 등록", "승인", "출고", "도착 확인", "반납 신청"),
-                steps.stream().map(ResourceTimelineStep::label).toList());
+        assertEquals(4, steps.size());
         assertEquals("요청 등록", steps.get(0).label());
         assertTrue(steps.get(0).done());
         assertEquals("승인", steps.get(1).label());
@@ -583,22 +580,8 @@ class ResourceRequestServiceTest {
         assertEquals("자원 관리자의 승인을 기다리고 있습니다.", steps.get(1).note());
         assertEquals("출고", steps.get(2).label());
         assertEquals(false, steps.get(2).current());
-        assertEquals(false, steps.get(4).current());
-    }
-
-    @Test
-    void 소모품이_출고_전이면_타임라인에_반납_신청_단계가_없다() {
-        ResourceRequest found = request(77L, STAFF_ID, OTHER_DEPT);
-        found.setStatus("APPROVED");
-        found.setReturnable("N");
-        when(requestMapper.findById(77L)).thenReturn(found);
-        when(requestMapper.findLogs(77L)).thenReturn(List.of(log(1L, "CREATE", null), log(2L, "APPROVE", null)));
-
-        List<ResourceTimelineStep> steps = service.getRequestTimeline(STAFF_ID, 77L);
-
-        assertEquals(List.of("요청 등록", "승인", "출고", "도착 확인"),
-                steps.stream().map(ResourceTimelineStep::label).toList());
-        assertTrue(steps.get(2).current());
+        assertEquals("도착 확인", steps.get(3).label());
+        assertEquals(false, steps.get(3).current());
     }
 
     @Test
@@ -614,10 +597,42 @@ class ResourceRequestServiceTest {
         assertEquals("출고함", steps.get(1).note());
         assertTrue(steps.get(2).current());
 
-        // 도착 확인·반납 신청이 이미 기록돼 있으면 남은 단계는 없다
+        // 도착 확인·반납 신청이 이미 기록돼 있어도, 반납이 끝나지 않았으면 남은 수량 정산이 마지막에 남는다
         when(requestMapper.findLogs(77L)).thenReturn(List.of(log(1L, "CREATE", null), log(3L, "ARRIVE", null),
                 log(4L, "RETURN_APPLY", null)));
-        assertEquals(3, service.getRequestTimeline(STAFF_ID, 77L).size());
+        List<ResourceTimelineStep> applied = service.getRequestTimeline(STAFF_ID, 77L);
+        assertEquals(4, applied.size());
+        assertEquals("남은 수량 정산", applied.get(3).label());
+        assertTrue(applied.get(3).current());
+    }
+
+    @Test
+    void 타임라인은_일부만_반납된_출고_요청에_반납_진행과_남은_수량을_안내한다() {
+        ResourceRequest found = dispatched(77L, STAFF_ID, "Y");
+        found.setQuantity(2);
+        found.setUnit("대");
+        found.setReturnedQty(1);
+        found.setLostQty(0);
+        found.setPendingReturnQty(0);
+        when(requestMapper.findById(77L)).thenReturn(found);
+        when(requestMapper.findLogs(77L)).thenReturn(List.of(log(1L, "CREATE", null), log(3L, "ARRIVE", null),
+                log(4L, "RETURN_APPLY", null), log(5L, "RETURN_CONFIRM", null)));
+
+        ResourceTimelineStep last = service.getRequestTimeline(STAFF_ID, 77L).get(4);
+        assertEquals("남은 수량 정산", last.label());
+        assertEquals(false, last.done());
+        assertTrue(last.note().contains("반납 1/2대"));
+        assertTrue(last.note().contains("남은 1대"));
+
+        // 남은 수량만큼 확인 대기 중이면 관리자 확인만 기다린다
+        found.setPendingReturnQty(1);
+        assertTrue(service.getRequestTimeline(STAFF_ID, 77L).get(4).note().contains("확인 대기 중인 반납 1대"));
+
+        // 모두 처리돼 정산이 끝났으면(SETTLED) 남은 단계가 없다
+        found.setStatus("SETTLED");
+        found.setReturnedQty(2);
+        found.setPendingReturnQty(0);
+        assertEquals(4, service.getRequestTimeline(STAFF_ID, 77L).size());
     }
 
     @Test

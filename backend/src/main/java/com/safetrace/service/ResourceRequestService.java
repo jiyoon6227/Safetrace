@@ -265,7 +265,25 @@ public class ResourceRequestService {
             steps.add(new ResourceTimelineStep("next-" + action, ACTION_LABEL.get(action),
                     false, i == 0, null, null, NEXT_STEP_NOTE.get(action)));
         }
+        // 일부만 반납·정산된 출고 상태: 아직 끝나지 않은 수량을 마지막 단계로 보여준다 (모두 처리되면 SETTLED가 되어 사라진다)
+        int left = zero(request.getQuantity()) - zero(request.getReturnedQty()) - zero(request.getLostQty());
+        if ("DISPATCHED".equals(status) && "Y".equals(request.getReturnable()) && happened.contains("RETURN_APPLY") && left > 0) {
+            steps.add(new ResourceTimelineStep("next-SETTLE", "남은 수량 정산", false, next.isEmpty(), null, null,
+                    settleNote(request, left)));
+        }
         return steps;
+    }
+
+    // 남은 수량 정산 단계의 안내 문구. 확인 대기 중인 반납이 남은 수량을 모두 채우면 관리자 확인만 기다리면 된다.
+    private static String settleNote(ResourceRequest request, int left) {
+        String unit = request.getUnit() == null ? "" : request.getUnit();
+        int pending = zero(request.getPendingReturnQty());
+        if (pending >= left) {
+            return "확인 대기 중인 반납 " + pending + unit + "을 자원 관리자가 확인하면 정산이 끝납니다.";
+        }
+        String head = "반납 " + zero(request.getReturnedQty()) + "/" + zero(request.getQuantity()) + unit
+                + (zero(request.getLostQty()) > 0 ? " · 손실 " + zero(request.getLostQty()) + unit : "");
+        return head + " · 남은 " + (left - pending) + unit + "은 반납하거나 손실로 확정하면 정산이 끝납니다.";
     }
 
     // 조회한 사람 기준으로 버튼 가능 여부와 반납 가능 수량을 채운다. 도착 확인·반납 신청은 요청한 본인(STAFF)만 할 수 있다.

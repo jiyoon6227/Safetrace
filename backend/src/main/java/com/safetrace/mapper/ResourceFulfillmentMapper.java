@@ -1,6 +1,7 @@
 package com.safetrace.mapper;
 
 import com.safetrace.domain.ResourceReturn;
+import com.safetrace.dto.ResourceStatusCount;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -60,4 +61,7 @@ public interface ResourceFulfillmentMapper {
                                      @Param("endRow") int endRow);
 
     long countReturns(@Param("status") String status);
+
+    // 상태별 건수. 건수가 있는 상태만 행으로 나온다.
+    List<ResourceStatusCount> countReturnsByStatus();
 }

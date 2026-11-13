@@ -151,4 +151,10 @@
         </where>
     </select>
 
+    <select id="countReturnsByStatus" resultType="com.safetrace.dto.ResourceStatusCount">
+        SELECT RT.STATUS AS STATUS, COUNT(*) AS REQUEST_COUNT
+        FROM SF_RESOURCE_RETURN RT
+        GROUP BY RT.STATUS
+    </select>
+
 </mapper>

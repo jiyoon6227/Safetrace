@@ -3,7 +3,9 @@ package com.safetrace.service;
 import com.safetrace.domain.Member;
 import com.safetrace.domain.ResourceRequest;
 import com.safetrace.domain.ResourceReturn;
+import com.safetrace.dto.ResourceRequestSummaryResponse;
 import com.safetrace.dto.ResourceReturnPageResponse;
+import com.safetrace.dto.ResourceStatusCount;
 import com.safetrace.mapper.MemberMapper;
 import com.safetrace.mapper.ResourceFulfillmentMapper;
 import com.safetrace.mapper.ResourceRequestMapper;
@@ -163,7 +165,7 @@ class ResourceReturnQueryServiceTest {
 
     @Test
     void 조회_메서드는_읽기_전용_트랜잭션이다() {
-        List<String> names = List.of("getReturnApplications", "getReturnInbox");
+        List<String> names = List.of("getReturnApplications", "getReturnInbox", "getReturnSummary");
         List<Method> found = Arrays.stream(ResourceReturnQueryService.class.getDeclaredMethods())
                 .filter(method -> names.contains(method.getName()))
                 .toList();
@@ -171,6 +173,33 @@ class ResourceReturnQueryServiceTest {
             assertTrue(isReadOnly(method), method.getName() + "은 readOnly 트랜잭션이어야 합니다.");
         }
         assertEquals(names.size(), found.size());
+    }
+
+    @Test
+    void 반납_현황은_ADMIN만_볼_수_있다() {
+        assertThrows(AccessDeniedException.class, () -> service.getReturnSummary(OWNER_ID));
+        assertThrows(AccessDeniedException.class, () -> service.getReturnSummary(USER_ID));
+        verify(fulfillmentMapper, never()).countReturnsByStatus();
+    }
+
+    @Test
+    void 반납_현황은_없는_상태를_0으로_채우고_합계를_낸다() {
+        when(fulfillmentMapper.countReturnsByStatus()).thenReturn(List.of(count("CONFIRMED", 3), count("PENDING", 2)));
+
+        ResourceRequestSummaryResponse result = service.getReturnSummary(ADMIN_ID);
+
+        assertEquals(5L, result.total());
+        assertEquals(List.of("PENDING", "CONFIRMED", "REJECTED"), List.copyOf(result.counts().keySet()));
+        assertEquals(2L, result.counts().get("PENDING"));
+        assertEquals(3L, result.counts().get("CONFIRMED"));
+        assertEquals(0L, result.counts().get("REJECTED"));
+    }
+
+    private ResourceStatusCount count(String status, long value) {
+        ResourceStatusCount row = new ResourceStatusCount();
+        row.setStatus(status);
+        row.setRequestCount(value);
+        return row;
     }
 
     private boolean isReadOnly(Method method) {
