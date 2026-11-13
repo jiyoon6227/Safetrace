@@ -148,7 +148,8 @@ export function useMyResources({ initialIncidentId, setToast }) {
     if (actingId !== null) return false;
     setActingId(requestId);
     try {
-      await authFetch(`/api/resources/requests/${requestId}/${path}`, { method: "PATCH", ...options });
+      // "/"로 시작하면 전체 주소(ADMIN 손실 확정 등), 아니면 이 요청의 하위 주소
+      await authFetch(path.startsWith("/") ? path : `/api/resources/requests/${requestId}/${path}`, { method: "PATCH", ...options });
       setToast(doneMessage);
       return true;
     } catch (err) {

@@ -5,16 +5,17 @@ const CARDS = [
   { label: "전체 요청", Icon: ClipboardList, tone: "bg-blue-50 text-blue-600" },
   { label: "승인 대기", hint: "승인 검토 중인 요청", Icon: Clock, tone: "bg-amber-50 text-amber-600", statuses: ["REQUESTED"] },
   { label: "출고 대기", hint: "승인 완료, 출고 전", Icon: Package, tone: "bg-sky-50 text-sky-600", statuses: ["APPROVED"] },
-  { label: "반납 전", hint: "출고 완료, 반납 대기", Icon: Truck, tone: "bg-indigo-50 text-indigo-600", statuses: ["DISPATCHED"] },
+  { label: "반납 진행", hint: "출고 완료, 반납·정산 진행 중", Icon: Truck, tone: "bg-indigo-50 text-indigo-600", statuses: ["DISPATCHED"] },
   { label: "처리 완료", hint: "반납 정산·출고까지 끝남", Icon: CheckCircle2, tone: "bg-emerald-50 text-emerald-600", statuses: ["SETTLED", "COMPLETED"] },
 ];
 
-// 자원 관리 탭 맨 위의 상태 요약 카드. scopeHint는 "전체 요청" 카드의 설명 (STAFF는 내 요청, ADMIN은 접수된 전체)
-export default function ResourceSummaryCards({ summary, scopeHint = "내가 요청한 전체 자원" }) {
+// 자원 관리 탭 맨 위의 상태 요약 카드. scopeHint는 "전체" 카드의 설명 (STAFF는 내 요청, ADMIN은 접수된 전체)
+// cards를 넘기면 다른 목록(ADMIN 반납 관리)도 같은 모양으로 보여준다.
+export default function ResourceSummaryCards({ summary, scopeHint = "내가 요청한 전체 자원", cards = CARDS }) {
   const counts = summary?.counts || {};
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-      {CARDS.map(({ label, hint = scopeHint, Icon, tone, statuses }) => {
+    <div className={`grid grid-cols-2 gap-3 ${cards.length === 4 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3 lg:grid-cols-5"}`}>
+      {cards.map(({ label, hint = scopeHint, Icon, tone, statuses }) => {
         const value = statuses ? statuses.reduce((sum, status) => sum + (counts[status] || 0), 0) : summary?.total || 0;
         return (
           <div key={label} className="rounded-xl border border-slate-200 bg-white p-3.5 flex items-center gap-3 min-w-0">

@@ -3,23 +3,13 @@ import { formatDateTime } from "./constants";
 import RequestHistoryTimeline from "./RequestHistoryTimeline";
 import RequestStatusBadge from "./RequestStatusBadge";
 import {
-  ADMIN_ACTION_LABEL, CANCELLABLE_REQUEST_STATUSES, ITEM_CATEGORY_LABEL, formatQty, getAdminRequestActions,
+  ACTION_BUTTON as BUTTON, ADMIN_ACTION_LABEL, ADMIN_BUTTON_STYLE, CANCELLABLE_REQUEST_STATUSES, ITEM_CATEGORY_LABEL, formatQty, getAdminRequestActions,
 } from "../../constants/resource";
 
 const CATEGORY_ICON = { DRAINAGE: Droplets, RESCUE: HardHat, RELIEF: Gift, VEHICLE: Truck };
 
-// ADMIN 처리 버튼 색: 승인·출고는 남색, 반려는 어두운 회색 테두리(흰 바탕), 승인 취소는 연한 회색 테두리
-const ADMIN_BUTTON_STYLE = {
-  approve: "text-white border-[#0F2540] bg-[#0F2540] hover:bg-[#193A5B]",
-  dispatch: "text-white border-[#0F2540] bg-[#0F2540] hover:bg-[#193A5B]",
-  reject: "text-slate-800 border-slate-700 bg-white hover:bg-slate-100",
-  cancel: "font-semibold text-slate-600 border-slate-300 bg-white hover:bg-slate-100",
-};
-
-const BUTTON = "min-w-[5.5rem] text-center text-[13px] font-bold rounded-lg border px-3.5 py-2 whitespace-nowrap disabled:opacity-50 cursor-pointer";
-
 // 자원 관리 탭의 요청 한 건 - 한 줄 요약(품목·부서·사건·사유·시각·상태·버튼)과 펼쳐 보는 처리 이력
-// onAdminAction을 넘기면 ADMIN 화면용이다: 요청자 줄이 더해지고 승인·반려·출고·승인 취소 버튼이 나온다.
+// onAdminAction을 넘기면 ADMIN 화면용이다: 요청자 줄이 더해지고 승인·반려·출고·승인 취소·손실 확정 버튼이 나온다.
 // onOpenIncident가 없으면(ADMIN은 사건 관리 화면이 없다) 사건명은 글자만 보인다.
 export default function ResourceRequestCard({
   request, incidentLabel, currentUser, busy, history, onToggleHistory, onCancel, onArrive, onOpenReturn, onOpenIncident,
@@ -98,7 +88,7 @@ export default function ResourceRequestCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3 xl:flex-nowrap xl:justify-end xl:border-l xl:border-slate-100 xl:pl-6">
-          <RequestStatusBadge status={request.status} className="px-3.5 py-1.5 text-[13px]" />
+          <RequestStatusBadge status={request.status} request={request} className="px-3.5 py-1.5 text-[13px]" />
           <div className="flex flex-wrap items-center gap-2.5">
             {request.canArrive && (
               <button type="button" onClick={() => onArrive(request.requestId)} disabled={busy} className={`${BUTTON} text-white border-[#0F2540] bg-[#0F2540] hover:bg-[#193A5B]`}>
@@ -106,7 +96,7 @@ export default function ResourceRequestCard({
               </button>
             )}
             {isMine && request.arrivedAt && (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 whitespace-nowrap">
+              <span className="inline-flex items-center justify-center gap-1 min-w-[5.5rem] text-[13px] font-bold rounded-lg border border-emerald-300 bg-emerald-50 px-3.5 py-2 whitespace-nowrap text-emerald-700">
                 <Check className="w-3.5 h-3.5" /> 도착 확인 완료
               </span>
             )}

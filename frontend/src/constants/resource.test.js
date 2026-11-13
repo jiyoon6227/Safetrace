@@ -6,9 +6,13 @@ import {
   validateReturnForm,
   formatQty,
   getAdminConfirmMessage,
+  getLossPreview,
+  getRequestStatusLabel,
   getAdminRequestActions,
   getResourceRequestAvailability,
   needsClosureConfirm,
+  validateLossForm,
+  validateReason,
   validateRejectReason,
   validateResourceRequestForm,
 } from "./resource";
@@ -192,5 +196,73 @@ describe("parseIncidentIdParam", () => {
 describe("REQUEST_STATUS_FILTERS", () => {
   it("ADMIN 필터와 같은 목록을 쓴다", () => {
     expect(REQUEST_STATUS_FILTERS).toBe(ADMIN_STATUS_FILTERS);
+  });
+});
+
+describe("손실 확정 (출고된 요청)", () => {
+  it("출고된 요청은 확정 가능 수량이 남아 있을 때만 손실 확정 버튼이 나온다", () => {
+    expect(getAdminRequestActions({ status: "DISPATCHED", applicableReturnQty: 2 })).toEqual(["loss"]);
+    expect(getAdminRequestActions({ status: "DISPATCHED", applicableReturnQty: 0 })).toEqual([]);
+    expect(getAdminRequestActions({ status: "SETTLED", applicableReturnQty: 2 })).toEqual([]);
+  });
+
+  it("수량은 1 이상 확정 가능 수량 이하의 정수여야 한다", () => {
+    const base = { maxQty: 3, reason: "침수로 분실", unit: "대" };
+    expect(validateLossForm({ ...base, quantity: "" })).not.toBe("");
+    expect(validateLossForm({ ...base, quantity: "0" })).not.toBe("");
+    expect(validateLossForm({ ...base, quantity: "1.5" })).not.toBe("");
+    expect(validateLossForm({ ...base, quantity: "4" })).toContain("3대");
+    expect(validateLossForm({ ...base, quantity: "3" })).toBe("");
+    expect(validateLossForm({ ...base, maxQty: 0, quantity: "1" })).not.toBe("");
+  });
+
+  it("사유가 비었거나 500자를 넘으면 막는다", () => {
+    const base = { maxQty: 3, quantity: "1", unit: "대" };
+    expect(validateLossForm({ ...base, reason: " " })).toContain("손실 사유");
+    expect(validateLossForm({ ...base, reason: "가".repeat(501) })).toContain("손실 사유");
+    expect(validateReason("", "반려 사유")).toBe(validateRejectReason(""));
+  });
+
+  it("처리 뒤 결과 안내: 남은 수량이 없으면 정산 완료, 대기 중 반납이 있으면 남은 수량에 포함한다", () => {
+    const request = { unit: "대", applicableReturnQty: 3, pendingReturnQty: 0 };
+    expect(getLossPreview(request, "1")).toContain("남은 미처리 수량은 2대");
+    expect(getLossPreview(request, "3")).toContain("정산 완료");
+    expect(getLossPreview({ ...request, pendingReturnQty: 1 }, "3")).toContain("남은 미처리 수량은 1대");
+    expect(getLossPreview(request, "4")).toBe("");
+    expect(getLossPreview(request, "")).toBe("");
+  });
+});
+
+describe("반납 확인 안내", () => {
+  const item = { appliedQty: 2, requestQuantity: 5, returnedQty: 1, lostQty: 0, unit: "대" };
+
+  it("가용 수량 증가, 반납 누적 변화, 남은 수량을 보여준다", () => {
+    const message = getAdminConfirmMessage("returnConfirm", item);
+    expect(message).toContain("가용 수량이 2대 늘어납니다");
+    expect(message).toContain("1대 → 3대");
+    expect(message).toContain("남은 미처리 수량은 2대");
+  });
+
+  it("마지막 반납이면 정산 완료를 알린다", () => {
+    expect(getAdminConfirmMessage("returnConfirm", { ...item, appliedQty: 4 })).toContain("정산 완료");
+  });
+});
+
+describe("getRequestStatusLabel", () => {
+  const dispatched = { status: "DISPATCHED", returnable: "Y", quantity: 2, unit: "대", returnedQty: 0, lostQty: 0 };
+
+  it("반납이 시작되기 전에는 서버 상태 이름 그대로", () => {
+    expect(getRequestStatusLabel(dispatched)).toBe("출고됨(반납 전)");
+  });
+
+  it("일부만 반납됐으면 진행 수량을 보여준다", () => {
+    expect(getRequestStatusLabel({ ...dispatched, returnedQty: 1 })).toBe("1/2대 반납");
+    expect(getRequestStatusLabel({ ...dispatched, returnedQty: 1, lostQty: 1 })).toBe("1/2대 반납 · 손실 1");
+  });
+
+  it("출고됨이 아니거나 소모품이면 바꾸지 않는다", () => {
+    expect(getRequestStatusLabel({ ...dispatched, status: "SETTLED", returnedQty: 2 })).toBe("반납 정산 완료");
+    expect(getRequestStatusLabel({ ...dispatched, returnable: "N", returnedQty: 1 })).toBe("출고됨(반납 전)");
+    expect(getRequestStatusLabel(null)).toBeUndefined();
   });
 });
