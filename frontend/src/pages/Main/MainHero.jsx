@@ -1,7 +1,7 @@
 import {
   ArrowRight, Camera, CheckCircle2, ChevronRight, MapPin, Navigation, Search, ShieldAlert,
 } from "lucide-react";
-import mainBg from "../../assets/main.png";
+import mainBg from "../../assets/main.webp";
 
 // 메인 히어로
 export default function MainHero({

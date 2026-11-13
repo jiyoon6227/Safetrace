@@ -5,6 +5,21 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
 
+  build: {
+    rolldownOptions: {
+      output: {
+        // 라이브러리는 따로 묶어 둔다: 앱 코드가 바뀌어도 브라우저가 라이브러리 파일을 다시 받지 않고,
+        // 아이콘이 페이지마다 수십 개의 작은 파일로 쪼개지는 것도 막는다.
+        codeSplitting: {
+          groups: [
+            { name: 'vendor', test: /node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/ },
+            { name: 'icons', test: /node_modules[\\/]lucide-react[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
+
   // 개발 중에는 프론트(5173/5174)에서 /api, /uploads, /ws 요청을
   // Spring Boot(8080)로 넘긴다.
   // 이 proxy 설정은 Vite 개발 서버에서만 사용되고 production build에는 포함되지 않는다.

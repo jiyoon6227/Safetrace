@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { lazy, Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ShieldAlert, Bell, ChevronRight, Sun, Users, ClipboardList, User, Heart } from "lucide-react";
 import { authFetch, getNotifications, deleteNotification, deleteAllNotifications } from "../../api/client";
@@ -8,11 +8,13 @@ import {
   loadDaumPostcodeScript,
 } from "./constants";
 import InfoTab from "./InfoTab";
-import FamilyTab from "./FamilyTab";
-import SafetyTab from "./SafetyTab";
-import ReportsTab from "./ReportsTab";
-import RegionsTab from "./RegionsTab";
-import NotifyTab from "./NotifyTab";
+
+// 처음 보이는 내 정보 탭 외의 탭은 열 때 내려받는다
+const FamilyTab = lazy(() => import("./FamilyTab"));
+const SafetyTab = lazy(() => import("./SafetyTab"));
+const ReportsTab = lazy(() => import("./ReportsTab"));
+const RegionsTab = lazy(() => import("./RegionsTab"));
+const NotifyTab = lazy(() => import("./NotifyTab"));
 
 export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenSafetyNews }) {
   // 새로고침 후에도 보던 탭 유지 (주소의 mypageTab 기준, selectTab에서 기록)
@@ -443,6 +445,7 @@ export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenS
 
           {/* 오른쪽 컨텐츠 */}
           <div className="min-w-0">
+        <Suspense fallback={null}>
         {activeTab === "info" && (
           <InfoTab
             key={refreshSignal}
@@ -480,6 +483,7 @@ export default function MyPage({ onBackToHome, onLogout, onOpenShelters, onOpenS
             onDismissAll={dismissAllNotifications}
           />
         )}
+        </Suspense>
           </div>
         </div>
       </div>

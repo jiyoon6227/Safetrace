@@ -1,20 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { lazy, Suspense, useState, useEffect, useRef, useMemo } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import LoginPage from "./pages/LoginPage";
-import ControlBoard from "./pages/ControlBoard";
-import AdminPage from "./pages/Admin/AdminPage";
-import ReportForm from "./pages/ReportForm";
-import ReportPage from "./pages/ReportPage";
-import MyPage from "./pages/MyPage";
-import WithdrawModal from "./pages/MyPage/WithdrawModal";
-import SafetyCheckResponsePage from "./pages/SafetyCheckResponsePage";
-import ShelterPage from "./pages/ShelterPage";
-import SafetyGuidePage from "./pages/SafetyGuidePage";
-import DisasterNewsPage from "./pages/DisasterNewsPage";
-import PublicDisasterPage from "./pages/PublicDisasterPage";
-import SafetyMapPage from "./pages/SafetyMapPage";
-import NoticePage from "./pages/NoticePage";
-import SearchPage from "./pages/SearchPage";
 import NearbySafetyMap from "./components/NearbySafetyMap";
 import SiteFooter from "./components/SiteFooter";
 import { getCurrentUser, authFetch, getNotifications } from "./api/client";
@@ -33,8 +18,26 @@ import DisasterInfoSection from "./pages/Main/DisasterInfoSection";
 import WeatherCard from "./pages/Main/WeatherCard";
 import AiBriefingCard from "./pages/Main/AiBriefingCard";
 import ReportTrackingCard from "./pages/Main/ReportTrackingCard";
-import AiChatModal from "./pages/Main/AiChatModal";
-import TrackingModal from "./pages/Main/TrackingModal";
+
+// 페이지·모달은 처음 열 때 내려받는다 (첫 화면 로딩 용량을 줄이기 위해)
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const ControlBoard = lazy(() => import("./pages/ControlBoard"));
+const AdminPage = lazy(() => import("./pages/Admin/AdminPage"));
+const ReportForm = lazy(() => import("./pages/ReportForm"));
+const ReportPage = lazy(() => import("./pages/ReportPage"));
+const MyPage = lazy(() => import("./pages/MyPage"));
+const WithdrawModal = lazy(() => import("./pages/MyPage/WithdrawModal"));
+const SafetyCheckResponsePage = lazy(() => import("./pages/SafetyCheckResponsePage"));
+const ShelterPage = lazy(() => import("./pages/ShelterPage"));
+const SafetyGuidePage = lazy(() => import("./pages/SafetyGuidePage"));
+const DisasterNewsPage = lazy(() => import("./pages/DisasterNewsPage"));
+const PublicDisasterPage = lazy(() => import("./pages/PublicDisasterPage"));
+const SafetyMapPage = lazy(() => import("./pages/SafetyMapPage"));
+const NoticePage = lazy(() => import("./pages/NoticePage"));
+const SearchPage = lazy(() => import("./pages/SearchPage"));
+const AiChatModal = lazy(() => import("./pages/Main/AiChatModal"));
+const TrackingModal = lazy(() => import("./pages/Main/TrackingModal"));
+const PAGE_FALLBACK = <div className="min-h-screen bg-[#F7F9FC]" />;
 
 const PAGE_PATHS = {
   home: "/",
@@ -1263,7 +1266,9 @@ export default function MainPage() {
       </main>
 
       {showReportForm && (
-        <ReportForm onClose={() => setShowReportForm(false)} onSuccess={handleReportSuccess} />
+        <Suspense fallback={null}>
+          <ReportForm onClose={() => setShowReportForm(false)} onSuccess={handleReportSuccess} />
+        </Suspense>
       )}
 
       {reportSuccess && (
@@ -1274,6 +1279,7 @@ export default function MainPage() {
 
       {/* AI 안전 도우미 채팅 모달 */}
       {aiChatOpen && (
+        <Suspense fallback={null}>
         <AiChatModal
           weatherLocation={weatherLocation}
           weatherLocationLabel={weatherLocationLabel}
@@ -1287,10 +1293,12 @@ export default function MainPage() {
           sendAiChatMessage={sendAiChatMessage}
           requestWeatherLocation={requestWeatherLocation}
         />
+        </Suspense>
       )}
 
       {/* 대응상황 추적 모달 - 목록 모드 / 상세(타임라인) 모드 겸용 */}
       {trackingOpen && (
+        <Suspense fallback={null}>
         <TrackingModal
           trackingStatusFilter={trackingStatusFilter}
           setTrackingStatusFilter={setTrackingStatusFilter}
@@ -1325,6 +1333,7 @@ export default function MainPage() {
           trackingRejectedCount={trackingRejectedCount}
           filteredTrackingItems={filteredTrackingItems}
         />
+        </Suspense>
       )}
 
       <SiteFooter onNavigate={goTo} />
@@ -1333,6 +1342,7 @@ export default function MainPage() {
 
   // 초기값을 처음 한 번만 읽는 화면은 key로 다시 만들어 뒤로가기/앞으로가기의 쿼리 변화를 반영한다.
   return (
+    <Suspense fallback={PAGE_FALLBACK}>
     <Routes>
       <Route
         path="/"
@@ -1374,7 +1384,11 @@ export default function MainPage() {
               />,
               { showWithdraw: true, onWithdraw: () => setShowWithdrawModal(true) }
             )}
-            {showWithdrawModal && <WithdrawModal onClose={() => setShowWithdrawModal(false)} />}
+            {showWithdrawModal && (
+              <Suspense fallback={null}>
+                <WithdrawModal onClose={() => setShowWithdrawModal(false)} />
+              </Suspense>
+            )}
           </RequireLogin>
         }
       />
@@ -1504,5 +1518,6 @@ export default function MainPage() {
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   );
 }
