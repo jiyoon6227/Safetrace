@@ -4,6 +4,8 @@ import com.safetrace.domain.ResourceLog;
 import com.safetrace.domain.ResourceRequest;
 import com.safetrace.dto.ResourceRequestCreateRequest;
 import com.safetrace.dto.ResourceRequestPageResponse;
+import com.safetrace.dto.ResourceRequestSummaryResponse;
+import com.safetrace.dto.ResourceTimelineStep;
 import com.safetrace.service.ResourceRequestService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -43,15 +45,26 @@ public class ResourceRequestController {
     }
 
     // 요청 목록 - 담당 직원은 내가 보낸 요청, 자원 관리자는 전체
-    // 예: /api/resources/requests?status=REQUESTED&incidentId=3&page=1&size=10
+    // 예: /api/resources/requests?status=REQUESTED&incidentId=3&keyword=발전기&page=1&size=10
     @GetMapping
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     public ResourceRequestPageResponse getRequests(@RequestParam(required = false) String status,
                                                    @RequestParam(required = false) Long incidentId,
+                                                   @RequestParam(required = false) String keyword,
                                                    @RequestParam(required = false) Integer page,
                                                    @RequestParam(required = false) Integer size,
                                                    Authentication authentication) {
-        return requestService.getRequests(currentMemberId(authentication), status, incidentId, page, size);
+        return requestService.getRequests(currentMemberId(authentication), status, incidentId, keyword, page, size);
+    }
+
+    // 요청 상태별 건수 - 목록과 같은 조건에서 상태만 뺀 건수 (화면 요약 카드·상태 탭용)
+    // 예: /api/resources/requests/summary?incidentId=3&keyword=발전기
+    @GetMapping("/summary")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    public ResourceRequestSummaryResponse getRequestSummary(@RequestParam(required = false) Long incidentId,
+                                                            @RequestParam(required = false) String keyword,
+                                                            Authentication authentication) {
+        return requestService.getRequestSummary(currentMemberId(authentication), incidentId, keyword);
     }
 
     // 요청 상세 - 요청한 본인과 자원 관리자만
@@ -66,5 +79,12 @@ public class ResourceRequestController {
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     public List<ResourceLog> getRequestLogs(@PathVariable Long requestId, Authentication authentication) {
         return requestService.getRequestLogs(currentMemberId(authentication), requestId);
+    }
+
+    // 처리 이력 타임라인 - 기록된 처리 + 앞으로 남은 단계(안내 문구 포함). 상세와 같은 조회 권한
+    @GetMapping("/{requestId}/timeline")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    public List<ResourceTimelineStep> getRequestTimeline(@PathVariable Long requestId, Authentication authentication) {
+        return requestService.getRequestTimeline(currentMemberId(authentication), requestId);
     }
 }

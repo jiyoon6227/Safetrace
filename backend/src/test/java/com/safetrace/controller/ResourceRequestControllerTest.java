@@ -51,9 +51,11 @@ class ResourceRequestControllerTest {
 
         assertThrows(AccessDeniedException.class, () -> controller.create(BODY, auth("STAFF", 5L)));
         assertThrows(AccessDeniedException.class,
-                () -> controller.getRequests(null, null, null, null, auth("STAFF", 5L)));
+                () -> controller.getRequests(null, null, null, null, null, auth("STAFF", 5L)));
         assertThrows(AccessDeniedException.class, () -> controller.getRequest(1L, auth("STAFF", 5L)));
         assertThrows(AccessDeniedException.class, () -> controller.getRequestLogs(1L, auth("STAFF", 5L)));
+        assertThrows(AccessDeniedException.class,
+                () -> controller.getRequestSummary(null, null, auth("STAFF", 5L)));
     }
 
     @Test
@@ -62,9 +64,11 @@ class ResourceRequestControllerTest {
 
         assertThrows(AccessDeniedException.class, () -> controller.create(BODY, auth("USER", 5L)));
         assertThrows(AccessDeniedException.class,
-                () -> controller.getRequests(null, null, null, null, auth("USER", 5L)));
+                () -> controller.getRequests(null, null, null, null, null, auth("USER", 5L)));
         assertThrows(AccessDeniedException.class, () -> controller.getRequest(1L, auth("USER", 5L)));
         assertThrows(AccessDeniedException.class, () -> controller.getRequestLogs(1L, auth("USER", 5L)));
+        assertThrows(AccessDeniedException.class,
+                () -> controller.getRequestSummary(null, null, auth("USER", 5L)));
     }
 
     @Test
@@ -74,13 +78,17 @@ class ResourceRequestControllerTest {
         assertThrows(AccessDeniedException.class, () -> controller.create(BODY, auth("ADMIN", 9L)));
         verify(service, never()).createRequest(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
 
-        controller.getRequests("REQUESTED", 3L, 1, 10, auth("ADMIN", 9L));
+        controller.getRequests("REQUESTED", 3L, null, 1, 10, auth("ADMIN", 9L));
         controller.getRequest(1L, auth("ADMIN", 9L));
         controller.getRequestLogs(1L, auth("ADMIN", 9L));
+        controller.getRequestTimeline(1L, auth("ADMIN", 9L));
+        controller.getRequestSummary(3L, "발전기", auth("ADMIN", 9L));
 
-        verify(service).getRequests(9L, "REQUESTED", 3L, 1, 10);
+        verify(service).getRequestSummary(9L, 3L, "발전기");
+        verify(service).getRequests(9L, "REQUESTED", 3L, null, 1, 10);
         verify(service).getRequest(9L, 1L);
         verify(service).getRequestLogs(9L, 1L);
+        verify(service).getRequestTimeline(9L, 1L);
     }
 
     @Test
@@ -97,13 +105,17 @@ class ResourceRequestControllerTest {
     void STAFF는_조회_API를_쓸수_있다() {
         login("STAFF", 5L);
 
-        controller.getRequests(null, null, null, null, auth("STAFF", 5L));
+        controller.getRequests(null, null, null, null, null, auth("STAFF", 5L));
         controller.getRequest(7L, auth("STAFF", 5L));
         controller.getRequestLogs(7L, auth("STAFF", 5L));
+        controller.getRequestTimeline(7L, auth("STAFF", 5L));
+        controller.getRequestSummary(null, null, auth("STAFF", 5L));
 
-        verify(service).getRequests(5L, null, null, null, null);
+        verify(service).getRequestSummary(5L, null, null);
+        verify(service).getRequests(5L, null, null, null, null, null);
         verify(service).getRequest(5L, 7L);
         verify(service).getRequestLogs(5L, 7L);
+        verify(service).getRequestTimeline(5L, 7L);
     }
 
     private void login(String role, long memberId) {

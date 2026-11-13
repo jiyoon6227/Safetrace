@@ -31,4 +31,12 @@ public class ResourceRequest {
     private LocalDateTime arrivedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    // 확인 대기 중인 반납 신청 수량 합계 (조인 결과)
+    private Integer pendingReturnQty;
+
+    // 조회한 사람 기준으로 서비스가 채우는 값 - 화면이 버튼을 보일지, 반납 수량 기본값을 얼마로 할지 서버 판단을 그대로 쓴다
+    private boolean canArrive;              // 도착 확인 버튼
+    private boolean canApplyReturn;         // 반납 신청 버튼
+    private int applicableReturnQty;        // 지금 새로 신청할 수 있는 반납 수량
 }

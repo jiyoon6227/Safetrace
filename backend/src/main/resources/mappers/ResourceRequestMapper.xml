@@ -51,7 +51,9 @@
         S.ITEM_ID, I.NAME AS ITEM_NAME, I.CATEGORY, I.UNIT, I.RETURNABLE,
         R.REQUESTER_ID, M.NAME AS REQUESTER_NAME, RD.NAME AS REQUESTER_DEPARTMENT_NAME,
         R.QUANTITY, R.STATUS, R.REASON, R.NEEDED_AT, R.REJECT_REASON,
-        R.RETURNED_QTY, R.LOST_QTY, R.ARRIVED_AT, R.CREATED_AT, R.UPDATED_AT
+        R.RETURNED_QTY, R.LOST_QTY, R.ARRIVED_AT, R.CREATED_AT, R.UPDATED_AT,
+        (SELECT NVL(SUM(RT.APPLIED_QTY), 0) FROM SF_RESOURCE_RETURN RT
+          WHERE RT.REQUEST_ID = R.REQUEST_ID AND RT.STATUS = 'PENDING') AS PENDING_RETURN_QTY
     </sql>
 
     <sql id="requestJoins">
@@ -64,16 +66,27 @@
         LEFT JOIN SF_DEPARTMENT RD ON RD.DEPARTMENT_ID = M.DEPARTMENT_ID
     </sql>
 
+    <!-- 상태를 뺀 공통 조건 (목록·건수·상태별 건수가 같이 쓴다). 키워드의 LIKE 특수문자는 서비스가 \로 이스케이프해서 넘긴다 -->
+    <sql id="baseConditions">
+        <if test="requesterId != null">
+            AND R.REQUESTER_ID = #{requesterId}
+        </if>
+        <if test="incidentId != null">
+            AND R.INCIDENT_ID = #{incidentId}
+        </if>
+        <if test="keyword != null">
+            AND (UPPER(I.NAME) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\'
+              OR UPPER(R.REASON) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\'
+              OR UPPER(INC.TITLE) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\'
+              OR UPPER(D.NAME) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\')
+        </if>
+    </sql>
+
     <sql id="requestConditions">
         <where>
-            <if test="requesterId != null">
-                R.REQUESTER_ID = #{requesterId}
-            </if>
+            <include refid="baseConditions"/>
             <if test="status != null">
                 AND R.STATUS = #{status}
-            </if>
-            <if test="incidentId != null">
-                AND R.INCIDENT_ID = #{incidentId}
             </if>
         </where>
     </sql>
@@ -102,6 +115,16 @@
         SELECT COUNT(*)
         <include refid="requestJoins"/>
         <include refid="requestConditions"/>
+    </select>
+
+    <!-- 상태별 건수: 상태 조건만 빼고 목록과 같은 조건. 0건인 상태는 서비스가 0으로 채운다 -->
+    <select id="countRequestsByStatus" resultType="com.safetrace.dto.ResourceStatusCount">
+        SELECT R.STATUS AS STATUS, COUNT(*) AS REQUEST_COUNT
+        <include refid="requestJoins"/>
+        <where>
+            <include refid="baseConditions"/>
+        </where>
+        GROUP BY R.STATUS
     </select>
 
     <select id="findLogs" resultType="ResourceLog">

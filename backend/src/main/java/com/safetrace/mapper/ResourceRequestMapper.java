@@ -3,6 +3,7 @@ package com.safetrace.mapper;
 import com.safetrace.domain.Incident;
 import com.safetrace.domain.ResourceLog;
 import com.safetrace.domain.ResourceRequest;
+import com.safetrace.dto.ResourceStatusCount;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -31,16 +32,24 @@ public interface ResourceRequestMapper {
 
     ResourceRequest findById(@Param("requestId") Long requestId);
 
-    // requesterId가 null이면 제한 없음(ADMIN), 있으면 그 사람이 보낸 요청만. status·incidentId는 null이면 조건에서 빠진다.
+    // requesterId가 null이면 제한 없음(ADMIN), 있으면 그 사람이 보낸 요청만. status·incidentId·keyword는 null이면 조건에서 빠진다.
+    // keyword는 품목명·요청 사유·사건 제목·보유 부서명에서 찾는다 (LIKE 특수문자는 서비스가 \로 이스케이프해서 넘긴다).
     List<ResourceRequest> findRequests(@Param("requesterId") Long requesterId,
                                        @Param("status") String status,
                                        @Param("incidentId") Long incidentId,
+                                       @Param("keyword") String keyword,
                                        @Param("startRow") int startRow,
                                        @Param("endRow") int endRow);
 
     long countRequests(@Param("requesterId") Long requesterId,
                        @Param("status") String status,
-                       @Param("incidentId") Long incidentId);
+                       @Param("incidentId") Long incidentId,
+                       @Param("keyword") String keyword);
+
+    // 상태별 건수 - 상태 조건만 빼고 목록과 같은 조건. 건수가 있는 상태만 행으로 나온다.
+    List<ResourceStatusCount> countRequestsByStatus(@Param("requesterId") Long requesterId,
+                                                    @Param("incidentId") Long incidentId,
+                                                    @Param("keyword") String keyword);
 
     // 처리 이력 시간순
     List<ResourceLog> findLogs(@Param("requestId") Long requestId);
