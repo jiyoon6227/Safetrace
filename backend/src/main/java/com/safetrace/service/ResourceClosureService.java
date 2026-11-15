@@ -36,7 +36,7 @@ import java.util.TreeMap;
  *
  * 잠금 순서: 사건 행 → 출고 전 요청 전부(번호 오름차순) → 취소할 승인 건의 재고 행(STOCK_ID 오름차순, 중복 제거).
  * 요청을 하나 취소할 때마다 그 재고를 잡지 않고, 요청을 모두 처리한 뒤 재고를 번호순으로 잡는다.
- * 코드상 순서를 이렇게 정했으나 실제 Oracle에서의 잠금·재평가·동시성은 8단계 테스트에서 확인한다.
+ * 코드상 순서를 이렇게 정했으나 실제 Oracle에서의 잠금·재평가·동시성은 Oracle 통합 테스트(OracleConcurrencyTest, OracleRollbackTest)에서 확인한다.
  *
  * cancelOpenRequestsForClose는 IncidentService.changeStatus의 트랜잭션 안에서 불리고(같은 트랜잭션에 참여),
  * 사건을 CLOSED로 바꾸는 UPDATE는 호출한 쪽이 이어서 한다.

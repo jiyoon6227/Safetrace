@@ -372,7 +372,7 @@ class IncidentServiceTest {
         verify(incidentMapper, never()).countKeywordMatch(any(), any());
     }
 
-    // ================= 7단계: 종료 연동 =================
+    // ---------- 사건 종료 연동 ----------
 
     @Test
     void 종료_전환은_출고_전_요청_정리를_먼저_하고_그_뒤에_사건을_종료한다() {

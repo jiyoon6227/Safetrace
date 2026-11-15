@@ -42,7 +42,7 @@ import java.util.Set;
  *  - 요청 상태·누적 수량, 재고, 요청 이력, 재고 이력은 한 트랜잭션이다. 이력 INSERT가 실패하면 모두 롤백된다.
  *  - 잠금 대기가 3초를 넘으면 락 예외가 나고 GlobalExceptionHandler가 409(LOCK_CONFLICT)로 바꾼다.
  *  - 출고 이후(DISPATCHED)의 반납·손실 처리는 사건이 종료돼도 계속된다. 반면 출고는 종료된 사건이면 거절한다.
- *    사건 종료(7단계)가 출고 전 요청을 정리하기 전까지의 보조 방어선이다 (본 방어선은 7단계 종료 처리).
+ *    사건 종료 처리가 출고 전 요청을 정리하기 전까지의 보조 방어선이다 (본 방어선은 사건 종료 처리).
  */
 @Service
 @RequiredArgsConstructor
@@ -68,7 +68,7 @@ public class ResourceFulfillmentService {
 
         ResourceRequest request = lockExistingRequest(requestId);
         requireStatus(request, "APPROVED", "승인된 요청만 출고할 수 있습니다. 이미 처리됐거나 취소된 요청입니다.");
-        // 사건 종료(7단계)가 출고 전 요청을 정리하기 전까지의 보조 방어선. 요청 행을 잠근 뒤에 읽는다.
+        // 사건 종료 처리가 출고 전 요청을 정리하기 전까지의 보조 방어선. 요청 행을 잠근 뒤에 읽는다.
         if ("CLOSED".equals(approvalMapper.findIncidentStatus(request.getIncidentId()))) {
             throw new IllegalStateException("종료된 사건의 요청은 출고할 수 없습니다.");
         }

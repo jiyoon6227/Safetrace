@@ -148,7 +148,7 @@ class IncidentControllerTest {
         assertSame(incident, incidentController.getNearby(37.5, 127.0, 5, staff()).get(0));
     }
 
-    // ================= 7단계: 종료 연동 =================
+    // ---------- 사건 종료 연동 ----------
 
     @Test
     void STAFF의_상태변경은_확인한_요청_번호와_로그인_ID를_서비스로_넘긴다() {
