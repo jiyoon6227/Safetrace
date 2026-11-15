@@ -5,7 +5,7 @@ import { REQUEST_STATUS_LABEL, REQUEST_STATUS_STYLE, getRequestStatusLabel } fro
 export default function RequestStatusBadge({ status, request, className = "px-2.5 py-1 text-[11px]", labels = REQUEST_STATUS_LABEL, styles = REQUEST_STATUS_STYLE }) {
   return (
     <span className={`shrink-0 font-bold rounded-full whitespace-nowrap ${className} ${styles[status] || "bg-slate-100 text-slate-600"}`}>
-      {request ? getRequestStatusLabel(request) : labels[status] || status}
+      {request ? getRequestStatusLabel(request, labels) : labels[status] || status}
     </span>
   );
 }

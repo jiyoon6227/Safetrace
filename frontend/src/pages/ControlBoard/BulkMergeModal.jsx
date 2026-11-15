@@ -1,8 +1,9 @@
 import { Loader2, X } from "lucide-react";
+import { formatCode } from "../../constants/resource";
 
 export default function BulkMergeModal({
   bulkMergeSubmitting, setBulkMergeOpen, selectedReportIds, bulkMergeLoading, bulkMergeCandidates,
-  incidentRank, handleBulkLinkToIncident, startBulkNewIncident,
+  handleBulkLinkToIncident, startBulkNewIncident,
 }) {
   return (
     <div
@@ -39,7 +40,7 @@ export default function BulkMergeModal({
               <div key={inc.incidentId} className="rounded-lg border border-slate-200 p-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-[#0F2540] truncate">{inc.title}</p>
-                  <p className="text-[11px] text-slate-400 mt-1">사건 #{incidentRank.get(inc.incidentId) ?? inc.incidentId} · {inc.region}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">사건 {formatCode("INC", inc.incidentId)} · {inc.region}</p>
                 </div>
                 <button
                   type="button"

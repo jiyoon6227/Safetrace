@@ -7,6 +7,7 @@ import {
   REPORT_DISASTER_TYPES, REGION_OPTIONS, MIN_REPORT_DATE, formatDateTime, maskPhone,
 } from "./constants";
 import { STATUS_LABEL, STATUS_STYLE } from "../../constants/status";
+import { formatCode } from "../../constants/resource";
 
 export default function ReportsTab({
   reportError,
@@ -50,7 +51,6 @@ export default function ReportsTab({
   setReportError,
   openReportCandidates,
   toggleReportSelected,
-  incidentRank,
   setActiveNav,
   openIncidentDetail,
   reportPage,
@@ -356,7 +356,7 @@ export default function ReportsTab({
                               type="button"
                               onClick={(e) => { e.stopPropagation(); setActiveNav("incidents"); openIncidentDetail(r.incidentId); }}
                               className="text-[11px] font-bold text-blue-600 hover:underline whitespace-nowrap cursor-pointer"
-                            >사건 #{incidentRank.get(r.incidentId) ?? r.incidentId} 보기 ↗</button>
+                            >사건 {formatCode("INC", r.incidentId)} 보기 ↗</button>
                           ) : <span className="text-slate-300">-</span>}
                         </td>
                         <td className="px-2 text-center align-middle">
@@ -463,7 +463,7 @@ export default function ReportsTab({
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-[1fr_150px] gap-4 items-center">
                 <dl className="text-[12px] space-y-1.5">
-                  <div className="grid grid-cols-[82px_1fr]"><dt className="text-slate-400">사건번호</dt><dd className="font-bold text-blue-600">#{incidentRank.get(selectedReport.incidentId) ?? selectedReport.incidentId}</dd></div>
+                  <div className="grid grid-cols-[82px_1fr]"><dt className="text-slate-400">사건번호</dt><dd className="font-bold text-blue-600">{formatCode("INC", selectedReport.incidentId)}</dd></div>
                   <div className="grid grid-cols-[82px_1fr]"><dt className="text-slate-400">사건 제목</dt><dd className="font-semibold text-slate-700 truncate">{selectedLinkedIncident?.title || `${selectedReport.disasterType} 관련 사건`}</dd></div>
                   <div className="grid grid-cols-[82px_1fr]"><dt className="text-slate-400">현재 상태</dt><dd>{selectedLinkedIncident ? <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold ${STATUS_STYLE[selectedLinkedIncident.status] || "bg-slate-100 text-slate-600"}`}>{STATUS_LABEL[selectedLinkedIncident.status] || selectedLinkedIncident.status}</span> : <span className="text-slate-500">-</span>}</dd></div>
                   <div className="grid grid-cols-[82px_1fr]"><dt className="text-slate-400">담당자</dt><dd className="text-slate-700">{selectedLinkedIncident?.assignedStaffName || "-"}</dd></div>
@@ -546,7 +546,7 @@ export default function ReportsTab({
                 <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
                   {candidates.map((inc) => (
                     <div key={inc.incidentId} className="rounded-lg border border-slate-200 p-3 flex items-center justify-between gap-3">
-                      <div className="min-w-0"><p className="text-sm font-bold text-[#0F2540] truncate">{inc.title}</p><p className="text-[11px] text-slate-400 mt-1">사건 #{incidentRank.get(inc.incidentId) ?? inc.incidentId} · {inc.region}</p></div>
+                      <div className="min-w-0"><p className="text-sm font-bold text-[#0F2540] truncate">{inc.title}</p><p className="text-[11px] text-slate-400 mt-1">사건 {formatCode("INC", inc.incidentId)} · {inc.region}</p></div>
                       <button type="button" onClick={() => handleLinkReport(inc.incidentId)} className="h-8 px-3 rounded-lg bg-[#0F2540] text-white text-xs font-bold cursor-pointer shrink-0">이 사건에 연결</button>
                     </div>
                   ))}

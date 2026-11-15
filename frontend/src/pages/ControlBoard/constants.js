@@ -2,6 +2,7 @@ import {
   LayoutDashboard, FileText, ClipboardList,
   FileBarChart, Activity, Package,
 } from "lucide-react";
+import { toDateInputValue } from "../../utils/dateFormat";
 
 const STATUS_ORDER = [
   "RECEIVED",
@@ -42,9 +43,6 @@ const REGION_OPTIONS = [
 ];
 
 const MIN_REPORT_DATE = "2020-01-01";
-
-const toDateInputValue = (date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 const getDefaultDateRange = (daysBack) => {
   const to = new Date();

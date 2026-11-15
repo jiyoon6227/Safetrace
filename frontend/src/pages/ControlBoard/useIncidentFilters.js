@@ -152,10 +152,6 @@ export function useIncidentFilters({
     incidents,
   ]);
 
-  // 접수 순번 - 서버가 전체 사건 기준으로 매긴 값(incidentRank)을 사건 ID로 찾을 수 있게 모아둠
-  // (사건 상세 헤더, 제보 관리의 연결 사건 표시, 일괄 병합 모달에서 사용)
-  const incidentRank = new Map(incidents.map((inc) => [inc.incidentId, inc.incidentRank]));
-
   const incidentTotalPages = Math.max(1, Math.ceil(incidentTotalCount / INCIDENT_PAGE_SIZE));
 
   return {
@@ -164,7 +160,7 @@ export function useIncidentFilters({
     incidentRegionFilter, setIncidentRegionFilter, incidentSeverityFilter, setIncidentSeverityFilter,
     incidentDateFrom, incidentDateTo, incidentPage, setIncidentPage, handleIncidentDateFromChange,
     handleIncidentDateFromBlur, handleIncidentDateToChange, handleIncidentDateToBlur, applyIncidentDateFilter,
-    incidentTotalCount, incidentCounts, incidentRank, incidentTotalPages, pagedIncidents,
+    incidentTotalCount, incidentCounts, incidentTotalPages, pagedIncidents,
     incidentListLoading: !incidentListLoaded,
   };
 }

@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { getCurrentUser } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import { toDateInputValue } from "./constants";
-import { parseIncidentIdParam } from "../../constants/resource";
+import { formatCode, parseIncidentIdParam } from "../../constants/resource";
 import DashboardTab from "./DashboardTab";
 import CreateIncidentModal from "./CreateIncidentModal";
 import EditIncidentModal from "./EditIncidentModal";
@@ -119,7 +119,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
     incidentRegionFilter, setIncidentRegionFilter, incidentSeverityFilter, setIncidentSeverityFilter,
     incidentDateFrom, incidentDateTo, incidentPage, setIncidentPage, handleIncidentDateFromChange,
     handleIncidentDateFromBlur, handleIncidentDateToChange, handleIncidentDateToBlur, applyIncidentDateFilter,
-    incidentTotalCount, incidentCounts, incidentRank, incidentTotalPages, pagedIncidents, incidentListLoading,
+    incidentTotalCount, incidentCounts, incidentTotalPages, pagedIncidents, incidentListLoading,
   } = useIncidentFilters({ incidents, selectedIncidentId, closeDetail, setToast, todayStr });
 
   // 지도 초기화 실패 메시지를 첫 사건 조회가 지우는 순서가 있어 useDashboardMap을 useControlBoardData보다 먼저 호출한다.
@@ -317,7 +317,6 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
             setReportError={setReportError}
             openReportCandidates={openReportCandidates}
             toggleReportSelected={toggleReportSelected}
-            incidentRank={incidentRank}
             setActiveNav={setActiveNav}
             openIncidentDetail={openIncidentDetail}
             reportPage={reportPage}
@@ -366,7 +365,6 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
             pagedIncidents={pagedIncidents}
             selectedIncidentId={selectedIncidentId}
             toggleIncidentDetail={toggleIncidentDetail}
-            incidentRank={incidentRank}
             openEditIncidentModal={openEditIncidentModal}
             renderTablePagination={renderTablePagination}
             incidentPage={incidentPage}
@@ -406,7 +404,6 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
           <ResourcesTab
             currentUser={currentUser}
             incidents={incidents}
-            incidentRank={incidentRank}
             initialIncidentId={parseIncidentIdParam(searchParams.get("incidentId"))}
             onOpenIncident={(incidentId) => {
               setActiveNav("incidents");
@@ -502,7 +499,6 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
           selectedReportIds={selectedReportIds}
           bulkMergeLoading={bulkMergeLoading}
           bulkMergeCandidates={bulkMergeCandidates}
-          incidentRank={incidentRank}
           handleBulkLinkToIncident={handleBulkLinkToIncident}
           startBulkNewIncident={startBulkNewIncident}
         />
@@ -512,7 +508,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
       {resources.requestModalOpen && selectedIncident && (
         <ResourceRequestModal
           incident={selectedIncident}
-          incidentLabel={`#I-${incidentRank.get(selectedIncident.incidentId)}`}
+          incidentLabel={formatCode("INC", selectedIncident.incidentId)}
           stocks={resources.stocks}
           stocksLoading={resources.stocksLoading}
           stocksError={resources.stocksError}
@@ -526,7 +522,7 @@ export default function ControlBoard({ onBackToHome, onLogout, onOpenNotices }) 
       {/* 사건 종료 확인 모달 - 취소될 출고 전 요청이나 미반납 출고 건이 있을 때만 열림 */}
       {closurePreview && selectedIncident && (
         <IncidentCloseConfirmModal
-          incidentLabel={`#I-${incidentRank.get(selectedIncident.incidentId)}`}
+          incidentLabel={formatCode("INC", selectedIncident.incidentId)}
           incident={selectedIncident}
           preview={closurePreview}
           submitting={closureSubmitting}

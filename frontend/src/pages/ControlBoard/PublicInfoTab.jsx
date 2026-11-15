@@ -18,6 +18,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { authFetch } from "../../api/client";
+import { formatDotDateTime } from "../../utils/dateFormat";
 import { SIDO_CENTER } from "./constants";
 
 const CACHE_KEY = "safetrace:public-info:nationwide:v9";
@@ -384,7 +385,7 @@ export default function PublicInfoTab() {
 
           <div className="flex items-center gap-3 pt-1">
             <span className="text-[11px] text-slate-400">
-              {updatedAt ? `${formatDate(updatedAt)} 업데이트` : "데이터 확인 중"}
+              {updatedAt ? `${formatDotDateTime(updatedAt)} 업데이트` : "데이터 확인 중"}
             </span>
             <button
               type="button"
@@ -1511,11 +1512,6 @@ function formatExternalDate(value) {
   const date = new Date(time);
   const pad = (number) => String(number).padStart(2, "0");
   return `${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function formatDate(date) {
-  const pad = (number) => String(number).padStart(2, "0");
-  return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function formatCapacity(value) {

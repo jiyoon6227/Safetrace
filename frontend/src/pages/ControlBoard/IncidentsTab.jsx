@@ -7,6 +7,7 @@ import {
   MIN_REPORT_DATE, formatDateTime, withRo,
 } from "./constants";
 import { STATUS_LABEL, STATUS_STYLE } from "../../constants/status";
+import { formatCode } from "../../constants/resource";
 import IncidentResourcesSection from "./IncidentResourcesSection";
 
 export default function IncidentsTab({
@@ -38,7 +39,6 @@ export default function IncidentsTab({
   pagedIncidents,
   selectedIncidentId,
   toggleIncidentDetail,
-  incidentRank,
   openEditIncidentModal,
   renderTablePagination,
   incidentPage,
@@ -296,7 +296,7 @@ export default function IncidentsTab({
                           selectedIncidentId === inc.incidentId ? "bg-blue-50" : "bg-white hover:bg-slate-50/90"
                         }`}
                       >
-                        <td className="px-3 py-2 text-center align-middle font-bold text-[#0F2540] whitespace-nowrap">#I-{inc.incidentRank}</td>
+                        <td className="px-3 py-2 text-center align-middle font-bold text-[#0F2540] whitespace-nowrap">{formatCode("INC", inc.incidentId)}</td>
                         <td className="px-3 py-2 text-center align-middle font-semibold text-slate-700" title={inc.title}><span className="mx-auto block max-w-[220px] truncate">{inc.title}</span></td>
                         <td className="px-3 py-2 text-center align-middle text-slate-500">{inc.disasterType}</td>
                         <td className="px-3 py-2 text-center align-middle text-slate-600" title={inc.region}><span className="mx-auto block max-w-[235px] truncate">{inc.region}</span></td>
@@ -392,7 +392,7 @@ export default function IncidentsTab({
                   <div className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 mb-3">
                     <div className="text-[11px] font-semibold text-slate-500 mb-1.5">사건 제목</div>
                     <div className="flex items-center gap-2.5 flex-wrap min-w-0">
-                      <span className="text-[19px] font-extrabold text-[#0F2540]">#I-{incidentRank.get(selectedIncident.incidentId)}</span>
+                      <span className="text-[19px] font-extrabold text-[#0F2540]">{formatCode("INC", selectedIncident.incidentId)}</span>
                       <span className="text-[19px] font-extrabold text-[#0F2540] min-w-0 truncate">{selectedIncident.title}</span>
                       <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${STATUS_STYLE[selectedIncident.status] || "bg-slate-100 text-slate-600"}`}>
                         {STATUS_LABEL[selectedIncident.status] || selectedIncident.status}
