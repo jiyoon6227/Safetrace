@@ -371,7 +371,7 @@ fallback 결과 시·도 재검증
 - Spring Security + JWT 인증
 - `USER` / `STAFF` / `ADMIN` 권한 분리
 - `@EnableMethodSecurity` 기반 STAFF·ADMIN 전용 API 접근제어
-- 자원 처리 시 역할을 토큰 값이 아닌 DB의 현재 값으로 다시 확인 (탈퇴·권한 변경 직후의 오래된 토큰 방어)
+- 자원 처리 시 역할을 토큰이 아닌 DB의 현재 값으로 재확인 (탈퇴·권한 변경 직후의 오래된 토큰 방어)
 - REST API 무효 인증 요청에 HTTP 401 반환
 - WebSocket Handshake 단계 JWT 검증
 - Local / Production 허용 Origin 분리
@@ -386,8 +386,7 @@ fallback 결과 시·도 재검증
 - 가족 안전확인 요청 대상 서버 검증
 - 이메일 응답 토큰 만료 및 재사용 방지
 - AI API 일일 토큰 사용량 안전한도 적용
-- 자원 요청 상태 전이를 서버에서 검증하고, 재고 행 잠금과 DB `CHECK` 제약으로 재고 음수·초과 방지
-- 요청 상태·재고·이력은 한 트랜잭션으로 처리, 재고·요청은 삭제 대신 사용 중지와 이력으로 관리
+- 자원 요청 상태 전이를 서버에서 검증하고, 재고 행 잠금 · 조건부 UPDATE · DB `CHECK` 제약으로 재고 정합성 보장 (상태·재고·이력은 한 트랜잭션, 삭제 대신 사용 중지와 이력으로 관리)
 
 ---
 
@@ -557,37 +556,9 @@ Spring Boot (prod)
 - 운영 Frontend URL을 환경설정으로 관리해 CORS / WebSocket Origin에 공통 적용
 - 외부 IP가 변경되어도 Nginx의 `127.0.0.1:8081`과 DB 내부 IP `10.178.0.2`는 수정하지 않습니다.
 
----
+### 운영 설정
 
-## 로컬 실행 방법
-
-### 요구 사항
-
-- JDK 21
-- Maven 3.x
-- Node.js / npm
-- Oracle Database
-- 기능별 외부 API Key
-
-### 1. DB 초기화
-
-`backend/schema.sql`을 실행합니다. **기존 `SF_` 테이블 · 시퀀스는 삭제 후 다시 생성됩니다.**
-
-```text
-테이블 생성
-→ 시퀀스 생성
-→ 인덱스 생성
-→ 배포/시연용 테스트 데이터 생성
-```
-
-> 테스트 데이터의 시각은 실행 시점 기준(예: 40분 전)으로 들어가므로, 시연 전에 다시 실행하면 대시보드의 "오늘" 집계가 채워진 상태로 확인할 수 있습니다.
-
-### 2. Backend 설정
-
-`backend/application.yml.example`을 `backend/src/main/resources/application.yml`로 복사한 뒤,
-`YOUR_...`로 표시된 값(DB 접속 정보, Gmail 앱 비밀번호, JWT Secret, 공공데이터 · 재난안전데이터 · Groq API Key)을 채웁니다.
-
-운영 환경에서는 프로필을 분리해 사용합니다.
+운영 환경에서는 프로필을 분리해 사용했습니다.
 
 | 파일 | 내용 |
 |---|---|
@@ -609,9 +580,49 @@ app:
   frontend-base-url: https://your-domain.com
 ```
 
-> `10.178.0.2`는 GCP VM 내부 사설 IP이므로 VM 외부 IP가 변경되어도 수정하지 않습니다.
-
 > `JWT_SECRET`, `GMAIL_APP_PASSWORD`, `GROQ_API_KEY`는 서버 환경변수로 주입하며, 실제 설정 파일은 Git에 커밋하지 않습니다.
+
+---
+
+## 로컬 실행 방법
+
+### 요구 사항
+
+- JDK 21
+- Maven 3.x
+- Node.js / npm
+- Oracle Database (XE 기준, `localhost:1521`)
+- 기능별 외부 API Key (선택)
+
+### 1. DB 초기화
+
+`backend/schema.sql`을 실행합니다. **기존 `SF_` 테이블 · 시퀀스를 삭제한 뒤 다시 생성하므로, 데이터가 없는 별도 테스트용 DB(계정)에서만 실행하세요.**
+
+```text
+테이블 생성
+→ 시퀀스 생성
+→ 인덱스 생성
+→ 배포/시연용 테스트 데이터 생성
+```
+
+> 테스트 데이터의 시각은 실행 시점 기준(예: 40분 전)으로 들어가므로, 시연 전에 다시 실행하면 대시보드의 "오늘" 집계가 채워진 상태로 확인할 수 있습니다.
+
+### 2. Backend 설정
+
+`backend/application.yml.example`을 `backend/src/main/resources/application.yml`로 복사한 뒤 값을 채웁니다.
+로컬에서는 이 파일 하나로 실행하며 환경변수는 필요 없습니다.
+
+| 설정 | 구분 | 설명 |
+|---|---|---|
+| `spring.datasource` (url · username · password) | **필수** | 1단계에서 `schema.sql`을 실행한 DB 접속 정보 (기본 주소 `jdbc:oracle:thin:@localhost:1521:xe`) |
+| `jwt.secret` | **필수** | 32바이트 이상의 임의 문자열 |
+| `publicdata` · `safetydata` 서비스 키 | 선택 | 날씨 · 대기질 · 대피시설 · 재난문자 조회 |
+| `groq.api-key` | 선택 | AI 안전 브리핑 · 질문 |
+| `spring.mail` (Gmail 앱 비밀번호) | 선택 | 이메일 인증 · 가족 안전확인 메일 발송 |
+
+> 선택 값은 해당 기능에만 필요합니다. 회원가입은 이메일 인증이 필요하므로, 메일 설정 없이 확인할 때는 [테스트 계정](#테스트-계정)으로 로그인하세요.
+>
+> 실제 `application.yml`은 Git에 커밋하지 않습니다.
 
 ### 3. Backend 실행
 
