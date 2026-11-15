@@ -7,6 +7,7 @@ import com.safetrace.dto.ResourceStatusCount;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Mapper
@@ -33,23 +34,30 @@ public interface ResourceRequestMapper {
     ResourceRequest findById(@Param("requestId") Long requestId);
 
     // requesterId가 null이면 제한 없음(ADMIN), 있으면 그 사람이 보낸 요청만. status·incidentId·keyword는 null이면 조건에서 빠진다.
-    // keyword는 품목명·요청 사유·사건 제목·보유 부서명에서 찾는다 (LIKE 특수문자는 서비스가 \로 이스케이프해서 넘긴다).
+    // keyword는 품목명·요청 사유·사건 제목·보유 부서명·요청자 이름·요청번호(REQ-0038)·사건번호(INC-0125)에서 찾는다
+    // (LIKE 특수문자는 서비스가 \로 이스케이프해서 넘긴다). fromDate·toDate는 접수일 기준 기간(끝 날짜 포함)이고 null이면 조건에서 빠진다.
     List<ResourceRequest> findRequests(@Param("requesterId") Long requesterId,
                                        @Param("status") String status,
                                        @Param("incidentId") Long incidentId,
                                        @Param("keyword") String keyword,
+                                       @Param("fromDate") LocalDate fromDate,
+                                       @Param("toDate") LocalDate toDate,
                                        @Param("startRow") int startRow,
                                        @Param("endRow") int endRow);
 
     long countRequests(@Param("requesterId") Long requesterId,
                        @Param("status") String status,
                        @Param("incidentId") Long incidentId,
-                       @Param("keyword") String keyword);
+                       @Param("keyword") String keyword,
+                       @Param("fromDate") LocalDate fromDate,
+                       @Param("toDate") LocalDate toDate);
 
     // 상태별 건수 - 상태 조건만 빼고 목록과 같은 조건. 건수가 있는 상태만 행으로 나온다.
     List<ResourceStatusCount> countRequestsByStatus(@Param("requesterId") Long requesterId,
                                                     @Param("incidentId") Long incidentId,
-                                                    @Param("keyword") String keyword);
+                                                    @Param("keyword") String keyword,
+                                                    @Param("fromDate") LocalDate fromDate,
+                                                    @Param("toDate") LocalDate toDate);
 
     // 처리 이력 시간순
     List<ResourceLog> findLogs(@Param("requestId") Long requestId);

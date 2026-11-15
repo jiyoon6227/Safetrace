@@ -2,9 +2,11 @@ package com.safetrace.service;
 
 import com.safetrace.domain.Member;
 import com.safetrace.domain.ResourceItem;
+import com.safetrace.domain.ResourceItemLog;
 import com.safetrace.domain.ResourceStock;
 import com.safetrace.domain.ResourceStockLog;
 import com.safetrace.dto.ResourceItemCreateRequest;
+import com.safetrace.dto.ResourceItemUpdateRequest;
 import com.safetrace.dto.ResourceStockAdjustRequest;
 import com.safetrace.dto.ResourceStockCreateRequest;
 import com.safetrace.dto.ResourceStockReasonRequest;
@@ -18,10 +20,13 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
- * ADMIN 재고 관리: 품목 등록, 부서별 최초 재고 등록, 입고, 수량 조정, 사용 중지·재개.
+ * ADMIN 재고 관리: 품목 등록·수정, 부서별 최초 재고 등록, 입고, 수량 조정, 사용 중지·재개.
  *
  * 규칙 (기획 문서 "재고 관리 규칙"과 같다)
  *  - 재고를 바꾸는 모든 메서드는 한 트랜잭션이다. 재고 행을 먼저 잠그고(FOR UPDATE WAIT 3) 잠근 값을 읽어
@@ -48,7 +53,7 @@ public class ResourceAdminService {
     private final ResourceMapper resourceMapper;
     private final MemberMapper memberMapper;
 
-    /** 품목 등록. 같은 이름이 이미 있으면 409. 품목은 등록만 하고 수정·삭제하지 않는다. */
+    /** 품목 등록. 같은 이름이 이미 있으면 409. 품목은 삭제하지 않는다 (수정은 updateItem: 이름·분류·설명만). */
     @Transactional
     public ResourceItem registerItem(Long memberId, ResourceItemCreateRequest request) {
         requireAdmin(memberId);
@@ -58,15 +63,7 @@ public class ResourceAdminService {
         String name = trimToNull(request.name());
         String unit = trimToNull(request.unit());
         String description = trimToNull(request.description());
-        if (name == null) {
-            throw new IllegalArgumentException("품목명을 입력해주세요.");
-        }
-        if (name.length() > MAX_NAME_LENGTH) {
-            throw new IllegalArgumentException("품목명은 " + MAX_NAME_LENGTH + "자 이하로 입력해주세요.");
-        }
-        if (request.category() == null || !CATEGORIES.contains(request.category())) {
-            throw new IllegalArgumentException("올바르지 않은 자원 분류입니다.");
-        }
+        requireItemText(name, request.category(), description);
         if (unit == null) {
             throw new IllegalArgumentException("단위를 입력해주세요.");
         }
@@ -75,9 +72,6 @@ public class ResourceAdminService {
         }
         if (!"Y".equals(request.returnable()) && !"N".equals(request.returnable())) {
             throw new IllegalArgumentException("반납형 여부는 Y 또는 N이어야 합니다.");
-        }
-        if (description != null && description.length() > MAX_DESCRIPTION_LENGTH) {
-            throw new IllegalArgumentException("설명은 " + MAX_DESCRIPTION_LENGTH + "자 이하로 입력해주세요.");
         }
 
         ResourceItem item = new ResourceItem();
@@ -92,6 +86,77 @@ public class ResourceAdminService {
             throw new IllegalStateException("이미 등록된 품목명입니다.");
         }
         return adminMapper.findItemById(item.getItemId());
+    }
+
+    /**
+     * 품목 수정: 이름·분류·설명만 바꾼다. 단위와 반납형 여부는 기존 재고·요청의 해석(수량 단위, 반납·정산 규칙)을 바꾸므로
+     * 요청에 값이 들어 있으면 400으로 거절한다. 품목 행을 잠근 뒤 바뀐 항목마다 수정 이력을 한 줄씩 같은 트랜잭션에 남긴다
+     * (이력 INSERT가 실패하면 수정도 롤백). 바뀐 게 없으면 409, 다른 품목과 이름이 겹치면 409.
+     */
+    @Transactional
+    public ResourceItem updateItem(Long memberId, Long itemId, ResourceItemUpdateRequest request) {
+        Member admin = requireAdmin(memberId);
+        if (request == null) {
+            throw new IllegalArgumentException("품목 정보가 없습니다.");
+        }
+        if (itemId == null) {
+            throw new IllegalArgumentException("품목을 선택해주세요.");
+        }
+        if (request.unit() != null || request.returnable() != null) {
+            throw new IllegalArgumentException("단위와 반납형 여부는 수정할 수 없습니다.");
+        }
+        String name = trimToNull(request.name());
+        String description = trimToNull(request.description());
+        requireItemText(name, request.category(), description);
+
+        ResourceItem current = adminMapper.lockItem(itemId);
+        if (current == null) {
+            throw new IllegalArgumentException("존재하지 않는 품목입니다.");
+        }
+        List<ResourceItemLog> changes = new ArrayList<>();
+        addChange(changes, itemId, "NAME", current.getName(), name, admin.getMemberId());
+        addChange(changes, itemId, "CATEGORY", current.getCategory(), request.category(), admin.getMemberId());
+        addChange(changes, itemId, "DESCRIPTION", current.getDescription(), description, admin.getMemberId());
+        if (changes.isEmpty()) {
+            throw new IllegalStateException("바뀐 내용이 없습니다.");
+        }
+
+        try {
+            adminMapper.updateItem(itemId, name, request.category(), description);
+        } catch (DuplicateKeyException e) {
+            throw new IllegalStateException("이미 등록된 품목명입니다.");
+        }
+        changes.forEach(adminMapper::insertItemLog);
+        return adminMapper.findItemById(itemId);
+    }
+
+    private void addChange(List<ResourceItemLog> changes, Long itemId, String field, String before, String after, Long changedBy) {
+        if (Objects.equals(before, after)) {
+            return;
+        }
+        ResourceItemLog log = new ResourceItemLog();
+        log.setItemId(itemId);
+        log.setFieldName(field);
+        log.setOldValue(before);
+        log.setNewValue(after);
+        log.setChangedBy(changedBy);
+        changes.add(log);
+    }
+
+    // 품목 등록·수정이 같이 쓰는 이름·분류·설명 검사
+    private void requireItemText(String name, String category, String description) {
+        if (name == null) {
+            throw new IllegalArgumentException("품목명을 입력해주세요.");
+        }
+        if (name.length() > MAX_NAME_LENGTH) {
+            throw new IllegalArgumentException("품목명은 " + MAX_NAME_LENGTH + "자 이하로 입력해주세요.");
+        }
+        if (category == null || !CATEGORIES.contains(category)) {
+            throw new IllegalArgumentException("올바르지 않은 자원 분류입니다.");
+        }
+        if (description != null && description.length() > MAX_DESCRIPTION_LENGTH) {
+            throw new IllegalArgumentException("설명은 " + MAX_DESCRIPTION_LENGTH + "자 이하로 입력해주세요.");
+        }
     }
 
     /**

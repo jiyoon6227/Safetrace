@@ -1,21 +1,20 @@
 import { Loader2, Package } from "lucide-react";
 import { MY_RESOURCES_PAGE_SIZE, useMyResources } from "./useMyResources";
-import ResourceFilterBar from "./ResourceFilterBar";
+import ResourceFilterBar, { FILTER_CONTROL } from "./ResourceFilterBar";
 import ResourceRequestCard from "./ResourceRequestCard";
 import ResourceSummaryCards from "./ResourceSummaryCards";
 import ReturnApplyModal from "./ReturnApplyModal";
+import { formatCode } from "../../constants/resource";
 import TablePagination from "./TablePagination";
-
-const CONTROL = "border border-slate-300 rounded-lg bg-white px-3 py-2 text-[13px] text-slate-700 focus:outline-none focus:border-[#0F2540]";
 
 // 사이드바 "자원 관리" 탭 - 내가 보낸 전체 자원 요청을 상태·사건·검색어로 찾고, 취소·도착 확인·반납 신청을 한다.
 export default function ResourcesTab({
-  currentUser, incidents, incidentRank, initialIncidentId, onOpenIncident, onGoIncidents, setToast,
+  currentUser, incidents, initialIncidentId, onOpenIncident, onGoIncidents, setToast,
 }) {
   const data = useMyResources({ initialIncidentId, setToast });
   const totalPages = Math.max(1, Math.ceil(data.total / MY_RESOURCES_PAGE_SIZE));
 
-  // 사건 선택 목록: 사건 관리와 같은 번호(#I-n)와 제목. 주소로 들어온 사건이 목록에 없어도 선택값은 유지한다.
+  // 사건 선택 목록: 사건 관리와 같은 사건번호(INC-0003)와 제목. 주소로 들어온 사건이 목록에 없어도 선택값은 유지한다.
   const incidentOptions = Array.isArray(incidents) ? incidents : [];
   const selectedMissing = data.incidentId && !incidentOptions.some((inc) => inc.incidentId === data.incidentId);
   const hasFilter = Boolean(data.status || data.incidentId || data.keyword);
@@ -39,13 +38,13 @@ export default function ResourcesTab({
             value={data.incidentId ?? ""}
             onChange={(e) => data.changeIncident(e.target.value ? Number(e.target.value) : null)}
             aria-label="사건 선택"
-            className={`${CONTROL} font-semibold sm:w-60 max-w-full`}
+            className={`${FILTER_CONTROL} font-semibold sm:w-60 max-w-full`}
           >
             <option value="">전체 사건</option>
             {selectedMissing && <option value={data.incidentId}>사건 {data.incidentId}</option>}
             {incidentOptions.map((inc) => (
               <option key={inc.incidentId} value={inc.incidentId}>
-                #I-{incidentRank.get(inc.incidentId)} {inc.title}
+                {formatCode("INC", inc.incidentId)} {inc.title}
               </option>
             ))}
           </select>
@@ -85,7 +84,7 @@ export default function ResourcesTab({
                 <ResourceRequestCard
                   key={request.requestId}
                   request={request}
-                  incidentLabel={incidentRank.get(request.incidentId) ? `#I-${incidentRank.get(request.incidentId)}` : ""}
+                  incidentLabel={formatCode("INC", request.incidentId)}
                   currentUser={currentUser}
                   busy={data.actingId !== null}
                   history={data.histories[request.requestId]}

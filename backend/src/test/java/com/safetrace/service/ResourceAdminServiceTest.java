@@ -2,9 +2,11 @@ package com.safetrace.service;
 
 import com.safetrace.domain.Member;
 import com.safetrace.domain.ResourceItem;
+import com.safetrace.domain.ResourceItemLog;
 import com.safetrace.domain.ResourceStock;
 import com.safetrace.domain.ResourceStockLog;
 import com.safetrace.dto.ResourceItemCreateRequest;
+import com.safetrace.dto.ResourceItemUpdateRequest;
 import com.safetrace.dto.ResourceStockAdjustRequest;
 import com.safetrace.dto.ResourceStockCreateRequest;
 import com.safetrace.dto.ResourceStockReasonRequest;
@@ -46,6 +48,7 @@ class ResourceAdminServiceTest {
 
     private static final long ADMIN_ID = 9L;
     private static final long STOCK_ID = 200L;
+    private static final long ITEM_ID = 77L;
 
     private ResourceAdminMapper adminMapper;
     private ResourceMapper resourceMapper;
@@ -61,6 +64,9 @@ class ResourceAdminServiceTest {
 
         when(memberMapper.findById(ADMIN_ID)).thenReturn(member(ADMIN_ID, "ADMIN", "N"));
         when(adminMapper.lockStock(STOCK_ID)).thenReturn(stock(10, 10, "ACTIVE"));
+        when(adminMapper.lockItem(ITEM_ID)).thenReturn(item("양수기", "DRAINAGE", "이동식 펌프"));
+        when(adminMapper.updateItem(anyLong(), anyString(), anyString(), any())).thenReturn(1);
+        when(adminMapper.findItemById(ITEM_ID)).thenReturn(item("양수기", "DRAINAGE", "이동식 펌프"));
         when(adminMapper.receiveStock(anyLong(), anyInt())).thenReturn(1);
         when(adminMapper.adjustStock(anyLong(), anyInt())).thenReturn(1);
         when(adminMapper.changeStockStatus(anyLong(), anyString(), anyString())).thenReturn(1);
@@ -75,6 +81,7 @@ class ResourceAdminServiceTest {
             when(memberMapper.findById(5L)).thenReturn(member(5L, role, "N"));
 
             assertThrows(AccessDeniedException.class, () -> service.registerItem(5L, itemRequest()));
+            assertThrows(AccessDeniedException.class, () -> service.updateItem(5L, ITEM_ID, updateRequest("양수기", "DRAINAGE", null)));
             assertThrows(AccessDeniedException.class, () -> service.registerStock(5L, stockRequest(1, null)));
             assertThrows(AccessDeniedException.class, () -> service.receive(5L, STOCK_ID, new ResourceStockReceiveRequest(1, null)));
             assertThrows(AccessDeniedException.class, () -> service.adjust(5L, STOCK_ID, new ResourceStockAdjustRequest(1, "사유")));
@@ -82,6 +89,7 @@ class ResourceAdminServiceTest {
             assertThrows(AccessDeniedException.class, () -> service.reactivate(5L, STOCK_ID, new ResourceStockReasonRequest("사유")));
         }
         verify(adminMapper, never()).insertItem(any());
+        verify(adminMapper, never()).lockItem(anyLong());
         verify(adminMapper, never()).insertStock(any());
         verify(adminMapper, never()).lockStock(anyLong());
         verify(adminMapper, never()).insertStockLog(any());
@@ -151,6 +159,99 @@ class ResourceAdminServiceTest {
 
         assertThrows(IllegalStateException.class, () -> service.registerItem(ADMIN_ID, itemRequest()));
         verify(adminMapper, never()).findItemById(anyLong());
+    }
+
+    // ---------- 품목 수정 (이름·분류·설명만) ----------
+
+    @Test
+    void 품목을_수정하면_바뀐_항목마다_이력을_남기고_단위와_반납형은_건드리지_않는다() {
+        ResourceItem updated = item("무수동 양수기", "RESCUE", null);
+        when(adminMapper.findItemById(ITEM_ID)).thenReturn(updated);
+
+        // 이름·분류가 바뀌고, 설명은 비웠다 (앞뒤 공백은 잘린다)
+        ResourceItem result = service.updateItem(ADMIN_ID, ITEM_ID, updateRequest("  무수동 양수기 ", "RESCUE", "   "));
+
+        assertSame(updated, result);
+        InOrder order = inOrder(adminMapper);
+        order.verify(adminMapper).lockItem(ITEM_ID);
+        order.verify(adminMapper).updateItem(ITEM_ID, "무수동 양수기", "RESCUE", null);
+        ArgumentCaptor<ResourceItemLog> captor = ArgumentCaptor.forClass(ResourceItemLog.class);
+        order.verify(adminMapper, org.mockito.Mockito.times(3)).insertItemLog(captor.capture());
+        List<ResourceItemLog> logs = captor.getAllValues();
+        assertEquals(List.of("NAME", "CATEGORY", "DESCRIPTION"), logs.stream().map(ResourceItemLog::getFieldName).toList());
+        assertEquals("양수기", logs.get(0).getOldValue());
+        assertEquals("무수동 양수기", logs.get(0).getNewValue());
+        assertEquals("DRAINAGE", logs.get(1).getOldValue());
+        assertEquals("RESCUE", logs.get(1).getNewValue());
+        assertEquals("이동식 펌프", logs.get(2).getOldValue());
+        assertNull(logs.get(2).getNewValue());
+        logs.forEach(log -> {
+            assertEquals(ITEM_ID, log.getItemId());
+            assertEquals(ADMIN_ID, log.getChangedBy());
+        });
+        // 품목 INSERT·재고 변경은 일어나지 않는다
+        verify(adminMapper, never()).insertItem(any());
+        verify(adminMapper, never()).lockStock(anyLong());
+    }
+
+    @Test
+    void 이름만_바뀌면_이름_이력_한_줄만_남는다() {
+        service.updateItem(ADMIN_ID, ITEM_ID, updateRequest("고성능 양수기", "DRAINAGE", "이동식 펌프"));
+
+        ArgumentCaptor<ResourceItemLog> captor = ArgumentCaptor.forClass(ResourceItemLog.class);
+        verify(adminMapper).insertItemLog(captor.capture());
+        assertEquals("NAME", captor.getValue().getFieldName());
+    }
+
+    @Test
+    void 바뀐_내용이_없으면_409이고_수정도_이력도_없다() {
+        assertThrows(IllegalStateException.class, () -> service.updateItem(ADMIN_ID, ITEM_ID, updateRequest(" 양수기 ", "DRAINAGE", "이동식 펌프")));
+
+        verify(adminMapper, never()).updateItem(anyLong(), anyString(), anyString(), any());
+        verify(adminMapper, never()).insertItemLog(any());
+    }
+
+    @Test
+    void 단위나_반납형_값이_오면_400이고_품목을_잠그지도_않는다() {
+        assertThrows(IllegalArgumentException.class, () -> service.updateItem(ADMIN_ID, ITEM_ID,
+                new ResourceItemUpdateRequest("양수기", "DRAINAGE", null, "개", null)));
+        assertThrows(IllegalArgumentException.class, () -> service.updateItem(ADMIN_ID, ITEM_ID,
+                new ResourceItemUpdateRequest("양수기", "DRAINAGE", null, null, "N")));
+
+        verify(adminMapper, never()).lockItem(anyLong());
+        verify(adminMapper, never()).updateItem(anyLong(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void 품목_수정_입력이_잘못되거나_품목이_없으면_400이다() {
+        assertThrows(IllegalArgumentException.class, () -> service.updateItem(ADMIN_ID, ITEM_ID, null));
+        assertThrows(IllegalArgumentException.class, () -> service.updateItem(ADMIN_ID, null, updateRequest("양수기", "DRAINAGE", null)));
+        assertThrows(IllegalArgumentException.class, () -> service.updateItem(ADMIN_ID, ITEM_ID, updateRequest("  ", "DRAINAGE", null)));
+        assertThrows(IllegalArgumentException.class, () -> service.updateItem(ADMIN_ID, ITEM_ID, updateRequest("가".repeat(51), "DRAINAGE", null)));
+        assertThrows(IllegalArgumentException.class, () -> service.updateItem(ADMIN_ID, ITEM_ID, updateRequest("양수기", "UNKNOWN", null)));
+        assertThrows(IllegalArgumentException.class, () -> service.updateItem(ADMIN_ID, ITEM_ID, updateRequest("양수기", null, null)));
+        assertThrows(IllegalArgumentException.class, () -> service.updateItem(ADMIN_ID, ITEM_ID, updateRequest("양수기", "DRAINAGE", "가".repeat(201))));
+        assertThrows(IllegalArgumentException.class, () -> service.updateItem(ADMIN_ID, 404L, updateRequest("양수기", "DRAINAGE", null)));
+
+        verify(adminMapper, never()).updateItem(anyLong(), anyString(), anyString(), any());
+        verify(adminMapper, never()).insertItemLog(any());
+    }
+
+    @Test
+    void 다른_품목과_이름이_겹치면_409이고_이력을_남기지_않는다() {
+        doThrow(new DuplicateKeyException("UK_SF_RES_ITEM_NAME")).when(adminMapper).updateItem(anyLong(), anyString(), anyString(), any());
+
+        assertThrows(IllegalStateException.class, () -> service.updateItem(ADMIN_ID, ITEM_ID, updateRequest("발전기", "DRAINAGE", "이동식 펌프")));
+        verify(adminMapper, never()).insertItemLog(any());
+    }
+
+    @Test
+    void 품목_수정_이력_저장이_실패하면_예외가_그대로_올라간다() {
+        // 예외가 서비스 밖으로 나가야 @Transactional이 품목 수정까지 롤백한다
+        doThrow(new RuntimeException("이력 INSERT 실패")).when(adminMapper).insertItemLog(any(ResourceItemLog.class));
+
+        assertThrows(RuntimeException.class, () -> service.updateItem(ADMIN_ID, ITEM_ID, updateRequest("고성능 양수기", "DRAINAGE", "이동식 펌프")));
+        verify(adminMapper, never()).findItemById(ITEM_ID);
     }
 
     // ---------- 최초 재고 등록 ----------
@@ -467,7 +568,7 @@ class ResourceAdminServiceTest {
 
     @Test
     void 데이터를_바꾸는_모든_공개_메서드는_트랜잭션으로_묶여_있다() {
-        List<String> names = List.of("registerItem", "registerStock", "receive", "adjust", "deactivate", "reactivate");
+        List<String> names = List.of("registerItem", "updateItem", "registerStock", "receive", "adjust", "deactivate", "reactivate");
         long found = java.util.Arrays.stream(ResourceAdminService.class.getDeclaredMethods())
                 .filter(method -> names.contains(method.getName()))
                 .peek(method -> assertTrue(isTransactional(method), method.getName() + "에 @Transactional이 없습니다."))
@@ -497,6 +598,21 @@ class ResourceAdminServiceTest {
         stock.setAvailableQty(availableQty);
         stock.setStatus(status);
         return stock;
+    }
+
+    private ResourceItem item(String name, String category, String description) {
+        ResourceItem item = new ResourceItem();
+        item.setItemId(ITEM_ID);
+        item.setName(name);
+        item.setCategory(category);
+        item.setUnit("대");
+        item.setReturnable("Y");
+        item.setDescription(description);
+        return item;
+    }
+
+    private ResourceItemUpdateRequest updateRequest(String name, String category, String description) {
+        return new ResourceItemUpdateRequest(name, category, description, null, null);
     }
 
     private ResourceItemCreateRequest itemRequest() {

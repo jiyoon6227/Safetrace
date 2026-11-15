@@ -2,17 +2,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { authFetch } from "../../api/client";
 
 export const MY_RESOURCES_PAGE_SIZE = 20;
-const SEARCH_DEBOUNCE_MS = 300; // 입력이 멈춘 뒤에만 서버 검색 (글자마다 요청 방지)
 
 // STAFF "자원 관리" 탭의 데이터: 내가 보낸 전체 요청(상태·사건·검색어 조건, 페이지)과 상태별 건수,
 // 요청 취소, 도착 확인, 반납 신청 모달, 요청별 처리 이력(카드 펼치기)
 // 검색·페이징·상태별 건수는 서버가 처리하고, 여기서는 조건을 보내고 결과를 받아 둘 뿐이다.
-export function useMyResources({ initialIncidentId, setToast }) {
-  const [status, setStatus] = useState("");
+// ADMIN 반납·정산 화면도 같은 훅을 쓴다: basePath로 다른 목록(반납 신청)을 읽고, initialStatus로 처음 상태(미정산 = DISPATCHED)를 정하고,
+// statusAll은 "전체"를 서버에 ALL로 보내야 하는 목록(반납 신청은 상태가 없으면 확인 대기만 준다)용이다.
+// extraParams는 목록·건수가 같이 쓰는 화면별 조건(재고의 부서·분류). 값이 비면 보내지 않고, 바꾸는 쪽이 setPage(1)로 첫 쪽으로 돌린다 (useMemo로 감싸서 넘긴다).
+export function useMyResources({ initialIncidentId, initialStatus = "", basePath = "/api/resources/requests", statusAll, extraParams, setToast }) {
+  const [status, setStatus] = useState(initialStatus);
   const [incidentId, setIncidentId] = useState(initialIncidentId ?? null);
   const [page, setPage] = useState(1);
-  const [keywordInput, setKeywordInput] = useState("");
-  const [keyword, setKeyword] = useState("");
+  const [keywordInput, setKeywordInput] = useState(""); // 입력창에 쓰는 중인 검색어 (조회 전에는 목록에 영향이 없다)
+  const [keyword, setKeyword] = useState(""); // 조회를 눌러 적용된 검색어: 목록·건수·처리 뒤 새로고침이 모두 이 값을 쓴다
+  const [dates, setDates] = useState({ from: "", to: "" }); // 요청 기간(접수일). ADMIN 화면만 쓴다
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState(null); // { total, counts: { 상태: 건수 } } - 상태 조건만 뺀 건수
@@ -38,29 +41,31 @@ export function useMyResources({ initialIncidentId, setToast }) {
   const [returnSubmitError, setReturnSubmitError] = useState("");
   const returnSeq = useRef(0);
 
-  // 검색어는 입력이 멈춘 뒤에 반영하고 1페이지로 돌아간다
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setKeyword(keywordInput.trim());
-      setPage(1);
-    }, SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [keywordInput]);
-
   // 필터를 빠르게 바꿨을 때 늦게 도착한 이전 응답이 화면을 덮어쓰지 않도록 순번을 둔다
   const loadSeq = useRef(0);
   const summarySeq = useRef(0);
+
+  // 목록과 상태별 건수가 함께 쓰는 조건 (사건·검색어·요청 기간·화면별 조건). 검색·집계는 서버가 한다
+  const baseParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (incidentId) params.set("incidentId", String(incidentId));
+    if (keyword) params.set("keyword", keyword);
+    if (dates.from) params.set("fromDate", dates.from);
+    if (dates.to) params.set("toDate", dates.to);
+    Object.entries(extraParams || {}).forEach(([key, value]) => value && params.set(key, String(value)));
+    return params;
+  }, [incidentId, keyword, dates, extraParams]);
 
   const loadList = useCallback(async () => {
     const seq = ++loadSeq.current;
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ page: String(page), size: String(MY_RESOURCES_PAGE_SIZE) });
-      if (status) params.set("status", status);
-      if (incidentId) params.set("incidentId", String(incidentId));
-      if (keyword) params.set("keyword", keyword);
-      const data = await authFetch(`/api/resources/requests?${params.toString()}`);
+      const params = baseParams();
+      params.set("page", String(page));
+      params.set("size", String(MY_RESOURCES_PAGE_SIZE));
+      if (status || statusAll) params.set("status", status || statusAll);
+      const data = await authFetch(`${basePath}?${params.toString()}`);
       if (seq !== loadSeq.current) return;
       setItems(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total) || 0);
@@ -72,21 +77,18 @@ export function useMyResources({ initialIncidentId, setToast }) {
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }
-  }, [status, incidentId, keyword, page]);
+  }, [baseParams, basePath, statusAll, status, page]);
 
-  // 상태별 건수는 상태 조건만 빼고 같은 조건(사건·검색어)으로 센다
+  // 상태별 건수는 상태 조건만 빼고 같은 조건(사건·검색어·기간·화면별 조건)으로 센다
   const loadSummary = useCallback(async () => {
     const seq = ++summarySeq.current;
     try {
-      const params = new URLSearchParams();
-      if (incidentId) params.set("incidentId", String(incidentId));
-      if (keyword) params.set("keyword", keyword);
-      const data = await authFetch(`/api/resources/requests/summary?${params.toString()}`);
+      const data = await authFetch(`${basePath}/summary?${baseParams().toString()}`);
       if (seq === summarySeq.current) setSummary(data);
     } catch {
       // 건수를 못 불러와도 목록은 그대로 쓸 수 있다 (목록 오류가 따로 안내된다)
     }
-  }, [incidentId, keyword]);
+  }, [baseParams, basePath]);
 
   useEffect(() => {
     loadList();
@@ -98,8 +100,21 @@ export function useMyResources({ initialIncidentId, setToast }) {
 
   const reload = useCallback(() => Promise.all([loadList(), loadSummary()]), [loadList, loadSummary]);
 
+  // 조회 버튼·Enter: 입력한 검색어(text를 주면 그 값, 비우면 전체)를 적용하고 1페이지로 돌아간다
+  const search = (text = keywordInput) => {
+    const next = text.trim();
+    setKeywordInput(next);
+    setKeyword(next);
+    setPage(1);
+  };
+
   const changeStatus = (next) => {
     setStatus(next);
+    setPage(1);
+  };
+
+  const changeDates = (next) => {
+    setDates(next);
     setPage(1);
   };
 
@@ -222,10 +237,10 @@ export function useMyResources({ initialIncidentId, setToast }) {
   };
 
   return {
-    status, changeStatus, incidentId, changeIncident, keyword, keywordInput, setKeywordInput, page, setPage,
+    status, defaultStatus: initialStatus, changeStatus, incidentId, changeIncident, dates, changeDates, keyword, keywordInput, setKeywordInput, search, page, setPage,
     items, total, summary, loading, error, reload,
     actingId, act, cancelRequest, arriveRequest,
-    histories, toggleHistory,
+    histories, toggleHistory, loadHistory,
     returnTarget, returnApplications, returnLoading, returnLoadError, returnSubmitting, returnSubmitError,
     openReturnModal, closeReturnModal, submitReturn,
   };

@@ -75,10 +75,30 @@
             AND R.INCIDENT_ID = #{incidentId}
         </if>
         <if test="keyword != null">
-            AND (UPPER(I.NAME) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\'
-              OR UPPER(R.REASON) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\'
-              OR UPPER(INC.TITLE) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\'
-              OR UPPER(D.NAME) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\')
+            <choose>
+                <!-- 번호 형식(REQ-3, REQ-0003, INC-3, INC-0003)은 부분 일치가 아니라 실제 ID와 정확히 비교한다. 그래서 INC-1이 INC-10을 가져오지 않는다.
+                     숫자는 9자리까지만 번호로 본다(그보다 길면 일반 검색어로 처리 - TO_NUMBER 오버플로 방지) -->
+                <when test="keyword.matches('(?i)REQ-[0-9]{1,9}')">
+                    AND R.REQUEST_ID = TO_NUMBER(REGEXP_SUBSTR(#{keyword}, '[0-9]+'))
+                </when>
+                <when test="keyword.matches('(?i)INC-[0-9]{1,9}')">
+                    AND R.INCIDENT_ID = TO_NUMBER(REGEXP_SUBSTR(#{keyword}, '[0-9]+'))
+                </when>
+                <otherwise>
+                    AND (UPPER(I.NAME) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\'
+                      OR UPPER(R.REASON) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\'
+                      OR UPPER(INC.TITLE) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\'
+                      OR UPPER(D.NAME) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\'
+                      OR UPPER(M.NAME) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\')
+                </otherwise>
+            </choose>
+        </if>
+        <!-- 요청 기간: 접수일(CREATED_AT) 기준, 끝 날짜는 그날 끝까지 포함한다 -->
+        <if test="fromDate != null">
+            AND R.CREATED_AT &gt;= #{fromDate}
+        </if>
+        <if test="toDate != null">
+            AND R.CREATED_AT &lt; #{toDate} + 1
         </if>
     </sql>
 

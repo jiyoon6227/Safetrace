@@ -1,6 +1,7 @@
 package com.safetrace.mapper;
 
 import com.safetrace.domain.ResourceItem;
+import com.safetrace.domain.ResourceItemLog;
 import com.safetrace.domain.ResourceStock;
 import com.safetrace.domain.ResourceStockLog;
 import org.apache.ibatis.annotations.Mapper;
@@ -14,6 +15,18 @@ public interface ResourceAdminMapper {
     int insertItem(ResourceItem item);
 
     ResourceItem findItemById(@Param("itemId") Long itemId);
+
+    // 품목 행을 잠그고 읽는다 (최대 3초 대기, 넘으면 락 예외). 조인 없이 이 테이블만 읽는다.
+    ResourceItem lockItem(@Param("itemId") Long itemId);
+
+    // 품목 수정: 이름·분류·설명만 바꾼다. 단위·반납형 컬럼은 이 UPDATE에 없다. 같은 이름이 있으면 UNIQUE 위반(DuplicateKeyException)
+    int updateItem(@Param("itemId") Long itemId,
+                   @Param("name") String name,
+                   @Param("category") String category,
+                   @Param("description") String description);
+
+    // 품목 수정 이력 INSERT (바뀐 항목마다 한 줄). 성공 시 logId가 채워진다.
+    int insertItemLog(ResourceItemLog log);
 
     int countDepartment(@Param("departmentId") Long departmentId);
 

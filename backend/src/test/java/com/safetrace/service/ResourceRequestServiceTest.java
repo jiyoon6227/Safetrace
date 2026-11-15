@@ -19,6 +19,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -294,13 +295,13 @@ class ResourceRequestServiceTest {
 
     @Test
     void STAFF_조회는_내가_보낸_요청만이다() {
-        when(requestMapper.countRequests(any(), any(), any(), any())).thenReturn(1L);
-        when(requestMapper.findRequests(any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(List.of(new ResourceRequest()));
+        when(requestMapper.countRequests(any(), any(), any(), any(), any(), any())).thenReturn(1L);
+        when(requestMapper.findRequests(any(), any(), any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(List.of(new ResourceRequest()));
 
-        ResourceRequestPageResponse result = service.getRequests(STAFF_ID, null, null, null, null, null);
+        ResourceRequestPageResponse result = service.getRequests(STAFF_ID, null, null, null, null, null, null, null);
 
-        verify(requestMapper).countRequests(STAFF_ID, null, null, null);
-        verify(requestMapper).findRequests(STAFF_ID, null, null, null, 0, 10);
+        verify(requestMapper).countRequests(STAFF_ID, null, null, null, null, null);
+        verify(requestMapper).findRequests(STAFF_ID, null, null, null, null, null, 0, 10);
         assertEquals(1, result.total());
         assertEquals(1, result.page());
         assertEquals(10, result.size());
@@ -309,104 +310,134 @@ class ResourceRequestServiceTest {
     @Test
     void 소속_부서가_없는_STAFF도_내가_보낸_요청을_본다() {
         when(memberMapper.findById(14L)).thenReturn(member(14L, "STAFF", null));
-        when(requestMapper.countRequests(any(), any(), any(), any())).thenReturn(0L);
+        when(requestMapper.countRequests(any(), any(), any(), any(), any(), any())).thenReturn(0L);
 
-        service.getRequests(14L, null, null, null, null, null);
+        service.getRequests(14L, null, null, null, null, null, null, null);
 
-        verify(requestMapper).countRequests(14L, null, null, null);
+        verify(requestMapper).countRequests(14L, null, null, null, null, null);
     }
 
     @Test
     void ADMIN은_제한없이_전체를_조회한다() {
         when(memberMapper.findById(12L)).thenReturn(member(12L, "ADMIN", null));
-        when(requestMapper.countRequests(any(), any(), any(), any())).thenReturn(0L);
+        when(requestMapper.countRequests(any(), any(), any(), any(), any(), any())).thenReturn(0L);
 
-        service.getRequests(12L, "approved", 100L, null, null, null);
+        service.getRequests(12L, "approved", 100L, null, null, null, null, null);
 
-        verify(requestMapper).countRequests(null, "APPROVED", 100L, null);
+        verify(requestMapper).countRequests(null, "APPROVED", 100L, null, null, null);
     }
 
     @Test
     void 시민USER는_목록을_볼_수_없다() {
         when(memberMapper.findById(11L)).thenReturn(member(11L, "USER", null));
 
-        assertThrows(AccessDeniedException.class, () -> service.getRequests(11L, null, null, null, null, null));
-        verify(requestMapper, never()).countRequests(any(), any(), any(), any());
+        assertThrows(AccessDeniedException.class, () -> service.getRequests(11L, null, null, null, null, null, null, null));
+        verify(requestMapper, never()).countRequests(any(), any(), any(), any(), any(), any());
     }
 
     @Test
     void 올바르지_않은_상태는_거절한다() {
-        assertThrows(IllegalArgumentException.class, () -> service.getRequests(STAFF_ID, "DONE", null, null, null, null));
-        verify(requestMapper, never()).countRequests(any(), any(), any(), any());
+        assertThrows(IllegalArgumentException.class, () -> service.getRequests(STAFF_ID, "DONE", null, null, null, null, null, null));
+        verify(requestMapper, never()).countRequests(any(), any(), any(), any(), any(), any());
     }
 
     @Test
     void 상태_ALL은_전체를_뜻한다() {
-        when(requestMapper.countRequests(any(), any(), any(), any())).thenReturn(0L);
+        when(requestMapper.countRequests(any(), any(), any(), any(), any(), any())).thenReturn(0L);
 
-        service.getRequests(STAFF_ID, "ALL", null, null, null, null);
+        service.getRequests(STAFF_ID, "ALL", null, null, null, null, null, null);
 
-        verify(requestMapper).countRequests(STAFF_ID, null, null, null);
+        verify(requestMapper).countRequests(STAFF_ID, null, null, null, null, null);
     }
 
     @Test
     void 페이지와_크기는_범위로_보정한다() {
-        when(requestMapper.countRequests(any(), any(), any(), any())).thenReturn(1000L);
-        when(requestMapper.findRequests(any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(requestMapper.countRequests(any(), any(), any(), any(), any(), any())).thenReturn(1000L);
+        when(requestMapper.findRequests(any(), any(), any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
 
-        ResourceRequestPageResponse tooSmall = service.getRequests(STAFF_ID, null, null, null, -3, 0);
+        ResourceRequestPageResponse tooSmall = service.getRequests(STAFF_ID, null, null, null, null, null, -3, 0);
         assertEquals(1, tooSmall.page());
         assertEquals(1, tooSmall.size());
-        verify(requestMapper).findRequests(STAFF_ID, null, null, null, 0, 1);
+        verify(requestMapper).findRequests(STAFF_ID, null, null, null, null, null, 0, 1);
 
-        ResourceRequestPageResponse tooBig = service.getRequests(STAFF_ID, null, null, null, 3, 9999);
+        ResourceRequestPageResponse tooBig = service.getRequests(STAFF_ID, null, null, null, null, null, 3, 9999);
         assertEquals(50, tooBig.size());
-        verify(requestMapper).findRequests(STAFF_ID, null, null, null, 100, 150);
+        verify(requestMapper).findRequests(STAFF_ID, null, null, null, null, null, 100, 150);
 
-        ResourceRequestPageResponse hugePage = service.getRequests(STAFF_ID, null, null, null, Integer.MAX_VALUE, 50);
+        ResourceRequestPageResponse hugePage = service.getRequests(STAFF_ID, null, null, null, null, null, Integer.MAX_VALUE, 50);
         assertEquals(ResourceRequestService.MAX_PAGE, hugePage.page());
     }
 
     @Test
     void 조건에_맞는_요청이_없으면_목록_쿼리를_부르지_않는다() {
-        when(requestMapper.countRequests(any(), any(), any(), any())).thenReturn(0L);
+        when(requestMapper.countRequests(any(), any(), any(), any(), any(), any())).thenReturn(0L);
 
-        ResourceRequestPageResponse result = service.getRequests(STAFF_ID, null, null, null, null, null);
+        ResourceRequestPageResponse result = service.getRequests(STAFF_ID, null, null, null, null, null, null, null);
 
         assertTrue(result.items().isEmpty());
-        verify(requestMapper, never()).findRequests(any(), any(), any(), any(), anyInt(), anyInt());
+        verify(requestMapper, never()).findRequests(any(), any(), any(), any(), any(), any(), anyInt(), anyInt());
     }
 
     // ---------- 검색어 · 상태별 건수 ----------
 
     @Test
     void 검색어는_다듬고_LIKE_특수문자를_이스케이프해서_넘긴다() {
-        when(requestMapper.countRequests(any(), any(), any(), any())).thenReturn(0L);
+        when(requestMapper.countRequests(any(), any(), any(), any(), any(), any())).thenReturn(0L);
 
-        service.getRequests(STAFF_ID, null, null, "  발전기  ", null, null);
-        verify(requestMapper).countRequests(STAFF_ID, null, null, "발전기");
+        service.getRequests(STAFF_ID, null, null, "  발전기  ", null, null, null, null);
+        verify(requestMapper).countRequests(STAFF_ID, null, null, "발전기", null, null);
 
-        service.getRequests(STAFF_ID, null, null, "50%_a\\b", null, null);
-        verify(requestMapper).countRequests(STAFF_ID, null, null, "50\\%\\_a\\\\b");
+        service.getRequests(STAFF_ID, null, null, "50%_a\\b", null, null, null, null);
+        verify(requestMapper).countRequests(STAFF_ID, null, null, "50\\%\\_a\\\\b", null, null);
     }
 
     @Test
     void 빈_검색어는_조건없음이고_너무_긴_검색어는_50자로_자른다() {
-        when(requestMapper.countRequests(any(), any(), any(), any())).thenReturn(0L);
+        when(requestMapper.countRequests(any(), any(), any(), any(), any(), any())).thenReturn(0L);
 
-        service.getRequests(STAFF_ID, null, null, "   ", null, null);
-        verify(requestMapper).countRequests(STAFF_ID, null, null, null);
+        service.getRequests(STAFF_ID, null, null, "   ", null, null, null, null);
+        verify(requestMapper).countRequests(STAFF_ID, null, null, null, null, null);
 
-        service.getRequests(STAFF_ID, null, null, "가".repeat(80), null, null);
-        verify(requestMapper).countRequests(STAFF_ID, null, null, "가".repeat(ResourceRequestService.MAX_KEYWORD_LENGTH));
+        service.getRequests(STAFF_ID, null, null, "가".repeat(80), null, null, null, null);
+        verify(requestMapper).countRequests(STAFF_ID, null, null, "가".repeat(ResourceRequestService.MAX_KEYWORD_LENGTH), null, null);
+    }
+
+    @Test
+    void 요청_기간은_그대로_조회에_넘기고_시작일이_끝보다_늦으면_400이다() {
+        when(memberMapper.findById(12L)).thenReturn(member(12L, "ADMIN", null));
+        when(requestMapper.countRequests(any(), any(), any(), any(), any(), any())).thenReturn(0L);
+        LocalDate from = LocalDate.of(2026, 11, 1);
+        LocalDate to = LocalDate.of(2026, 11, 14);
+
+        service.getRequests(12L, null, null, "REQ-0038", from, to, null, null);
+        verify(requestMapper).countRequests(null, null, null, "REQ-0038", from, to);
+
+        // 하루만 고르는 경우(시작=끝)와 한쪽만 고르는 경우는 허용한다
+        service.getRequests(12L, null, null, null, from, from, null, null);
+        service.getRequests(12L, null, null, null, null, to, null, null);
+
+        assertThrows(IllegalArgumentException.class, () -> service.getRequests(12L, null, null, null, to, from, null, null));
+        assertThrows(IllegalArgumentException.class, () -> service.getRequestSummary(12L, null, null, to, from));
+    }
+
+    @Test
+    void 상태별_건수에도_같은_기간_조건이_넘어간다() {
+        when(memberMapper.findById(12L)).thenReturn(member(12L, "ADMIN", null));
+        when(requestMapper.countRequestsByStatus(any(), any(), any(), any(), any())).thenReturn(List.of());
+        LocalDate from = LocalDate.of(2026, 11, 1);
+        LocalDate to = LocalDate.of(2026, 11, 14);
+
+        service.getRequestSummary(12L, 100L, "김", from, to);
+
+        verify(requestMapper).countRequestsByStatus(null, 100L, "김", from, to);
     }
 
     @Test
     void 상태별_건수는_없는_상태도_0으로_채우고_정해진_순서로_준다() {
-        when(requestMapper.countRequestsByStatus(STAFF_ID, 100L, "발전기"))
+        when(requestMapper.countRequestsByStatus(STAFF_ID, 100L, "발전기", null, null))
                 .thenReturn(List.of(statusCount("DISPATCHED", 1), statusCount("REQUESTED", 2)));
 
-        ResourceRequestSummaryResponse result = service.getRequestSummary(STAFF_ID, 100L, " 발전기 ");
+        ResourceRequestSummaryResponse result = service.getRequestSummary(STAFF_ID, 100L, " 발전기 ", null, null);
 
         assertEquals(3, result.total());
         assertEquals(List.of("REQUESTED", "APPROVED", "DISPATCHED", "SETTLED", "COMPLETED", "REJECTED", "CANCELLED"),
@@ -417,9 +448,9 @@ class ResourceRequestServiceTest {
 
     @Test
     void 요청이_하나도_없으면_상태별_건수는_모두_0이다() {
-        when(requestMapper.countRequestsByStatus(any(), any(), any())).thenReturn(List.of());
+        when(requestMapper.countRequestsByStatus(any(), any(), any(), any(), any())).thenReturn(List.of());
 
-        ResourceRequestSummaryResponse result = service.getRequestSummary(STAFF_ID, null, null);
+        ResourceRequestSummaryResponse result = service.getRequestSummary(STAFF_ID, null, null, null, null);
 
         assertEquals(0, result.total());
         assertEquals(7, result.counts().size());
@@ -429,13 +460,13 @@ class ResourceRequestServiceTest {
     @Test
     void ADMIN의_상태별_건수는_제한없이_전체이고_시민USER는_볼_수_없다() {
         when(memberMapper.findById(12L)).thenReturn(member(12L, "ADMIN", null));
-        when(requestMapper.countRequestsByStatus(any(), any(), any())).thenReturn(List.of());
+        when(requestMapper.countRequestsByStatus(any(), any(), any(), any(), any())).thenReturn(List.of());
 
-        service.getRequestSummary(12L, null, null);
-        verify(requestMapper).countRequestsByStatus(null, null, null);
+        service.getRequestSummary(12L, null, null, null, null);
+        verify(requestMapper).countRequestsByStatus(null, null, null, null, null);
 
         when(memberMapper.findById(11L)).thenReturn(member(11L, "USER", null));
-        assertThrows(AccessDeniedException.class, () -> service.getRequestSummary(11L, null, null));
+        assertThrows(AccessDeniedException.class, () -> service.getRequestSummary(11L, null, null, null, null));
     }
 
     // ---------- 상세·이력 ----------
@@ -553,11 +584,11 @@ class ResourceRequestServiceTest {
 
     @Test
     void 목록의_모든_요청에_버튼_가능_여부가_채워진다() {
-        when(requestMapper.countRequests(STAFF_ID, null, null, null)).thenReturn(1L);
-        when(requestMapper.findRequests(STAFF_ID, null, null, null, 0, 10))
+        when(requestMapper.countRequests(STAFF_ID, null, null, null, null, null)).thenReturn(1L);
+        when(requestMapper.findRequests(STAFF_ID, null, null, null, null, null, 0, 10))
                 .thenReturn(List.of(dispatched(77L, STAFF_ID, "Y")));
 
-        ResourceRequest first = service.getRequests(STAFF_ID, null, null, null, null, null).items().get(0);
+        ResourceRequest first = service.getRequests(STAFF_ID, null, null, null, null, null, null, null).items().get(0);
 
         assertTrue(first.isCanArrive());
         assertTrue(first.isCanApplyReturn());
@@ -572,6 +603,7 @@ class ResourceRequestServiceTest {
 
         List<ResourceTimelineStep> steps = service.getRequestTimeline(STAFF_ID, 77L);
 
+        // 승인 전에도 앞으로의 전체 흐름(승인·출고·도착 확인)을 예정 단계로 보여준다. 소모품(반납 정보 없음)이라 반납 신청은 없다.
         assertEquals(4, steps.size());
         assertEquals("요청 등록", steps.get(0).label());
         assertTrue(steps.get(0).done());

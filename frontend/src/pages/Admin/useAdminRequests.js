@@ -1,9 +1,9 @@
 import { useMyResources } from "../ControlBoard/useMyResources";
 
 // ADMIN 자원 요청 화면의 데이터. 목록·검색·상태별 건수·처리 이력은 STAFF 자원 관리와 같은 훅을 쓰고,
-// 여기서는 ADMIN만 하는 승인·반려·출고·승인 취소·손실 확정을 더한다.
-export function useAdminRequests({ setToast }) {
-  const data = useMyResources({ setToast });
+// 여기서는 ADMIN만 하는 승인·반려·출고·승인 취소·손실 확정을 더한다. initialStatus로 처음 상태를 정한다(미정산 출고 = DISPATCHED).
+export function useAdminRequests({ setToast, initialStatus }) {
+  const data = useMyResources({ setToast, initialStatus });
   const { act } = data;
 
   return {

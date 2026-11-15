@@ -69,4 +69,109 @@
         WHERE ROWNUM &lt;= #{limit}
     </select>
 
+    <!-- ================= ADMIN 재고 관리 전용 조회 (STAFF 재고 조회 SQL은 건드리지 않는다) =================
+         예약 = 승인(APPROVED) 요청 수량의 합, 출고 중 = 출고(DISPATCHED) 요청의 (수량 - 반납 - 손실)의 합.
+         소모품은 출고 즉시 COMPLETED가 되어 총보유량에서 빠지므로 출고 중에 남지 않는다.
+         총보유량 - 가용 = 예약 + 출고 중 이어야 한다 (서비스가 행마다 확인한다). -->
+    <sql id="adminStockColumns">
+        <include refid="stockColumns"/>,
+        I.DESCRIPTION AS ITEM_DESCRIPTION,
+        NVL((SELECT SUM(R.QUANTITY) FROM SF_RESOURCE_REQUEST R
+              WHERE R.STOCK_ID = S.STOCK_ID AND R.STATUS = 'APPROVED'), 0) AS RESERVED_QTY,
+        NVL((SELECT SUM(R.QUANTITY - R.RETURNED_QTY - R.LOST_QTY) FROM SF_RESOURCE_REQUEST R
+              WHERE R.STOCK_ID = S.STOCK_ID AND R.STATUS = 'DISPATCHED'), 0) AS DISPATCHED_QTY
+    </sql>
+
+    <sql id="adminStockJoins">
+        FROM SF_RESOURCE_STOCK S
+        JOIN SF_DEPARTMENT D ON D.DEPARTMENT_ID = S.DEPARTMENT_ID
+        JOIN SF_RESOURCE_ITEM I ON I.ITEM_ID = S.ITEM_ID
+    </sql>
+
+    <!-- 검색어(품목명·부서명)·부서·분류 조건. 상태 조건은 목록·건수에만 따로 붙인다 -->
+    <sql id="adminStockSearch">
+        <if test="keyword != null">
+            AND (UPPER(I.NAME) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\'
+              OR UPPER(D.NAME) LIKE '%' || UPPER(#{keyword}) || '%' ESCAPE '\')
+        </if>
+        <if test="departmentId != null">
+            AND S.DEPARTMENT_ID = #{departmentId}
+        </if>
+        <if test="category != null">
+            AND I.CATEGORY = #{category}
+        </if>
+    </sql>
+
+    <sql id="adminStockConditions">
+        <where>
+            <if test="status == 'ACTIVE' or status == 'INACTIVE'">
+                AND S.STATUS = #{status}
+            </if>
+            <if test="status == 'EMPTY'">
+                AND S.STATUS = 'ACTIVE' AND S.AVAILABLE_QTY = 0
+            </if>
+            <include refid="adminStockSearch"/>
+        </where>
+    </sql>
+
+    <!-- 안쪽에서 정렬한 뒤 ROWNUM으로 자른다 (오래된 Oracle 버전에서도 동작) -->
+    <select id="findAdminStocks" resultType="ResourceStockAdminView">
+        SELECT * FROM (
+            SELECT a.*, ROWNUM AS RN FROM (
+                SELECT <include refid="adminStockColumns"/>
+                <include refid="adminStockJoins"/>
+                <include refid="adminStockConditions"/>
+                ORDER BY S.DEPARTMENT_ID, S.ITEM_ID
+            ) a
+            WHERE ROWNUM &lt;= #{endRow}
+        )
+        WHERE RN &gt; #{startRow}
+    </select>
+
+    <select id="countAdminStocks" resultType="long">
+        SELECT COUNT(*)
+        <include refid="adminStockJoins"/>
+        <include refid="adminStockConditions"/>
+    </select>
+
+    <select id="countAdminStocksByStatus" resultType="com.safetrace.dto.ResourceStatusCount">
+        SELECT 'ACTIVE' AS STATUS, COUNT(*) AS REQUEST_COUNT
+        <include refid="adminStockJoins"/>
+        <where> AND S.STATUS = 'ACTIVE' <include refid="adminStockSearch"/> </where>
+        UNION ALL
+        SELECT 'INACTIVE' AS STATUS, COUNT(*) AS REQUEST_COUNT
+        <include refid="adminStockJoins"/>
+        <where> AND S.STATUS = 'INACTIVE' <include refid="adminStockSearch"/> </where>
+        UNION ALL
+        SELECT 'EMPTY' AS STATUS, COUNT(*) AS REQUEST_COUNT
+        <include refid="adminStockJoins"/>
+        <where> AND S.STATUS = 'ACTIVE' AND S.AVAILABLE_QTY = 0 <include refid="adminStockSearch"/> </where>
+    </select>
+
+    <select id="findAdminStockById" resultType="ResourceStockAdminView">
+        SELECT <include refid="adminStockColumns"/>
+        <include refid="adminStockJoins"/>
+        WHERE S.STOCK_ID = #{stockId}
+    </select>
+
+    <select id="findItemById" resultType="ResourceItem">
+        SELECT ITEM_ID, NAME, CATEGORY, UNIT, RETURNABLE, DESCRIPTION, CREATED_AT
+        FROM SF_RESOURCE_ITEM
+        WHERE ITEM_ID = #{itemId}
+    </select>
+
+    <!-- 품목 수정 이력: 최신순. 안쪽에서 정렬한 뒤 ROWNUM으로 자른다 -->
+    <select id="findItemLogs" resultType="ResourceItemLog">
+        SELECT LOG_ID, ITEM_ID, FIELD_NAME, OLD_VALUE, NEW_VALUE, CHANGED_BY, CHANGED_BY_NAME, CHANGED_AT
+        FROM (
+            SELECT L.LOG_ID, L.ITEM_ID, L.FIELD_NAME, L.OLD_VALUE, L.NEW_VALUE,
+                   L.CHANGED_BY, M.NAME AS CHANGED_BY_NAME, L.CHANGED_AT
+            FROM SF_RESOURCE_ITEM_LOG L
+            JOIN SF_MEMBER M ON M.MEMBER_ID = L.CHANGED_BY
+            WHERE L.ITEM_ID = #{itemId}
+            ORDER BY L.LOG_ID DESC
+        )
+        WHERE ROWNUM &lt;= #{limit}
+    </select>
+
 </mapper>

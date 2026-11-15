@@ -3,6 +3,7 @@ package com.safetrace.controller;
 import com.safetrace.domain.ResourceItem;
 import com.safetrace.domain.ResourceStock;
 import com.safetrace.dto.ResourceItemCreateRequest;
+import com.safetrace.dto.ResourceItemUpdateRequest;
 import com.safetrace.dto.ResourceStockAdjustRequest;
 import com.safetrace.dto.ResourceStockCreateRequest;
 import com.safetrace.dto.ResourceStockReasonRequest;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 // ADMIN 재고 관리 API. 모든 메서드가 ADMIN 전용이고, 처리자 ID는 로그인 정보에서만 가져온다 (body로 받지 않는다).
 // 재고 변경 이력 조회는 기존 GET /api/resources/stocks/{stockId}/logs(ResourceController)를 쓴다.
+// ADMIN 재고 목록·요약·상세와 품목 수정 이력 조회(GET /api/resources/admin/...)도 읽기라서 ResourceController가 맡는다.
 @RestController
 @RequestMapping("/api/resources/admin")
 @RequiredArgsConstructor
@@ -42,6 +44,15 @@ public class ResourceAdminController {
     public ResourceItem registerItem(@RequestBody @Valid ResourceItemCreateRequest request,
                                      Authentication authentication) {
         return adminService.registerItem(currentMemberId(authentication), request);
+    }
+
+    // 품목 수정 - 이름·분류·설명만 (단위·반납형은 값이 오면 400). 수정 이력은 GET /api/resources/admin/items/{itemId}/logs
+    @PatchMapping("/items/{itemId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResourceItem updateItem(@PathVariable Long itemId,
+                                   @RequestBody @Valid ResourceItemUpdateRequest request,
+                                   Authentication authentication) {
+        return adminService.updateItem(currentMemberId(authentication), itemId, request);
     }
 
     // 부서별 최초 재고 등록

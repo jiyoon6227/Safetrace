@@ -1,19 +1,17 @@
-import { Building2, CalendarClock, Check, ChevronDown, ExternalLink, Droplets, FileText, Gift, HardHat, MessageSquareText, Package, Truck, User } from "lucide-react";
+import { Building2, CalendarClock, Check, ChevronDown, ExternalLink, Droplets, FileText, Gift, HardHat, MessageSquareText, Package, Truck } from "lucide-react";
 import { formatDateTime } from "./constants";
 import RequestHistoryTimeline from "./RequestHistoryTimeline";
 import RequestStatusBadge from "./RequestStatusBadge";
 import {
-  ACTION_BUTTON as BUTTON, ADMIN_ACTION_LABEL, ADMIN_BUTTON_STYLE, CANCELLABLE_REQUEST_STATUSES, ITEM_CATEGORY_LABEL, formatQty, getAdminRequestActions,
+  ACTION_BUTTON as BUTTON, CANCELLABLE_REQUEST_STATUSES, ITEM_CATEGORY_LABEL, formatQty,
 } from "../../constants/resource";
 
-const CATEGORY_ICON = { DRAINAGE: Droplets, RESCUE: HardHat, RELIEF: Gift, VEHICLE: Truck };
+export const CATEGORY_ICON = { DRAINAGE: Droplets, RESCUE: HardHat, RELIEF: Gift, VEHICLE: Truck };
 
-// 자원 관리 탭의 요청 한 건 - 한 줄 요약(품목·부서·사건·사유·시각·상태·버튼)과 펼쳐 보는 처리 이력
-// onAdminAction을 넘기면 ADMIN 화면용이다: 요청자 줄이 더해지고 승인·반려·출고·승인 취소·손실 확정 버튼이 나온다.
-// onOpenIncident가 없으면(ADMIN은 사건 관리 화면이 없다) 사건명은 글자만 보인다.
+// STAFF 자원 관리 탭의 요청 한 건 - 한 줄 요약(품목·부서·사건·사유·시각·상태·버튼)과 펼쳐 보는 처리 이력
+// (ADMIN 요청·출고 관리는 표와 상세 패널을 쓴다. 품목 아이콘만 같이 쓴다)
 export default function ResourceRequestCard({
   request, incidentLabel, currentUser, busy, history, onToggleHistory, onCancel, onArrive, onOpenReturn, onOpenIncident,
-  onAdminAction,
 }) {
   const isMine = request.requesterId === currentUser?.memberId;
   const cancellable = CANCELLABLE_REQUEST_STATUSES.includes(request.status) && isMine;
@@ -47,29 +45,17 @@ export default function ResourceRequestCard({
           <div className="flex items-center gap-2">
             <dt className="shrink-0 w-24 flex items-center gap-1.5 text-slate-600"><FileText className="w-4 h-4" /> 사건명</dt>
             <dd className="min-w-0">
-              {onOpenIncident ? (
-                <button
-                  type="button"
-                  onClick={() => onOpenIncident(request.incidentId)}
-                  title="사건 관리에서 이 사건 열기"
-                  className="max-w-full inline-flex items-center gap-1 font-semibold text-[#244D7C] hover:underline cursor-pointer"
-                >
-                  <span className="truncate">{incidentName}</span>
-                  <ExternalLink className="w-3 h-3 shrink-0" />
-                </button>
-              ) : (
-                <span className="block font-semibold text-slate-900 truncate">{incidentName}</span>
-              )}
+              <button
+                type="button"
+                onClick={() => onOpenIncident(request.incidentId)}
+                title="사건 관리에서 이 사건 열기"
+                className="max-w-full inline-flex items-center gap-1 font-semibold text-[#244D7C] hover:underline cursor-pointer"
+              >
+                <span className="truncate">{incidentName}</span>
+                <ExternalLink className="w-3 h-3 shrink-0" />
+              </button>
             </dd>
           </div>
-          {onAdminAction && (
-            <div className="flex items-center gap-2">
-              <dt className="shrink-0 w-24 flex items-center gap-1.5 text-slate-600"><User className="w-4 h-4" /> 요청자</dt>
-              <dd className="font-medium text-slate-900 break-keep">
-                {request.requesterName}{request.requesterDepartmentName && ` (${request.requesterDepartmentName})`}
-              </dd>
-            </div>
-          )}
         </dl>
 
         <div className="text-sm min-w-0 space-y-2 xl:border-l xl:border-slate-100 xl:pl-4">
@@ -105,11 +91,6 @@ export default function ResourceRequestCard({
                 반납 신청
               </button>
             )}
-            {onAdminAction && getAdminRequestActions(request).map((action) => (
-              <button key={action} type="button" onClick={() => onAdminAction(action, request)} disabled={busy} className={`${BUTTON} ${ADMIN_BUTTON_STYLE[action]}`}>
-                {ADMIN_ACTION_LABEL[action]}
-              </button>
-            ))}
             {cancellable && (
               <button type="button" onClick={() => onCancel(request.requestId)} disabled={busy} className={`${BUTTON} font-semibold text-slate-600 border-slate-300 bg-white hover:bg-slate-100`}>
                 요청 취소

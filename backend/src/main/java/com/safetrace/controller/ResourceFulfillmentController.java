@@ -11,6 +11,7 @@ import com.safetrace.service.ResourceFulfillmentService;
 import com.safetrace.service.ResourceReturnQueryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 
 // 출고·도착 확인·반납 신청·반납 확인·손실 확정. 처리자 ID는 로그인 정보에서만 가져온다 (body로 받지 않는다).
@@ -72,21 +74,28 @@ public class ResourceFulfillmentController {
         return returnQueryService.getReturnApplications(currentMemberId(authentication), requestId);
     }
 
-    // 반납 상태별 건수 - ADMIN만. 현황 카드용으로 한 번에 돌려준다.
+    // 반납 상태별 건수 - ADMIN만. 현황 카드용으로 목록과 같은 검색어·기간 조건에서 상태만 뺀 건수를 돌려준다.
     @GetMapping("/admin/return-applications/summary")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResourceRequestSummaryResponse getReturnSummary(Authentication authentication) {
-        return returnQueryService.getReturnSummary(currentMemberId(authentication));
+    public ResourceRequestSummaryResponse getReturnSummary(@RequestParam(required = false) String keyword,
+                                                           @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+                                                           @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+                                                           Authentication authentication) {
+        return returnQueryService.getReturnSummary(currentMemberId(authentication), keyword, fromDate, toDate);
     }
 
-    // 반납 확인함 - ADMIN만. 예: /api/resources/admin/return-applications?status=PENDING&page=1&size=10
+    // 반납 확인함 - ADMIN만. 검색어는 요청번호(REQ-0003)·사건번호(INC-0003)·품목·사건 제목·부서·신청자·메모, 기간은 신청일 기준
+    // 예: /api/resources/admin/return-applications?status=PENDING&keyword=양수기&fromDate=2026-11-01&toDate=2026-11-14&page=1&size=10
     @GetMapping("/admin/return-applications")
     @PreAuthorize("hasRole('ADMIN')")
     public ResourceReturnPageResponse getReturnInbox(@RequestParam(required = false) String status,
+                                                     @RequestParam(required = false) String keyword,
+                                                     @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+                                                     @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
                                                      @RequestParam(required = false) Integer page,
                                                      @RequestParam(required = false) Integer size,
                                                      Authentication authentication) {
-        return returnQueryService.getReturnInbox(currentMemberId(authentication), status, page, size);
+        return returnQueryService.getReturnInbox(currentMemberId(authentication), status, keyword, fromDate, toDate, page, size);
     }
 
     // 반납 확인 (가용 수량 반영) - ADMIN만, 바디 없음

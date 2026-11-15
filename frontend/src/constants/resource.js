@@ -26,8 +26,8 @@ export const REQUEST_STATUS_STYLE = {
 // 품목 분류 이름표
 // 요청 상태 배지 글자. 서버 상태(DISPATCHED)는 그대로 두고, 일부만 반납·정산된 출고 요청은 진행 수량을 같이 보여준다.
 // 예: 2대 중 1대 반납 → "1/2대 반납", 손실이 있으면 "1/2대 반납 · 손실 1"
-export function getRequestStatusLabel(request) {
-  const base = REQUEST_STATUS_LABEL[request?.status] || request?.status;
+export function getRequestStatusLabel(request, labels = REQUEST_STATUS_LABEL) {
+  const base = labels[request?.status] || request?.status;
   const returned = request?.returnedQty || 0;
   const lost = request?.lostQty || 0;
   if (request?.status !== "DISPATCHED" || request.returnable !== "Y" || returned + lost === 0) return base;
@@ -45,6 +45,9 @@ export const ITEM_CATEGORY_LABEL = {
 export const CANCELLABLE_REQUEST_STATUSES = ["REQUESTED", "APPROVED"];
 
 export const MAX_REASON_LENGTH = 500;
+
+// 화면 표시용 번호: 실제 DB 번호를 4자리로 채운다 (예: 요청 38번 → REQ-0038). 서버 검색도 같은 모양으로 찾는다
+export const formatCode = (prefix, id) => `${prefix}-${String(id).padStart(4, "0")}`;
 
 // 수량 표시: 천 단위 쉼표 + 단위 (단위가 없으면 수량만)
 export function formatQty(qty, unit) {
@@ -111,6 +114,11 @@ export const REQUEST_STATUS_FILTERS = [
 
 // ADMIN 화면과 STAFF 자원 관리 화면이 같은 필터를 쓴다
 export const ADMIN_STATUS_FILTERS = REQUEST_STATUS_FILTERS;
+
+// ADMIN 요청·출고 관리의 상태 이름: 지금 해야 할 일이 보이도록 부른다 (서버 상태값은 그대로)
+export const ADMIN_STATUS_LABEL = { ...REQUEST_STATUS_LABEL, APPROVED: "출고 대기", DISPATCHED: "출고 후 관리" };
+export const ADMIN_REQUEST_FILTERS = REQUEST_STATUS_FILTERS.map((filter) =>
+  filter.value ? { ...filter, label: ADMIN_STATUS_LABEL[filter.value] } : filter);
 
 export const ADMIN_ACTION_LABEL = {
   approve: "승인",
@@ -260,4 +268,132 @@ export function parseIncidentIdParam(value) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isInteger(number) && number > 0 ? number : null;
+}
+
+// ---- ADMIN 재고 관리용 ----
+
+export const STOCK_STATUS_LABEL = { ACTIVE: "활성", INACTIVE: "비활성" };
+export const STOCK_STATUS_STYLE = { ACTIVE: "bg-emerald-100 text-emerald-700", INACTIVE: "bg-slate-200 text-slate-600" };
+
+// 재고 목록의 상태 칩. 가용 없음(EMPTY)은 활성 재고 중 가용 수량이 0인 것이라 활성에 포함된다 (서버가 같은 규칙으로 센다)
+export const STOCK_STATUS_FILTERS = [
+  { value: "", label: "전체" },
+  { value: "ACTIVE", label: STOCK_STATUS_LABEL.ACTIVE },
+  { value: "INACTIVE", label: STOCK_STATUS_LABEL.INACTIVE },
+  { value: "EMPTY", label: "가용 없음" },
+];
+export const ITEM_CATEGORY_FILTERS = [{ value: "", label: "전체" }, ...Object.entries(ITEM_CATEGORY_LABEL).map(([value, label]) => ({ value, label }))];
+
+// 재고 이력 종류 이름 (요청 처리로 생기는 이력도 같은 표에 남는다)
+const STOCK_ACTION_LABEL = {
+  REGISTER: "최초 등록", RECEIVE: "입고", ADJUST: "수량 조정", DEACTIVATE: "사용 중지", REACTIVATE: "사용 재개",
+  RESERVE: "승인(예약)", RELEASE: "예약 해제", CONSUME: "소모 출고", RETURN: "반납 확인", LOSS: "손실 확정",
+};
+const ITEM_FIELD_LABEL = { NAME: "품목명", CATEGORY: "분류", DESCRIPTION: "설명" };
+
+// 재고 이력 한 줄을 처리 이력 타임라인의 단계로 바꾼다 (수량이 바뀐 것만 "전 → 후"로 보여준다)
+export function stockLogToStep(log, unit) {
+  const change = (label, before, after) => before !== after && `${label} ${formatQty(before, unit)} → ${formatQty(after, unit)}`;
+  const note = [change("총", log.totalBefore, log.totalAfter), change("가용", log.availableBefore, log.availableAfter), log.requestId && formatCode("REQ", log.requestId), log.reason];
+  return { key: log.logId, label: STOCK_ACTION_LABEL[log.action] || log.action, done: true, time: log.changedAt, by: log.changedByName, note: note.filter(Boolean).join(" · ") };
+}
+
+export const itemLogToStep = (log) => ({
+  key: log.logId, label: `${ITEM_FIELD_LABEL[log.fieldName] || log.fieldName} 변경`, done: true, time: log.changedAt, by: log.changedByName,
+  note: `${log.oldValue || "(없음)"} → ${log.newValue || "(없음)"}`,
+});
+
+// 재고 상태별로 ADMIN이 누를 수 있는 처리 (서버도 같은 규칙으로 다시 검사한다): 활성 → 입고·조정·사용 중지, 비활성 → 조정·사용 재개(입고는 막힌다)
+export const getStockActions = (stock) => (stock?.status === "ACTIVE" ? ["stockReceive", "stockAdjust", "stockDeactivate"] : stock?.status === "INACTIVE" ? ["stockAdjust", "stockReactivate"] : []);
+
+const MAX_STOCK_QTY = 99_999_999; // 서버 한도와 같다
+const memo = { name: "memo", label: "메모", type: "textarea", max: MAX_REASON_LENGTH, optional: true };
+const reason = (label) => ({ name: "reason", label, type: "textarea", max: MAX_REASON_LENGTH });
+const itemText = [
+  { name: "name", label: "품목명", type: "text", max: 50 },
+  { name: "category", label: "분류", type: "select", options: Object.entries(ITEM_CATEGORY_LABEL) },
+];
+const itemDescription = { name: "description", label: "설명", type: "textarea", max: 200, optional: true };
+const body = (values, names) => Object.fromEntries(names.map((name) => [name, values[name].trim() || null]));
+
+// 재고·품목 처리 입력창 정의 (모두 ADMIN 전용 API). request는 (대상, 입력값) → { path, method, body }
+// 필드: 기본 필수, optional이면 비워도 된다. select는 options(없으면 화면이 부서·품목 목록을 채운다)
+export const STOCK_FORMS = {
+  stockCreate: {
+    title: "재고 등록", submit: "등록", done: "재고를 등록했습니다.",
+    hint: "부서별로 품목마다 한 번만 등록할 수 있습니다. 이미 있는 재고는 입고로 수량을 늘려주세요.",
+    fields: [
+      { name: "departmentId", label: "부서", type: "select" },
+      { name: "itemId", label: "품목", type: "select" },
+      { name: "quantity", label: "초기 수량", type: "number", min: 1, max: MAX_STOCK_QTY },
+      memo,
+    ],
+    request: (_, v) => ({ path: "/stocks", method: "POST", body: { departmentId: Number(v.departmentId), itemId: Number(v.itemId), quantity: Number(v.quantity), ...body(v, ["memo"]) } }),
+  },
+  stockReceive: {
+    title: "입고", submit: "입고", done: "입고했습니다.",
+    hint: "입고하면 총 보유량과 가용 수량이 함께 늘어납니다. 비활성 재고에는 입고할 수 없습니다.",
+    fields: [{ name: "quantity", label: "입고 수량", type: "number", min: 1, max: MAX_STOCK_QTY }, memo],
+    request: (stock, v) => ({ path: `/stocks/${stock.stockId}/receive`, method: "POST", body: { quantity: Number(v.quantity), ...body(v, ["memo"]) } }),
+  },
+  stockAdjust: {
+    title: "수량 조정", submit: "조정", done: "수량을 조정했습니다.",
+    hint: "늘리면 +, 줄이면 -로 입력합니다. 예약·출고 중인 수량은 줄일 수 없어 가용 수량까지만 줄일 수 있습니다.",
+    fields: [{ name: "delta", label: "조정 수량", type: "number", placeholder: "예: +2 또는 -2", min: -MAX_STOCK_QTY, max: MAX_STOCK_QTY, nonZero: true }, reason("조정 사유")],
+    request: (stock, v) => ({ path: `/stocks/${stock.stockId}/adjust`, method: "POST", body: { delta: Number(v.delta), reason: v.reason.trim() } }),
+  },
+  stockDeactivate: {
+    title: "사용 중지", submit: "사용 중지", done: "사용을 중지했습니다.",
+    hint: "중지하면 새 요청·승인·입고가 막힙니다. 이미 승인·출고된 건의 취소·정산은 계속됩니다. 수량은 바뀌지 않습니다.",
+    fields: [reason("중지 사유")],
+    request: (stock, v) => ({ path: `/stocks/${stock.stockId}/deactivate`, method: "PATCH", body: { reason: v.reason.trim() } }),
+  },
+  stockReactivate: {
+    title: "사용 재개", submit: "사용 재개", done: "사용을 재개했습니다.",
+    hint: "다시 사용하면 새 요청·승인·입고가 가능해집니다. 수량은 바뀌지 않습니다.",
+    fields: [reason("재개 사유")],
+    request: (stock, v) => ({ path: `/stocks/${stock.stockId}/reactivate`, method: "PATCH", body: { reason: v.reason.trim() } }),
+  },
+  itemCreate: {
+    title: "품목 등록", submit: "등록", done: "품목을 등록했습니다.",
+    hint: "단위와 반납형 여부는 기존 재고·요청의 해석에 영향을 주므로 등록한 뒤에는 수정할 수 없습니다.",
+    fields: [
+      ...itemText,
+      { name: "unit", label: "단위", type: "text", max: 10 },
+      { name: "returnable", label: "반납형 여부", type: "select", options: [["Y", "반납형 (사용 뒤 반납)"], ["N", "소모품 (사용 뒤 소진)"]] },
+      itemDescription,
+    ],
+    request: (_, v) => ({ path: "/items", method: "POST", body: body(v, ["name", "category", "unit", "returnable", "description"]) }),
+  },
+  itemEdit: {
+    title: "품목 수정", submit: "수정", done: "품목을 수정했습니다.",
+    hint: "품목명·분류·설명만 수정할 수 있고, 수정 내용은 이력으로 남습니다. 단위와 반납형 여부는 수정할 수 없습니다.",
+    fields: [...itemText, itemDescription],
+    init: (item) => ({ name: item.name, category: item.category, description: item.description || "" }),
+    request: (item, v) => ({ path: `/items/${item.itemId}`, method: "PATCH", body: body(v, ["name", "category", "description"]) }),
+  },
+};
+
+// 한글 이름 뒤 조사: 받침이 있으면 앞 것, 없으면 뒤 것 (예: 수량+을/를)
+const withJosa = (word, withFinal, noFinal) => word + ((word.charCodeAt(word.length - 1) - 0xac00) % 28 ? withFinal : noFinal);
+
+// 입력창 값 검사 (서버 규칙과 같다). 문제가 없으면 빈 문자열.
+export function validateStockForm(kind, values) {
+  for (const { name, label, type, max, min, nonZero, optional } of STOCK_FORMS[kind].fields) {
+    const value = String(values[name] ?? "").trim();
+    const topic = withJosa(label, "은", "는");
+    if (!value) {
+      if (optional) continue;
+      return `${withJosa(label, "을", "를")} ${type === "select" ? "선택" : "입력"}해주세요.`;
+    }
+    if (type === "number") {
+      const number = Number(value);
+      if (!Number.isInteger(number)) return `${topic} 정수로 입력해주세요.`;
+      if (nonZero && number === 0) return `${topic} 0이 아닌 값이어야 합니다.`;
+      if (number < min || number > max) return `${topic} ${formatQty(min)} ~ ${formatQty(max)} 사이로 입력해주세요.`;
+    } else if (max && value.length > max) {
+      return `${topic} ${max}자 이하로 입력해주세요.`;
+    }
+  }
+  return "";
 }

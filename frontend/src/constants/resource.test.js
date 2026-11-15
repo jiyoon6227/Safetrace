@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  ADMIN_REQUEST_FILTERS,
+  ADMIN_STATUS_LABEL,
   ADMIN_STATUS_FILTERS,
+  formatCode,
   REQUEST_STATUS_FILTERS,
   parseIncidentIdParam,
   validateReturnForm,
   formatQty,
+  STOCK_FORMS,
+  getStockActions,
+  itemLogToStep,
+  stockLogToStep,
+  validateStockForm,
   getAdminConfirmMessage,
   getLossPreview,
   getRequestStatusLabel,
@@ -264,5 +272,73 @@ describe("getRequestStatusLabel", () => {
     expect(getRequestStatusLabel({ ...dispatched, status: "SETTLED", returnedQty: 2 })).toBe("반납 정산 완료");
     expect(getRequestStatusLabel({ ...dispatched, returnable: "N", returnedQty: 1 })).toBe("출고됨(반납 전)");
     expect(getRequestStatusLabel(null)).toBeUndefined();
+  });
+});
+
+describe("ADMIN 요청·출고 관리 표시", () => {
+  it("표시용 번호는 실제 번호를 4자리로 채운다", () => {
+    expect(formatCode("REQ", 38)).toBe("REQ-0038");
+    expect(formatCode("INC", 3)).toBe("INC-0003");
+    expect(formatCode("INC", 12345)).toBe("INC-12345");
+  });
+
+  it("필터는 서버 상태값은 그대로 두고 이름만 ADMIN 업무에 맞게 부른다", () => {
+    expect(ADMIN_REQUEST_FILTERS.map((f) => f.value)).toEqual(REQUEST_STATUS_FILTERS.map((f) => f.value));
+    expect(ADMIN_REQUEST_FILTERS.find((f) => f.value === "APPROVED").label).toBe("출고 대기");
+    expect(getRequestStatusLabel({ status: "DISPATCHED", returnable: "Y", quantity: 2 }, ADMIN_STATUS_LABEL)).toBe("출고 후 관리");
+  });
+});
+
+describe("ADMIN 재고 관리", () => {
+  it("재고 상태에 따라 필요한 처리 버튼만 준다 (비활성 재고는 입고 없음)", () => {
+    expect(getStockActions({ status: "ACTIVE" })).toEqual(["stockReceive", "stockAdjust", "stockDeactivate"]);
+    expect(getStockActions({ status: "INACTIVE" })).toEqual(["stockAdjust", "stockReactivate"]);
+    expect(getStockActions(null)).toEqual([]);
+  });
+
+  it("조정 수량은 0이 아닌 정수여야 하고 사유가 필수다", () => {
+    const ok = { delta: "-3", reason: "실사 결과 반영" };
+    expect(validateStockForm("stockAdjust", ok)).toBe("");
+    expect(validateStockForm("stockAdjust", { ...ok, delta: "0" })).toContain("0이 아닌");
+    expect(validateStockForm("stockAdjust", { ...ok, delta: "1.5" })).toContain("정수");
+    expect(validateStockForm("stockAdjust", { ...ok, delta: "" })).toBe("조정 수량을 입력해주세요.");
+    expect(validateStockForm("stockAdjust", { ...ok, reason: "" })).toBe("조정 사유를 입력해주세요.");
+    expect(validateStockForm("stockAdjust", { ...ok, reason: "  " })).toContain("조정 사유");
+    expect(validateStockForm("stockAdjust", { ...ok, reason: "가".repeat(501) })).toContain("500자");
+  });
+
+  it("입고·등록 수량은 1 이상 한도 이하이고 메모는 비워도 된다", () => {
+    expect(validateStockForm("stockReceive", { quantity: "5", memo: "" })).toBe("");
+    expect(validateStockForm("stockReceive", { quantity: "0", memo: "" })).toContain("사이");
+    expect(validateStockForm("stockReceive", { quantity: "100000000", memo: "" })).toContain("사이");
+    expect(validateStockForm("stockCreate", { departmentId: "", itemId: "1", quantity: "3", memo: "" })).toBe("부서를 선택해주세요.");
+  });
+
+  it("품목 수정에는 단위·반납형 입력이 없고 요청에도 담기지 않는다", () => {
+    const names = STOCK_FORMS.itemEdit.fields.map((field) => field.name);
+    expect(names).toEqual(["name", "category", "description"]);
+    const item = { itemId: 7, name: "양수기", category: "DRAINAGE", unit: "대", returnable: "Y", description: null };
+    const values = STOCK_FORMS.itemEdit.init(item);
+    expect(values).toEqual({ name: "양수기", category: "DRAINAGE", description: "" });
+    expect(STOCK_FORMS.itemEdit.request(item, values)).toEqual({
+      path: "/items/7", method: "PATCH", body: { name: "양수기", category: "DRAINAGE", description: null },
+    });
+  });
+
+  it("재고 입력창은 서버 주소·본문 모양으로 요청을 만든다", () => {
+    const stock = { stockId: 3 };
+    expect(STOCK_FORMS.stockAdjust.request(stock, { delta: "-2", reason: " 파손 " })).toEqual({ path: "/stocks/3/adjust", method: "POST", body: { delta: -2, reason: "파손" } });
+    expect(STOCK_FORMS.stockDeactivate.request(stock, { reason: "점검" }).path).toBe("/stocks/3/deactivate");
+    expect(STOCK_FORMS.stockCreate.request(null, { departmentId: "2", itemId: "5", quantity: "10", memo: "" }).body).toEqual({ departmentId: 2, itemId: 5, quantity: 10, memo: null });
+  });
+
+  it("재고 이력은 바뀐 수량만 보여주고 요청 번호·사유를 함께 담는다", () => {
+    const step = stockLogToStep({ logId: 1, action: "RESERVE", totalBefore: 10, totalAfter: 10, availableBefore: 10, availableAfter: 8, requestId: 12, reason: null, changedByName: "관리자", changedAt: "2026-11-01T10:00:00" }, "개");
+    expect(step).toMatchObject({ key: 1, label: "승인(예약)", done: true, by: "관리자", note: "가용 10개 → 8개 · REQ-0012" });
+    expect(stockLogToStep({ logId: 2, action: "ADJUST", totalBefore: 10, totalAfter: 7, availableBefore: 10, availableAfter: 7, reason: "파손" }, "개").note).toBe("총 10개 → 7개 · 가용 10개 → 7개 · 파손");
+  });
+
+  it("품목 수정 이력은 항목 이름과 전·후 값을 보여준다", () => {
+    expect(itemLogToStep({ logId: 4, fieldName: "DESCRIPTION", oldValue: null, newValue: "소형" })).toMatchObject({ label: "설명 변경", note: "(없음) → 소형" });
   });
 });

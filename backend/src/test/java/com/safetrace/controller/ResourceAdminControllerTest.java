@@ -1,6 +1,7 @@
 package com.safetrace.controller;
 
 import com.safetrace.dto.ResourceItemCreateRequest;
+import com.safetrace.dto.ResourceItemUpdateRequest;
 import com.safetrace.dto.ResourceStockAdjustRequest;
 import com.safetrace.dto.ResourceStockCreateRequest;
 import com.safetrace.dto.ResourceStockReasonRequest;
@@ -29,6 +30,7 @@ import static org.mockito.Mockito.verify;
 class ResourceAdminControllerTest {
 
     private static final ResourceItemCreateRequest ITEM = new ResourceItemCreateRequest("양수기", "DRAINAGE", "대", "Y", null);
+    private static final ResourceItemUpdateRequest ITEM_UPDATE = new ResourceItemUpdateRequest("양수기", "DRAINAGE", "설명", null, null);
     private static final ResourceStockCreateRequest STOCK = new ResourceStockCreateRequest(1L, 2L, 5, null);
     private static final ResourceStockReceiveRequest RECEIVE = new ResourceStockReceiveRequest(3, null);
     private static final ResourceStockAdjustRequest ADJUST = new ResourceStockAdjustRequest(-1, "사유");
@@ -75,6 +77,7 @@ class ResourceAdminControllerTest {
         Authentication admin = auth("ADMIN", 9L);
 
         controller.registerItem(ITEM, admin);
+        controller.updateItem(3L, ITEM_UPDATE, admin);
         controller.registerStock(STOCK, admin);
         controller.receive(7L, RECEIVE, admin);
         controller.adjust(7L, ADJUST, admin);
@@ -83,6 +86,7 @@ class ResourceAdminControllerTest {
 
         // body에는 처리자 ID가 없고, 서비스에는 토큰의 memberId가 전달된다
         verify(service).registerItem(9L, ITEM);
+        verify(service).updateItem(9L, 3L, ITEM_UPDATE);
         verify(service).registerStock(9L, STOCK);
         verify(service).receive(9L, 7L, RECEIVE);
         verify(service).adjust(9L, 7L, ADJUST);
@@ -92,6 +96,7 @@ class ResourceAdminControllerTest {
 
     private void assertAllDenied(Authentication authentication) {
         assertThrows(AccessDeniedException.class, () -> controller.registerItem(ITEM, authentication));
+        assertThrows(AccessDeniedException.class, () -> controller.updateItem(3L, ITEM_UPDATE, authentication));
         assertThrows(AccessDeniedException.class, () -> controller.registerStock(STOCK, authentication));
         assertThrows(AccessDeniedException.class, () -> controller.receive(7L, RECEIVE, authentication));
         assertThrows(AccessDeniedException.class, () -> controller.adjust(7L, ADJUST, authentication));

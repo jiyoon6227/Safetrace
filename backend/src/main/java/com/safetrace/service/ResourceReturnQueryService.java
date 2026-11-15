@@ -14,6 +14,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,9 +52,14 @@ public class ResourceReturnQueryService {
         return fulfillmentMapper.findReturnsByRequest(requestId);
     }
 
-    /** ADMIN 반납 확인함. status가 없으면 대기 중(PENDING), ALL이면 전체. */
+    /**
+     * ADMIN 반납 확인함. status가 없으면 대기 중(PENDING), ALL이면 전체.
+     * keyword는 요청 목록 검색과 같은 규칙이다: REQ-숫자·INC-숫자는 요청 ID·사건 ID와 정확히 같은 신청만, 그 밖의 글자는
+     * 품목명·사건 제목·보유 부서명·신청자 이름·신청 메모에 들어 있는 신청만 본다. fromDate·toDate는 신청일 기간(끝 날짜 포함)이다.
+     */
     @Transactional(readOnly = true)
-    public ResourceReturnPageResponse getReturnInbox(Long memberId, String status, Integer page, Integer size) {
+    public ResourceReturnPageResponse getReturnInbox(Long memberId, String status, String keyword,
+                                                     LocalDate fromDate, LocalDate toDate, Integer page, Integer size) {
         Member actor = requireActiveMember(memberId);
         if (!"ADMIN".equals(actor.getRole())) {
             throw new AccessDeniedException("반납 확인함은 자원 관리자(ADMIN)만 볼 수 있습니다.");
@@ -72,25 +78,29 @@ public class ResourceReturnQueryService {
         }
         int safePage = page == null ? 1 : Math.min(Math.max(page, 1), MAX_PAGE);
         int safeSize = size == null ? DEFAULT_PAGE_SIZE : Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        String safeKeyword = ResourceRequestService.normalizeKeyword(keyword);
+        ResourceRequestService.validateDateRange(fromDate, toDate);
 
-        long total = fulfillmentMapper.countReturns(safeStatus);
+        long total = fulfillmentMapper.countReturns(safeStatus, safeKeyword, fromDate, toDate);
         List<ResourceReturn> items = total == 0
                 ? List.of()
-                : fulfillmentMapper.findReturns(safeStatus, (safePage - 1) * safeSize, safePage * safeSize);
+                : fulfillmentMapper.findReturns(safeStatus, safeKeyword, fromDate, toDate,
+                        (safePage - 1) * safeSize, safePage * safeSize);
         return new ResourceReturnPageResponse(items, total, safePage, safeSize);
     }
 
-    /** ADMIN 반납 현황 카드용. 상태별 건수를 한 번에 세고, 0건인 상태도 0으로 채운다. */
+    /** ADMIN 반납 현황 카드용. 목록과 같은 검색어·기간 조건에서 상태별 건수를 한 번에 세고, 0건인 상태도 0으로 채운다. */
     @Transactional(readOnly = true)
-    public ResourceRequestSummaryResponse getReturnSummary(Long memberId) {
+    public ResourceRequestSummaryResponse getReturnSummary(Long memberId, String keyword, LocalDate fromDate, LocalDate toDate) {
         Member actor = requireActiveMember(memberId);
         if (!"ADMIN".equals(actor.getRole())) {
             throw new AccessDeniedException("반납 현황은 자원 관리자(ADMIN)만 볼 수 있습니다.");
         }
+        ResourceRequestService.validateDateRange(fromDate, toDate);
         Map<String, Long> counts = new LinkedHashMap<>();
         STATUS_ORDER.forEach(status -> counts.put(status, 0L));
         long total = 0;
-        for (ResourceStatusCount row : fulfillmentMapper.countReturnsByStatus()) {
+        for (ResourceStatusCount row : fulfillmentMapper.countReturnsByStatus(ResourceRequestService.normalizeKeyword(keyword), fromDate, toDate)) {
             if (counts.containsKey(row.getStatus())) {
                 counts.put(row.getStatus(), row.getRequestCount());
                 total += row.getRequestCount();

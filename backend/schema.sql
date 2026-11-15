@@ -15,7 +15,7 @@ BEGIN
                               'SF_MEMBER_REGION', 'SF_REPORT_PHOTO', 'SF_INCIDENT_PHOTO', 'SF_INCIDENT_LOG',
                               'SF_REPORT', 'SF_INCIDENT', 'SF_MEMBER', 'SF_DEPARTMENT',
                               'SF_RESOURCE_SETTLEMENT', 'SF_RESOURCE_RETURN', 'SF_RESOURCE_STOCK_LOG', 'SF_RESOURCE_LOG',
-                              'SF_RESOURCE_REQUEST', 'SF_RESOURCE_STOCK', 'SF_RESOURCE_ITEM')
+                              'SF_RESOURCE_REQUEST', 'SF_RESOURCE_STOCK', 'SF_RESOURCE_ITEM_LOG', 'SF_RESOURCE_ITEM')
     ) LOOP
         EXECUTE IMMEDIATE 'DROP TABLE ' || t.TABLE_NAME || ' CASCADE CONSTRAINTS';
     END LOOP;
@@ -27,7 +27,7 @@ BEGIN
                                  'SEQ_SF_FAMILY_RELATION', 'SEQ_SF_SAFETY_CHECK', 'SEQ_SF_NOTIFICATION', 'SEQ_SF_NOTICE',
                                  'SEQ_SF_RESOURCE_ITEM', 'SEQ_SF_RESOURCE_STOCK', 'SEQ_SF_RESOURCE_REQUEST',
                                  'SEQ_SF_RESOURCE_LOG', 'SEQ_SF_RESOURCE_STOCK_LOG', 'SEQ_SF_RESOURCE_SETTLEMENT',
-                                 'SEQ_SF_RESOURCE_RETURN')
+                                 'SEQ_SF_RESOURCE_RETURN', 'SEQ_SF_RESOURCE_ITEM_LOG')
     ) LOOP
         EXECUTE IMMEDIATE 'DROP SEQUENCE ' || s.SEQUENCE_NAME;
     END LOOP;
@@ -548,9 +548,10 @@ CREATE SEQUENCE SEQ_SF_RESOURCE_REQUEST START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_RESOURCE_LOG START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_RESOURCE_STOCK_LOG START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE SEQ_SF_RESOURCE_RETURN START WITH 1 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_SF_RESOURCE_ITEM_LOG START WITH 1 INCREMENT BY 1 NOCACHE;
 
 -- 8-2. 품목 마스터============================================
---      등록만 하고 수정 API는 두지 않는다 (RETURNABLE이 바뀌면 기존 재고·요청의 해석이 깨짐)
+--      이름·분류·설명만 수정할 수 있고(수정 이력은 SF_RESOURCE_ITEM_LOG), UNIT·RETURNABLE은 수정하지 않는다 (바뀌면 기존 재고·요청의 해석이 깨짐)
 CREATE TABLE SF_RESOURCE_ITEM (
     ITEM_ID       NUMBER          PRIMARY KEY,               -- 품목 PK (SEQ_SF_RESOURCE_ITEM로 채번)
     NAME          VARCHAR2(50)    NOT NULL,                  -- 품목명 (예: 양수기, 모래주머니)
@@ -564,7 +565,7 @@ CREATE TABLE SF_RESOURCE_ITEM (
     CONSTRAINT CK_SF_RES_ITEM_RETURNABLE CHECK (RETURNABLE IN ('Y', 'N'))
 );
 
-COMMENT ON TABLE SF_RESOURCE_ITEM IS '자원 품목 마스터 - 등록만 하고 수정·삭제하지 않음';
+COMMENT ON TABLE SF_RESOURCE_ITEM IS '자원 품목 마스터 - 이름·분류·설명만 수정 가능(이력 보존), 단위·반납형은 수정 불가, 삭제하지 않음';
 COMMENT ON COLUMN SF_RESOURCE_ITEM.ITEM_ID IS '품목 PK (SEQ_SF_RESOURCE_ITEM로 채번)';
 COMMENT ON COLUMN SF_RESOURCE_ITEM.NAME IS '품목명 (UNIQUE)';
 COMMENT ON COLUMN SF_RESOURCE_ITEM.CATEGORY IS '분류: DRAINAGE(배수장비) / RESCUE(구조장비) / RELIEF(구호물품) / VEHICLE(차량)';
@@ -572,6 +573,29 @@ COMMENT ON COLUMN SF_RESOURCE_ITEM.UNIT IS '단위 (대, 개, 박스 등)';
 COMMENT ON COLUMN SF_RESOURCE_ITEM.RETURNABLE IS '반납형 여부: Y(반납형 장비) / N(소모품)';
 COMMENT ON COLUMN SF_RESOURCE_ITEM.DESCRIPTION IS '설명';
 COMMENT ON COLUMN SF_RESOURCE_ITEM.CREATED_AT IS '등록일시';
+
+-- 8-2-1. 품목 수정 이력============================================
+--      품목의 이름·분류·설명이 바뀔 때마다 같은 트랜잭션에서 바뀐 항목마다 한 줄씩 전·후 값을 기록한다 (등록 시점은 SF_RESOURCE_ITEM.CREATED_AT)
+--      UNIT·RETURNABLE은 수정할 수 없으므로 기록 대상이 아니다. 품목이 물리 삭제되지 않으므로 이력도 남는다.
+CREATE TABLE SF_RESOURCE_ITEM_LOG (
+    LOG_ID        NUMBER          PRIMARY KEY,                                         -- 로그 PK (SEQ_SF_RESOURCE_ITEM_LOG로 채번)
+    ITEM_ID       NUMBER          NOT NULL REFERENCES SF_RESOURCE_ITEM(ITEM_ID),       -- 대상 품목 FK
+    FIELD_NAME    VARCHAR2(20)    NOT NULL,                                            -- 바뀐 항목: NAME / CATEGORY / DESCRIPTION
+    OLD_VALUE     VARCHAR2(200),                                                       -- 변경 전 값 (설명이 비어 있었으면 NULL)
+    NEW_VALUE     VARCHAR2(200),                                                       -- 변경 후 값 (설명을 지웠으면 NULL)
+    CHANGED_BY    NUMBER          NOT NULL REFERENCES SF_MEMBER(MEMBER_ID),            -- 수정한 ADMIN FK
+    CHANGED_AT    TIMESTAMP       DEFAULT SYSTIMESTAMP NOT NULL,                       -- 수정 시각
+    CONSTRAINT CK_SF_RES_ILOG_FIELD CHECK (FIELD_NAME IN ('NAME', 'CATEGORY', 'DESCRIPTION'))
+);
+
+COMMENT ON TABLE SF_RESOURCE_ITEM_LOG IS '품목 수정 이력 - 이름·분류·설명이 바뀐 항목마다 한 줄';
+COMMENT ON COLUMN SF_RESOURCE_ITEM_LOG.LOG_ID IS '로그 PK (SEQ_SF_RESOURCE_ITEM_LOG로 채번)';
+COMMENT ON COLUMN SF_RESOURCE_ITEM_LOG.ITEM_ID IS '대상 품목 FK';
+COMMENT ON COLUMN SF_RESOURCE_ITEM_LOG.FIELD_NAME IS '바뀐 항목: NAME(이름) / CATEGORY(분류) / DESCRIPTION(설명)';
+COMMENT ON COLUMN SF_RESOURCE_ITEM_LOG.OLD_VALUE IS '변경 전 값';
+COMMENT ON COLUMN SF_RESOURCE_ITEM_LOG.NEW_VALUE IS '변경 후 값';
+COMMENT ON COLUMN SF_RESOURCE_ITEM_LOG.CHANGED_BY IS '수정한 사람 FK';
+COMMENT ON COLUMN SF_RESOURCE_ITEM_LOG.CHANGED_AT IS '수정 시각';
 
 -- 8-3. 부서별 재고============================================
 --      AVAILABLE_QTY: 지금 바로 배정 가능한 수량 / TOTAL_QTY: 창고 + 예약 + 출고 중 (소모·손실 확정분은 빠짐)
@@ -762,6 +786,8 @@ CREATE INDEX IDX_SF_RES_REQ_REQUESTER ON SF_RESOURCE_REQUEST(REQUESTER_ID, CREAT
 CREATE INDEX IDX_SF_RES_LOG_REQUEST ON SF_RESOURCE_LOG(REQUEST_ID, LOG_ID);
 -- 재고별 변경 이력 조회 + 이력 연속성 점검
 CREATE INDEX IDX_SF_RES_SLOG_STOCK ON SF_RESOURCE_STOCK_LOG(STOCK_ID, LOG_ID);
+-- 품목별 수정 이력 조회
+CREATE INDEX IDX_SF_RES_ILOG_ITEM ON SF_RESOURCE_ITEM_LOG(ITEM_ID, LOG_ID);
 -- 요청별 반납 신청 조회·대기 중 신청 합계 계산
 CREATE INDEX IDX_SF_RES_RETURN_REQUEST ON SF_RESOURCE_RETURN(REQUEST_ID, STATUS);
 -- ADMIN 반납 확인함 (상태별 신청 시각 순)

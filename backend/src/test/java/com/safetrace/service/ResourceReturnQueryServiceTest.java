@@ -15,6 +15,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.lang.reflect.Method;
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 
@@ -96,18 +97,18 @@ class ResourceReturnQueryServiceTest {
 
     @Test
     void 확인함은_ADMIN만_볼_수_있다() {
-        assertThrows(AccessDeniedException.class, () -> service.getReturnInbox(OWNER_ID, null, null, null));
-        assertThrows(AccessDeniedException.class, () -> service.getReturnInbox(USER_ID, null, null, null));
-        verify(fulfillmentMapper, never()).countReturns(any());
+        assertThrows(AccessDeniedException.class, () -> service.getReturnInbox(OWNER_ID, null, null, null, null, null, null));
+        assertThrows(AccessDeniedException.class, () -> service.getReturnInbox(USER_ID, null, null, null, null, null, null));
+        verify(fulfillmentMapper, never()).countReturns(any(), any(), any(), any());
     }
 
     @Test
     void 상태를_주지_않으면_대기중만_첫_페이지_10건으로_조회한다() {
         List<ResourceReturn> rows = List.of(new ResourceReturn(), new ResourceReturn());
-        when(fulfillmentMapper.countReturns("PENDING")).thenReturn(2L);
-        when(fulfillmentMapper.findReturns("PENDING", 0, 10)).thenReturn(rows);
+        when(fulfillmentMapper.countReturns("PENDING", null, null, null)).thenReturn(2L);
+        when(fulfillmentMapper.findReturns("PENDING", null, null, null, 0, 10)).thenReturn(rows);
 
-        ResourceReturnPageResponse result = service.getReturnInbox(ADMIN_ID, null, null, null);
+        ResourceReturnPageResponse result = service.getReturnInbox(ADMIN_ID, null, null, null, null, null, null);
 
         assertSame(rows, result.items());
         assertEquals(2L, result.total());
@@ -117,50 +118,78 @@ class ResourceReturnQueryServiceTest {
 
     @Test
     void ALL이면_상태_조건_없이_조회하고_소문자도_받는다() {
-        when(fulfillmentMapper.countReturns(null)).thenReturn(1L);
-        when(fulfillmentMapper.findReturns(null, 0, 10)).thenReturn(List.of(new ResourceReturn()));
-        service.getReturnInbox(ADMIN_ID, "ALL", 1, 10);
-        verify(fulfillmentMapper).findReturns(null, 0, 10);
+        when(fulfillmentMapper.countReturns(null, null, null, null)).thenReturn(1L);
+        when(fulfillmentMapper.findReturns(null, null, null, null, 0, 10)).thenReturn(List.of(new ResourceReturn()));
+        service.getReturnInbox(ADMIN_ID, "ALL", null, null, null, 1, 10);
+        verify(fulfillmentMapper).findReturns(null, null, null, null, 0, 10);
 
-        when(fulfillmentMapper.countReturns("CONFIRMED")).thenReturn(0L);
-        service.getReturnInbox(ADMIN_ID, " confirmed ", 1, 10);
-        verify(fulfillmentMapper).countReturns("CONFIRMED");
+        when(fulfillmentMapper.countReturns("CONFIRMED", null, null, null)).thenReturn(0L);
+        service.getReturnInbox(ADMIN_ID, " confirmed ", null, null, null, 1, 10);
+        verify(fulfillmentMapper).countReturns("CONFIRMED", null, null, null);
     }
 
     @Test
     void 올바르지_않은_상태는_400이다() {
-        assertThrows(IllegalArgumentException.class, () -> service.getReturnInbox(ADMIN_ID, "DONE", 1, 10));
-        verify(fulfillmentMapper, never()).countReturns(any());
+        assertThrows(IllegalArgumentException.class, () -> service.getReturnInbox(ADMIN_ID, "DONE", null, null, null, 1, 10));
+        verify(fulfillmentMapper, never()).countReturns(any(), any(), any(), any());
+    }
+
+    @Test
+    void 검색어와_기간은_다듬어서_목록과_건수에_같이_넘긴다() {
+        LocalDate from = LocalDate.of(2026, 11, 1);
+        LocalDate to = LocalDate.of(2026, 11, 14);
+        when(fulfillmentMapper.countReturns(null, "REQ-3", from, to)).thenReturn(1L);
+        when(fulfillmentMapper.findReturns(null, "REQ-3", from, to, 0, 10)).thenReturn(List.of(new ResourceReturn()));
+
+        service.getReturnInbox(ADMIN_ID, "ALL", "  REQ-3 ", from, to, 1, 10);
+        verify(fulfillmentMapper).findReturns(null, "REQ-3", from, to, 0, 10);
+
+        // LIKE 특수문자(% _)는 글자 그대로 찾도록 이스케이프하고, 공백뿐인 검색어는 조건 없음으로 본다
+        service.getReturnInbox(ADMIN_ID, "ALL", "50%_", null, null, 1, 10);
+        verify(fulfillmentMapper).countReturns(null, "50\\%\\_", null, null);
+        service.getReturnInbox(ADMIN_ID, "ALL", "   ", null, null, 1, 10);
+        verify(fulfillmentMapper).countReturns(null, null, null, null);
+    }
+
+    @Test
+    void 시작일이_종료일보다_늦으면_400이고_조회하지_않는다() {
+        LocalDate from = LocalDate.of(2026, 11, 14);
+        LocalDate to = LocalDate.of(2026, 11, 1);
+
+        assertThrows(IllegalArgumentException.class, () -> service.getReturnInbox(ADMIN_ID, null, null, from, to, 1, 10));
+        assertThrows(IllegalArgumentException.class, () -> service.getReturnSummary(ADMIN_ID, null, from, to));
+        verify(fulfillmentMapper, never()).countReturns(any(), any(), any(), any());
+        verify(fulfillmentMapper, never()).countReturnsByStatus(any(), any(), any());
     }
 
     @Test
     void 페이지와_크기는_범위로_보정하고_행_범위를_계산한다() {
-        when(fulfillmentMapper.countReturns("PENDING")).thenReturn(500L);
+        when(fulfillmentMapper.countReturns("PENDING", null, null, null)).thenReturn(500L);
 
         // 3페이지, 20건 → 20 ~ 60 (시작 포함 끝 미포함이 아니라 서비스가 넘기는 offset, end 값)
-        service.getReturnInbox(ADMIN_ID, "PENDING", 3, 20);
-        verify(fulfillmentMapper).findReturns("PENDING", 40, 60);
+        service.getReturnInbox(ADMIN_ID, "PENDING", null, null, null, 3, 20);
+        verify(fulfillmentMapper).findReturns("PENDING", null, null, null, 40, 60);
 
         // 0·음수 페이지는 1로, 너무 큰 크기는 50으로, 0 크기는 1로
-        ResourceReturnPageResponse low = service.getReturnInbox(ADMIN_ID, "PENDING", 0, 0);
+        ResourceReturnPageResponse low = service.getReturnInbox(ADMIN_ID, "PENDING", null, null, null, 0, 0);
         assertEquals(1, low.page());
         assertEquals(1, low.size());
-        ResourceReturnPageResponse high = service.getReturnInbox(ADMIN_ID, "PENDING", -5, 999);
+        ResourceReturnPageResponse high = service.getReturnInbox(ADMIN_ID, "PENDING", null, null, null, -5, 999);
         assertEquals(1, high.page());
         assertEquals(50, high.size());
-        ResourceReturnPageResponse far = service.getReturnInbox(ADMIN_ID, "PENDING", 99999, 10);
+        ResourceReturnPageResponse far = service.getReturnInbox(ADMIN_ID, "PENDING", null, null, null, 99999, 10);
         assertEquals(ResourceReturnQueryService.MAX_PAGE, far.page());
     }
 
     @Test
     void 결과가_없으면_목록_조회_없이_빈_목록을_돌려준다() {
-        when(fulfillmentMapper.countReturns("PENDING")).thenReturn(0L);
+        when(fulfillmentMapper.countReturns("PENDING", null, null, null)).thenReturn(0L);
 
-        ResourceReturnPageResponse result = service.getReturnInbox(ADMIN_ID, null, null, null);
+        ResourceReturnPageResponse result = service.getReturnInbox(ADMIN_ID, null, null, null, null, null, null);
 
         assertTrue(result.items().isEmpty());
         assertEquals(0L, result.total());
-        verify(fulfillmentMapper, never()).findReturns(any(), anyInt(), anyInt());
+        verify(fulfillmentMapper, never()).findReturns(any(), any(), any(), any(), anyInt(), anyInt());
     }
 
     @Test
@@ -177,22 +206,33 @@ class ResourceReturnQueryServiceTest {
 
     @Test
     void 반납_현황은_ADMIN만_볼_수_있다() {
-        assertThrows(AccessDeniedException.class, () -> service.getReturnSummary(OWNER_ID));
-        assertThrows(AccessDeniedException.class, () -> service.getReturnSummary(USER_ID));
-        verify(fulfillmentMapper, never()).countReturnsByStatus();
+        assertThrows(AccessDeniedException.class, () -> service.getReturnSummary(OWNER_ID, null, null, null));
+        assertThrows(AccessDeniedException.class, () -> service.getReturnSummary(USER_ID, null, null, null));
+        verify(fulfillmentMapper, never()).countReturnsByStatus(null, null, null);
     }
 
     @Test
     void 반납_현황은_없는_상태를_0으로_채우고_합계를_낸다() {
-        when(fulfillmentMapper.countReturnsByStatus()).thenReturn(List.of(count("CONFIRMED", 3), count("PENDING", 2)));
+        when(fulfillmentMapper.countReturnsByStatus(null, null, null)).thenReturn(List.of(count("CONFIRMED", 3), count("PENDING", 2)));
 
-        ResourceRequestSummaryResponse result = service.getReturnSummary(ADMIN_ID);
+        ResourceRequestSummaryResponse result = service.getReturnSummary(ADMIN_ID, null, null, null);
 
         assertEquals(5L, result.total());
         assertEquals(List.of("PENDING", "CONFIRMED", "REJECTED"), List.copyOf(result.counts().keySet()));
         assertEquals(2L, result.counts().get("PENDING"));
         assertEquals(3L, result.counts().get("CONFIRMED"));
         assertEquals(0L, result.counts().get("REJECTED"));
+    }
+
+    @Test
+    void 반납_현황도_목록과_같은_검색어와_기간으로_센다() {
+        LocalDate from = LocalDate.of(2026, 11, 1);
+        when(fulfillmentMapper.countReturnsByStatus("INC-3", from, null)).thenReturn(List.of(count("PENDING", 1)));
+
+        ResourceRequestSummaryResponse result = service.getReturnSummary(ADMIN_ID, " INC-3 ", from, null);
+
+        assertEquals(1L, result.total());
+        verify(fulfillmentMapper).countReturnsByStatus("INC-3", from, null);
     }
 
     private ResourceStatusCount count(String status, long value) {

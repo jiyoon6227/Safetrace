@@ -18,6 +18,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -145,11 +146,13 @@ public class ResourceRequestService {
     /**
      * 요청 목록. STAFF는 내가 보낸 요청만, ADMIN은 전부 본다.
      * status가 없거나 ALL이면 상태 조건 없이, incidentId가 있으면 그 사건의 요청만 본다.
-     * keyword가 있으면 품목명·요청 사유·사건 제목·보유 부서명에 그 글자가 들어 있는 요청만 본다.
+     * keyword가 있으면 품목명·요청 사유·사건 제목·보유 부서명·요청자 이름에 그 글자가 들어 있는 요청만 본다.
+     * 다만 REQ-숫자·INC-숫자 형식은 일반 검색어가 아니라 번호로 보고, 요청 ID·사건 ID와 정확히 같은 요청만 본다(예: INC-3 = INC-0003 = 사건 ID 3).
+     * fromDate·toDate가 있으면 그 기간(끝 날짜 포함)에 접수된 요청만 본다. 시작이 끝보다 늦으면 400.
      */
     @Transactional(readOnly = true)
     public ResourceRequestPageResponse getRequests(Long memberId, String status, Long incidentId, String keyword,
-                                                   Integer page, Integer size) {
+                                                   LocalDate fromDate, LocalDate toDate, Integer page, Integer size) {
         Member actor = requireActiveMember(memberId, true);
 
         String safeStatus = null;
@@ -162,14 +165,15 @@ public class ResourceRequestService {
         int safePage = page == null ? 1 : Math.min(Math.max(page, 1), MAX_PAGE);
         int safeSize = size == null ? DEFAULT_PAGE_SIZE : Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
         String safeKeyword = normalizeKeyword(keyword);
+        validateDateRange(fromDate, toDate);
 
         // 요청자 조건이 null이면 제한 없음(ADMIN)
         Long requesterId = isAdmin(actor) ? null : memberId;
 
-        long total = requestMapper.countRequests(requesterId, safeStatus, incidentId, safeKeyword);
+        long total = requestMapper.countRequests(requesterId, safeStatus, incidentId, safeKeyword, fromDate, toDate);
         List<ResourceRequest> items = total == 0
                 ? List.of()
-                : requestMapper.findRequests(requesterId, safeStatus, incidentId, safeKeyword,
+                : requestMapper.findRequests(requesterId, safeStatus, incidentId, safeKeyword, fromDate, toDate,
                         (safePage - 1) * safeSize, safePage * safeSize);
         items.forEach(item -> fillActions(item, actor));
         return new ResourceRequestPageResponse(items, total, safePage, safeSize);
@@ -180,22 +184,31 @@ public class ResourceRequestService {
      * 요청이 없는 상태도 0으로 채워서, 화면이 건수를 직접 세거나 빈 칸을 채울 필요가 없다.
      */
     @Transactional(readOnly = true)
-    public ResourceRequestSummaryResponse getRequestSummary(Long memberId, Long incidentId, String keyword) {
+    public ResourceRequestSummaryResponse getRequestSummary(Long memberId, Long incidentId, String keyword,
+                                                         LocalDate fromDate, LocalDate toDate) {
         Member actor = requireActiveMember(memberId, true);
         Long requesterId = isAdmin(actor) ? null : memberId;
+        validateDateRange(fromDate, toDate);
 
         Map<String, Long> counts = new LinkedHashMap<>();
         STATUS_ORDER.forEach(status -> counts.put(status, 0L));
         long total = 0;
-        for (ResourceStatusCount row : requestMapper.countRequestsByStatus(requesterId, incidentId, normalizeKeyword(keyword))) {
+        for (ResourceStatusCount row : requestMapper.countRequestsByStatus(requesterId, incidentId, normalizeKeyword(keyword), fromDate, toDate)) {
             counts.put(row.getStatus(), row.getRequestCount());
             total += row.getRequestCount();
         }
         return new ResourceRequestSummaryResponse(total, counts);
     }
 
+    // 기간은 둘 다 없거나 하나만 있어도 된다. 둘 다 있으면 시작이 끝보다 늦을 수 없다 (반납 신청 조회도 같은 규칙을 쓴다)
+    static void validateDateRange(LocalDate fromDate, LocalDate toDate) {
+        if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
+            throw new IllegalArgumentException("시작일이 종료일보다 늦을 수 없습니다.");
+        }
+    }
+
     // 검색어를 다듬는다: 앞뒤 공백 제거, 비면 null(조건 없음), 최대 50자, LIKE 특수문자(\ % _)는 글자 그대로 찾도록 이스케이프
-    private String normalizeKeyword(String keyword) {
+    static String normalizeKeyword(String keyword) {
         if (keyword == null || keyword.isBlank()) {
             return null;
         }

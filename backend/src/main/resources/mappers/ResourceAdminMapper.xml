@@ -16,6 +16,31 @@
         WHERE ITEM_ID = #{itemId}
     </select>
 
+    <!-- 잠금용 조회: 조인 없이 품목 한 테이블만 읽는다 -->
+    <select id="lockItem" resultType="ResourceItem">
+        SELECT ITEM_ID, NAME, CATEGORY, UNIT, RETURNABLE, DESCRIPTION, CREATED_AT
+        FROM SF_RESOURCE_ITEM
+        WHERE ITEM_ID = #{itemId}
+        FOR UPDATE WAIT 3
+    </select>
+
+    <!-- UNIT·RETURNABLE은 일부러 넣지 않았다: 바뀌면 기존 재고·요청의 해석이 깨진다 -->
+    <update id="updateItem">
+        UPDATE SF_RESOURCE_ITEM
+        SET NAME = #{name},
+            CATEGORY = #{category},
+            DESCRIPTION = #{description,jdbcType=VARCHAR}
+        WHERE ITEM_ID = #{itemId}
+    </update>
+
+    <insert id="insertItemLog" parameterType="ResourceItemLog">
+        <selectKey keyProperty="logId" resultType="Long" order="BEFORE">
+            SELECT SEQ_SF_RESOURCE_ITEM_LOG.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO SF_RESOURCE_ITEM_LOG (LOG_ID, ITEM_ID, FIELD_NAME, OLD_VALUE, NEW_VALUE, CHANGED_BY)
+        VALUES (#{logId}, #{itemId}, #{fieldName}, #{oldValue,jdbcType=VARCHAR}, #{newValue,jdbcType=VARCHAR}, #{changedBy})
+    </insert>
+
     <select id="countDepartment" resultType="int">
         SELECT COUNT(*) FROM SF_DEPARTMENT WHERE DEPARTMENT_ID = #{departmentId}
     </select>

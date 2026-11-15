@@ -17,6 +17,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -76,8 +77,8 @@ class ResourceFulfillmentControllerTest {
 
         // ADMIN 전용 기능은 모두 403
         assertThrows(AccessDeniedException.class, () -> controller.dispatch(1L, staff));
-        assertThrows(AccessDeniedException.class, () -> controller.getReturnInbox(null, null, null, staff));
-        assertThrows(AccessDeniedException.class, () -> controller.getReturnSummary(staff));
+        assertThrows(AccessDeniedException.class, () -> controller.getReturnInbox(null, null, null, null, null, null, staff));
+        assertThrows(AccessDeniedException.class, () -> controller.getReturnSummary(null, null, null, staff));
         assertThrows(AccessDeniedException.class, () -> controller.confirmReturn(1L, staff));
         assertThrows(AccessDeniedException.class, () -> controller.rejectReturn(1L, REJECT, staff));
         assertThrows(AccessDeniedException.class, () -> controller.confirmLoss(1L, LOSS, staff));
@@ -104,8 +105,8 @@ class ResourceFulfillmentControllerTest {
         controller.dispatch(1L, admin);
         controller.arrive(2L, admin);
         controller.getReturnApplications(3L, admin);
-        controller.getReturnInbox("PENDING", 2, 20, admin);
-        controller.getReturnSummary(admin);
+        controller.getReturnInbox("PENDING", "양수기", LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 14), 2, 20, admin);
+        controller.getReturnSummary("양수기", null, null, admin);
         controller.confirmReturn(4L, admin);
         controller.rejectReturn(5L, REJECT, admin);
         controller.confirmLoss(6L, LOSS, admin);
@@ -114,8 +115,8 @@ class ResourceFulfillmentControllerTest {
         verify(service).dispatch(9L, 1L);
         verify(service).arrive(9L, 2L);
         verify(queryService).getReturnApplications(9L, 3L);
-        verify(queryService).getReturnInbox(9L, "PENDING", 2, 20);
-        verify(queryService).getReturnSummary(9L);
+        verify(queryService).getReturnInbox(9L, "PENDING", "양수기", LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 14), 2, 20);
+        verify(queryService).getReturnSummary(9L, "양수기", null, null);
         verify(service).confirmReturn(9L, 4L);
         verify(service).rejectReturn(9L, 5L, REJECT);
         verify(service).confirmLoss(9L, 6L, LOSS);
@@ -128,8 +129,8 @@ class ResourceFulfillmentControllerTest {
                 a -> controller.arrive(1L, a),
                 a -> controller.applyReturn(1L, APPLY, a),
                 a -> controller.getReturnApplications(1L, a),
-                a -> controller.getReturnInbox(null, null, null, a),
-                a -> controller.getReturnSummary(a),
+                a -> controller.getReturnInbox(null, null, null, null, null, null, a),
+                a -> controller.getReturnSummary(null, null, null, a),
                 a -> controller.confirmReturn(1L, a),
                 a -> controller.rejectReturn(1L, REJECT, a),
                 a -> controller.confirmLoss(1L, LOSS, a));

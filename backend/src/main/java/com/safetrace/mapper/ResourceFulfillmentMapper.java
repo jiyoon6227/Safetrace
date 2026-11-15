@@ -5,6 +5,7 @@ import com.safetrace.dto.ResourceStatusCount;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDate;
 import java.util.List;
 
 // 출고·도착 확인·반납 신청·반납 확인·손실 확정 전용 매퍼.
@@ -55,13 +56,21 @@ public interface ResourceFulfillmentMapper {
     // 한 요청의 반납 신청 목록 (신청 시각 순)
     List<ResourceReturn> findReturnsByRequest(@Param("requestId") Long requestId);
 
-    // 반납 확인함. status가 null이면 전체
+    // 반납 확인함. status·keyword·fromDate·toDate가 null이면 그 조건은 쓰지 않는다 (기간은 신청일 기준)
     List<ResourceReturn> findReturns(@Param("status") String status,
+                                     @Param("keyword") String keyword,
+                                     @Param("fromDate") LocalDate fromDate,
+                                     @Param("toDate") LocalDate toDate,
                                      @Param("startRow") int startRow,
                                      @Param("endRow") int endRow);
 
-    long countReturns(@Param("status") String status);
+    long countReturns(@Param("status") String status,
+                      @Param("keyword") String keyword,
+                      @Param("fromDate") LocalDate fromDate,
+                      @Param("toDate") LocalDate toDate);
 
-    // 상태별 건수. 건수가 있는 상태만 행으로 나온다.
-    List<ResourceStatusCount> countReturnsByStatus();
+    // 상태별 건수: 상태 조건만 빼고 목록과 같은 조건. 건수가 있는 상태만 행으로 나온다.
+    List<ResourceStatusCount> countReturnsByStatus(@Param("keyword") String keyword,
+                                                   @Param("fromDate") LocalDate fromDate,
+                                                   @Param("toDate") LocalDate toDate);
 }
