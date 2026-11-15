@@ -249,6 +249,7 @@ public class DisasterMessageService {
             LocalDate startDate
     ) {
         List<Map<String, Object>> allMessages = new ArrayList<>();
+        int fetchedPages = 0;
 
         /*
          * 같은 페이지가 반복 반환되거나 중복 데이터가 섞여도
@@ -259,6 +260,8 @@ public class DisasterMessageService {
         for (int pageNo = 1; pageNo <= MAX_PAGES; pageNo++) {
             List<Map<String, Object>> page =
                     fetchPage(rgnNm, startDate, pageNo, PAGE_SIZE);
+
+            fetchedPages = pageNo;
 
             if (page.isEmpty()) {
                 break;
@@ -298,6 +301,12 @@ public class DisasterMessageService {
                         Comparator.reverseOrder()
                 )
         );
+
+        // 진단용 - 조회 결과가 비는 원인(데이터 없음 / 페이지 상한 / 정렬 순서)을 로그로 구분한다
+        log.info("[DisasterMessage] 조회 완료: region={}, 시작일={}, 요청 페이지={}, 수집={}건, 가장 최신={}, 가장 오래됨={}",
+                rgnNm.isBlank() ? "전국" : rgnNm, startDate.format(API_DATE_FORMAT), fetchedPages, allMessages.size(),
+                allMessages.isEmpty() ? "-" : allMessages.get(0).get("createdAt"),
+                allMessages.isEmpty() ? "-" : allMessages.get(allMessages.size() - 1).get("createdAt"));
 
         return allMessages;
     }

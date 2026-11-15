@@ -1,4 +1,4 @@
-package com.safetrace.service;
+package com.safetrace.oracle;
 
 import com.safetrace.domain.Incident;
 import com.safetrace.domain.IncidentLog;
@@ -9,8 +9,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -23,20 +21,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest
-class IncidentStatusConcurrencyTest {
-
-    @Autowired
-    private IncidentService incidentService;
+/**
+ * 사건 상태 동시 변경 테스트. 개발 DB(SYSTEM)에 붙지 않도록 Oracle 통합 테스트 공통 뼈대를 쓴다
+ * (SAFETRACE_TEST_DB_PASSWORD 환경변수가 없으면 건너뛰고, 접속 계정이 _TEST로 끝나지 않으면 중단한다).
+ */
+class IncidentStatusConcurrencyTest extends OracleIntegrationTestBase {
 
     @Autowired
     private IncidentMapper incidentMapper;
 
     @Autowired
     private MemberMapper memberMapper;
-
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
 
     private Long staffId;
     private Long incidentId;
@@ -63,9 +58,9 @@ class IncidentStatusConcurrencyTest {
 
     @AfterEach
     void tearDown() {
-        jdbcTemplate.update("DELETE FROM SF_NOTIFICATION WHERE INCIDENT_ID = ?", incidentId);
-        jdbcTemplate.update("DELETE FROM SF_INCIDENT_LOG WHERE INCIDENT_ID = ?", incidentId);
-        jdbcTemplate.update("DELETE FROM SF_INCIDENT WHERE INCIDENT_ID = ?", incidentId);
+        jdbc.update("DELETE FROM SF_NOTIFICATION WHERE INCIDENT_ID = ?", incidentId);
+        jdbc.update("DELETE FROM SF_INCIDENT_LOG WHERE INCIDENT_ID = ?", incidentId);
+        jdbc.update("DELETE FROM SF_INCIDENT WHERE INCIDENT_ID = ?", incidentId);
     }
 
     @Test

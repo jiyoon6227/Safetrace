@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 행정안전부_민방위대피시설 조회서비스 호출.
@@ -35,6 +36,16 @@ public class ShelterService {
             .connectTimeout(Duration.ofSeconds(5))
             .build();
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /** 공공데이터 API는 느리고 시설 정보는 자주 바뀌지 않으므로 시군구별 원본 조회 결과를 잠시 보관한다. */
+    private static final long SHELTER_CACHE_TTL_MS = Duration.ofHours(6).toMillis();
+    private static final int SHELTER_CACHE_MAX_ENTRIES = 300;
+    private final Map<String, CachedShelters> shelterCache = new ConcurrentHashMap<>();
+
+    private record ShelterRow(String name, String address, String capacity, String floorType,
+                              double latitude, double longitude) {}
+
+    private record CachedShelters(List<ShelterRow> rows, long fetchedAtMs) {}
 
     public ShelterService(@Value("${publicdata.service-key}") String serviceKey) {
         this.serviceKey = serviceKey;
@@ -217,6 +228,54 @@ public class ShelterService {
     }
 
     public List<Map<String, Object>> getNearbyShelters(String guName, double lat, double lng, int limit) {
+        List<ShelterRow> rows = loadShelterRows(guName);
+
+        List<Map<String, Object>> shelters = new ArrayList<>();
+        for (ShelterRow row : rows) {
+            double distanceM = haversineMeters(lat, lng, row.latitude(), row.longitude());
+
+            Map<String, Object> shelter = new java.util.HashMap<>();
+            shelter.put("name", row.name());
+            shelter.put("address", row.address());
+            shelter.put("capacity", row.capacity());
+            shelter.put("floorType", row.floorType());
+            shelter.put("latitude", row.latitude());
+            shelter.put("longitude", row.longitude());
+            shelter.put("distanceM", Math.round(distanceM));
+            shelters.add(shelter);
+        }
+
+        shelters.sort(Comparator.comparingDouble(s -> ((Number) s.get("distanceM")).doubleValue()));
+        return shelters.size() > limit ? shelters.subList(0, limit) : shelters;
+    }
+
+    /**
+     * 시군구 이름으로 사용중인 대피시설 원본 목록을 가져온다.
+     * 성공해서 한 건이라도 있으면 보관하고, 오류/타임아웃/빈 결과는 보관하지 않아 다음 요청에서 다시 조회한다.
+     * 다시 조회가 실패하면 만료된 이전 결과를 대신 돌려준다.
+     */
+    private List<ShelterRow> loadShelterRows(String guName) {
+        long now = System.currentTimeMillis();
+        CachedShelters cached = shelterCache.get(guName);
+        if (cached != null && now - cached.fetchedAtMs() < SHELTER_CACHE_TTL_MS) {
+            return cached.rows();
+        }
+
+        List<ShelterRow> rows = fetchShelterRows(guName);
+        if (rows.isEmpty() && cached != null) {
+            // 공공데이터 API가 일시적으로 실패/지연되면 만료된 이전 결과라도 보여주는 편이 빈 화면보다 낫다.
+            return cached.rows();
+        }
+        if (!rows.isEmpty()) {
+            if (shelterCache.size() >= SHELTER_CACHE_MAX_ENTRIES) {
+                shelterCache.clear();
+            }
+            shelterCache.put(guName, new CachedShelters(rows, now));
+        }
+        return rows;
+    }
+
+    private List<ShelterRow> fetchShelterRows(String guName) {
         String url = String.format(
                 "%s?serviceKey=%s&pageNo=1&numOfRows=100&returnType=json&cond[ROAD_NM_WHOL_ADDR::LIKE]=%s",
                 BASE_URL,
@@ -241,7 +300,7 @@ public class ShelterService {
 
             JsonNode items = root.path("response").path("body").path("items").path("item");
             log.info("대피시설 API 응답: guName={}, 받은 건수={}", guName, items.isArray() ? items.size() : 0);
-            List<Map<String, Object>> shelters = new ArrayList<>();
+            List<ShelterRow> rows = new ArrayList<>();
             if (items.isArray()) {
                 for (JsonNode item : items) {
                     Double shelterLat = parseDoubleOrNull(item.path("LAT_EPSG4326").asText(null));
@@ -249,22 +308,16 @@ public class ShelterService {
                     if (shelterLat == null || shelterLng == null) continue;
                     if (!"사용중".equals(item.path("OPER_STTS").asText())) continue;
 
-                    double distanceM = haversineMeters(lat, lng, shelterLat, shelterLng);
-
-                    Map<String, Object> shelter = new java.util.HashMap<>();
-                    shelter.put("name", item.path("FCLT_NM").asText(""));
-                    shelter.put("address", item.path("ROAD_NM_WHOL_ADDR").asText(item.path("LCTN_WHOL_ADDR").asText("")));
-                    shelter.put("capacity", item.path("MAX_ACTC_PERNE").asText(""));
-                    shelter.put("floorType", item.path("FCLTLOC_GRND_UDGD").asText(""));
-                    shelter.put("latitude", shelterLat);
-                    shelter.put("longitude", shelterLng);
-                    shelter.put("distanceM", Math.round(distanceM));
-                    shelters.add(shelter);
+                    rows.add(new ShelterRow(
+                            item.path("FCLT_NM").asText(""),
+                            item.path("ROAD_NM_WHOL_ADDR").asText(item.path("LCTN_WHOL_ADDR").asText("")),
+                            item.path("MAX_ACTC_PERNE").asText(""),
+                            item.path("FCLTLOC_GRND_UDGD").asText(""),
+                            shelterLat,
+                            shelterLng));
                 }
             }
-
-            shelters.sort(Comparator.comparingDouble(s -> ((Number) s.get("distanceM")).doubleValue()));
-            return shelters.size() > limit ? shelters.subList(0, limit) : shelters;
+            return rows;
         } catch (HttpTimeoutException e) {
             log.warn("대피시설 API 타임아웃(5초 초과): guName={}", guName);
             return List.of();
@@ -295,4 +348,4 @@ public class ShelterService {
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return earthRadiusM * c;
     }
-}
+}
