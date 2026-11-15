@@ -21,7 +21,7 @@ public interface IncidentMapper {
 
     Incident findById(@Param("incidentId") Long incidentId);
 
-    // 전체 목록 (대시보드 지도용) - 접수 순번(incidentRank) 포함
+    // 전체 목록 (대시보드 지도용)
     List<Incident> findAll();
 
     // 사건 관리 목록 한 페이지 (검색어/상태/유형/지역/위험도/기간 + 정렬 + 페이징)
@@ -32,6 +32,9 @@ public interface IncidentMapper {
 
     // 해당 사건이 검색어 조건에 맞으면 1, 아니면 0 (q가 null이면 존재 여부만 확인)
     int countKeywordMatch(@Param("q") String q, @Param("selectedId") Long selectedId);
+
+    // 통계 집계용 슬림 조회 (유형/위험도/상태/지역/접수·종료 시각만)
+    List<Incident> findStatRows();
 
     // 시민 화면 - 관심지역 기준 활성 Incident 목록
     List<Incident> findActiveByRegion(@Param("region") String region);
@@ -93,4 +96,4 @@ public interface IncidentMapper {
 
     // 사건에 등록된 사진 전체 목록 조회 (0번째 = 대표)
     List<String> findPhotoUrlsByIncidentId(@Param("incidentId") Long incidentId);
-}
+}

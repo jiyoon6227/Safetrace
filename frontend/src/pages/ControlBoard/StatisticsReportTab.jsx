@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { authFetch } from "../../api/client";
+import { toDateInputValue } from "../../utils/dateFormat";
 
 const TAB_ITEMS = [
   { key: "overview", label: "전체" },
@@ -36,41 +37,10 @@ const STATUS_META = {
 const TYPE_COLORS = ["#3B82F6", "#14B8A6", "#F59E0B", "#8B5CF6", "#EF4444", "#0EA5E9", "#84CC16", "#F97316"];
 const LINE_COLORS = ["#2563EB", "#10B981", "#F59E0B", "#8B5CF6"];
 
-function toDateInputValue(date) {
-  const d = new Date(date);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function parseDate(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function startOfDay(value) {
-  const d = value instanceof Date ? new Date(value) : new Date(value);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function endOfDay(value) {
-  const d = value instanceof Date ? new Date(value) : new Date(value);
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
-
 function addDays(value, amount) {
   const d = new Date(value);
   d.setDate(d.getDate() + amount);
   return d;
-}
-
-function daysBetweenInclusive(from, to) {
-  const ms = startOfDay(to) - startOfDay(from);
-  return Math.max(1, Math.floor(ms / 86400000) + 1);
 }
 
 function formatNumber(value) {
@@ -93,116 +63,10 @@ function changePercent(current, previous) {
   return ((current - previous) / previous) * 100;
 }
 
-function regionLabelOf(item) {
-  const raw = String(item?.region || item?.address || "").trim();
-  if (!raw) return "미지정";
-  const first = raw.split(/\s+/)[0];
-  const map = {
-    서울특별시: "서울", 부산광역시: "부산", 대구광역시: "대구", 인천광역시: "인천",
-    광주광역시: "광주", 대전광역시: "대전", 울산광역시: "울산", 세종특별자치시: "세종",
-    경기도: "경기", 강원특별자치도: "강원", 강원도: "강원", 충청북도: "충북", 충청남도: "충남",
-    전북특별자치도: "전북", 전라북도: "전북", 전라남도: "전남", 경상북도: "경북",
-    경상남도: "경남", 제주특별자치도: "제주",
-  };
-  return map[first] || first;
-}
-
 function getPresetRange(days) {
   const end = new Date();
   const start = addDays(end, -(days - 1));
   return { from: toDateInputValue(start), to: toDateInputValue(end) };
-}
-
-function withinRange(item, from, to, dateField = "createdAt") {
-  const d = parseDate(item?.[dateField]);
-  if (!d) return false;
-  return d >= startOfDay(from) && d <= endOfDay(to);
-}
-
-function getPreviousRange(from, to) {
-  const currentStart = startOfDay(from);
-  const currentEnd = endOfDay(to);
-  const dayCount = daysBetweenInclusive(currentStart, currentEnd);
-  const previousEnd = endOfDay(addDays(currentStart, -1));
-  const previousStart = startOfDay(addDays(previousEnd, -(dayCount - 1)));
-  return { from: toDateInputValue(previousStart), to: toDateInputValue(previousEnd) };
-}
-
-function avgCloseHours(rows) {
-  const values = rows
-    .filter((item) => item.status === "CLOSED")
-    .map((item) => {
-      const start = parseDate(item.createdAt);
-      const end = parseDate(item.updatedAt);
-      if (!start || !end || end < start) return null;
-      return (end - start) / 3600000;
-    })
-    .filter(Number.isFinite);
-  if (!values.length) return null;
-  return values.reduce((sum, v) => sum + v, 0) / values.length;
-}
-
-function groupCount(rows, keyFn) {
-  const map = new Map();
-  rows.forEach((row) => {
-    const key = keyFn(row) || "미지정";
-    map.set(key, (map.get(key) || 0) + 1);
-  });
-  return [...map.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
-}
-
-function createTimeSeries(rows, from, to, keyFn = null) {
-  const start = startOfDay(from);
-  const end = endOfDay(to);
-  const days = daysBetweenInclusive(start, end);
-  let unit = "day";
-  if (days > 120) unit = "month";
-  else if (days > 45) unit = "week";
-
-  const bucketMap = new Map();
-  const cursor = new Date(start);
-  while (cursor <= end) {
-    let key;
-    let label;
-    if (unit === "month") {
-      key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
-      label = `${cursor.getMonth() + 1}월`;
-      cursor.setMonth(cursor.getMonth() + 1, 1);
-    } else if (unit === "week") {
-      key = toDateInputValue(cursor);
-      label = `${cursor.getMonth() + 1}.${cursor.getDate()}`;
-      cursor.setDate(cursor.getDate() + 7);
-    } else {
-      key = toDateInputValue(cursor);
-      label = `${cursor.getMonth() + 1}.${cursor.getDate()}`;
-      cursor.setDate(cursor.getDate() + 1);
-    }
-    if (!bucketMap.has(key)) bucketMap.set(key, { key, label, value: 0, values: {} });
-  }
-
-  const keys = [...bucketMap.keys()];
-  rows.forEach((row) => {
-    const d = parseDate(row.createdAt);
-    if (!d || d < start || d > end || !keys.length) return;
-    let index = 0;
-    if (unit === "month") {
-      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      index = Math.max(0, keys.indexOf(monthKey));
-    } else if (unit === "week") {
-      const diff = Math.floor((startOfDay(d) - start) / 86400000);
-      index = Math.min(keys.length - 1, Math.max(0, Math.floor(diff / 7)));
-    } else {
-      const dayKey = toDateInputValue(d);
-      index = Math.max(0, keys.indexOf(dayKey));
-    }
-    const bucket = bucketMap.get(keys[index]);
-    bucket.value += 1;
-    if (keyFn) {
-      const subKey = keyFn(row) || "기타";
-      bucket.values[subKey] = (bucket.values[subKey] || 0) + 1;
-    }
-  });
-  return [...bucketMap.values()];
 }
 
 function escapeCsv(value) {
@@ -559,69 +423,56 @@ function ChartDetailModal({ modal, onClose, trend, typeRows, regionRows, statusR
 export default function StatisticsReportTab() {
   const defaultRange = useMemo(() => getPresetRange(30), []);
   const [activeTab, setActiveTab] = useState("overview");
-  const [incidents, setIncidents] = useState([]);
-  const [reports, setReports] = useState([]);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [modal, setModal] = useState(null);
   const [filters, setFilters] = useState({ from: defaultRange.from, to: defaultRange.to, region: "ALL", type: "ALL" });
   const [applied, setApplied] = useState({ from: defaultRange.from, to: defaultRange.to, region: "ALL", type: "ALL" });
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    const [incRes, repRes] = await Promise.allSettled([authFetch("/api/incidents"), authFetch("/api/reports")]);
-    const nextIncidents = incRes.status === "fulfilled" && Array.isArray(incRes.value) ? incRes.value : [];
-    const nextReports = repRes.status === "fulfilled" && Array.isArray(repRes.value) ? repRes.value : [];
-    setIncidents(nextIncidents);
-    setReports(nextReports);
-    setUpdatedAt(new Date());
-    if (incRes.status === "rejected" && repRes.status === "rejected") setError("통계 데이터를 불러오지 못했습니다.");
-    else if (incRes.status === "rejected") setError("사건 데이터 일부를 불러오지 못했습니다.");
-    else if (repRes.status === "rejected") setError("제보 데이터 일부를 불러오지 못했습니다.");
-    setLoading(false);
-  }, []);
+  // 집계는 서버에서 끝내고, 조회 조건이 바뀌거나 새로고침할 때만 다시 받아온다.
+  useEffect(() => {
+    let cancelled = false;
+    const query = new URLSearchParams(applied).toString();
+    authFetch(`/api/incidents/stats/report?${query}`)
+      .then((res) => {
+        if (cancelled) return;
+        setData(res);
+        setUpdatedAt(new Date());
+        setError("");
+      })
+      .catch(() => { if (!cancelled) setError("통계 데이터를 불러오지 못했습니다."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [applied, reloadKey]);
 
-  useEffect(() => { load(); }, [load]);
+  const reload = () => { setLoading(true); setReloadKey((k) => k + 1); };
 
-  const regionOptions = useMemo(() => {
-    const set = new Set([...incidents.map(regionLabelOf), ...reports.map(regionLabelOf)].filter((v) => v && v !== "미지정"));
-    return [...set].sort((a, b) => a.localeCompare(b, "ko"));
-  }, [incidents, reports]);
+  const { regionOptions = [], typeOptions = [], current = {}, previous = {} } = data || {};
+  const typeRows = data?.types ?? [];
+  const regionRows = data?.regions ?? [];
+  const durationRows = data?.durations ?? [];
+  const trend = data?.trend ?? [];
+  const compareCurrent = data?.compareCurrent ?? [];
+  const comparePrevious = data?.comparePrevious ?? [];
+  const statusRows = (data?.statuses ?? []).map((r) => ({ status: r.label, value: r.value }));
 
-  const typeOptions = useMemo(() => {
-    const set = new Set([...incidents, ...reports].map((item) => item?.disasterType).filter(Boolean));
-    return [...set].sort((a, b) => a.localeCompare(b, "ko"));
-  }, [incidents, reports]);
-
-  const filterRows = useCallback((rows, range, type = "incident") => rows.filter((item) => {
-    if (!withinRange(item, range.from, range.to)) return false;
-    if (applied.type !== "ALL" && item.disasterType !== applied.type) return false;
-    if (applied.region !== "ALL" && regionLabelOf(item) !== applied.region) return false;
-    return true;
-  }), [applied.region, applied.type]);
-
-  const currentIncidents = useMemo(() => filterRows(incidents, applied), [incidents, applied, filterRows]);
-  const currentReports = useMemo(() => filterRows(reports, applied, "report"), [reports, applied, filterRows]);
-  const previousRange = useMemo(() => getPreviousRange(applied.from, applied.to), [applied.from, applied.to]);
-  const previousIncidents = useMemo(() => filterRows(incidents, previousRange), [incidents, previousRange, filterRows]);
-  const previousReports = useMemo(() => filterRows(reports, previousRange, "report"), [reports, previousRange, filterRows]);
-
-  const totalIncidents = currentIncidents.length;
-  const closed = currentIncidents.filter((i) => i.status === "CLOSED").length;
-  const high = currentIncidents.filter((i) => i.severity === "HIGH").length;
-  const avgHours = avgCloseHours(currentIncidents);
-  const prevAvgHours = avgCloseHours(previousIncidents);
+  const totalIncidents = current.total ?? 0;
+  const closed = current.closed ?? 0;
+  const high = current.high ?? 0;
+  const avgHours = current.avgCloseHours;
+  const prevAvgHours = previous.avgCloseHours;
 
   const kpis = [
     {
       icon: ShieldAlert, label: "총 사건 수", value: `${formatNumber(totalIncidents)}건`, tone: "blue",
-      delta: changePercent(totalIncidents, previousIncidents.length), sub: "선택 기간 내 등록 사건 · 전 기간 대비",
+      delta: changePercent(totalIncidents, previous.total), sub: "선택 기간 내 등록 사건 · 전 기간 대비",
     },
     {
       icon: CheckCircle2, label: "처리 완료", value: `${formatNumber(closed)}건`, tone: "green",
-      delta: changePercent(closed, previousIncidents.filter((i) => i.status === "CLOSED").length), sub: `종료율 ${percent(closed, totalIncidents).toFixed(1)}%`,
+      delta: changePercent(closed, previous.closed), sub: `종료율 ${percent(closed, totalIncidents).toFixed(1)}%`,
     },
     {
       icon: Clock3, label: "평균 처리시간", value: formatHour(avgHours), tone: "orange", goodWhenDown: true,
@@ -629,123 +480,41 @@ export default function StatisticsReportTab() {
     },
     {
       icon: AlertTriangle, label: "긴급 사건", value: `${formatNumber(high)}건`, tone: "red",
-      delta: changePercent(high, previousIncidents.filter((i) => i.severity === "HIGH").length), sub: `전체 사건의 ${percent(high, totalIncidents).toFixed(1)}%`,
+      delta: changePercent(high, previous.high), sub: `전체 사건의 ${percent(high, totalIncidents).toFixed(1)}%`,
     },
     {
-      icon: BarChart3, label: "시민 제보", value: `${formatNumber(currentReports.length)}건`, tone: "purple",
-      delta: changePercent(currentReports.length, previousReports.length), sub: "선택 기간 내 접수된 제보",
+      icon: BarChart3, label: "시민 제보", value: `${formatNumber(current.reports)}건`, tone: "purple",
+      delta: changePercent(current.reports ?? 0, previous.reports), sub: "선택 기간 내 접수된 제보",
     },
   ];
 
-  const trend = useMemo(() => createTimeSeries(currentIncidents, applied.from, applied.to), [currentIncidents, applied]);
-  const typeRows = useMemo(() => groupCount(currentIncidents, (i) => i.disasterType || "기타"), [currentIncidents]);
-  const regionRows = useMemo(() => groupCount(currentIncidents, regionLabelOf), [currentIncidents]);
-  const statusRows = useMemo(() => Object.keys(STATUS_META).map((status) => ({ status, value: currentIncidents.filter((i) => i.status === status).length })), [currentIncidents]);
+  const topTypes = typeRows.slice(0, 4).map((r) => r.label);
+  const typeTrend = trend;
 
-  const topTypes = useMemo(() => typeRows.slice(0, 4).map((r) => r.label), [typeRows]);
-  const typeTrend = useMemo(() => createTimeSeries(currentIncidents, applied.from, applied.to, (i) => i.disasterType || "기타"), [currentIncidents, applied]);
-
-  const compareCurrent = useMemo(() => {
-    const end = endOfDay(applied.to);
-    const start = startOfDay(addDays(end, -6));
-    const rangeRows = filterRows(incidents, { from: toDateInputValue(start), to: toDateInputValue(end) });
-    const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
-    return Array.from({ length: 7 }, (_, idx) => {
-      const d = addDays(start, idx);
-      const key = toDateInputValue(d);
-      return {
-        dateKey: key,
-        label: `${d.getMonth() + 1}.${d.getDate()}`,
-        fullDate: `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`,
-        weekday: weekdays[d.getDay()],
-        value: rangeRows.filter((i) => toDateInputValue(parseDate(i.createdAt) || 0) === key).length,
-      };
-    });
-  }, [incidents, applied.to, filterRows]);
-
-  const comparePrevious = useMemo(() => {
-    const end = endOfDay(addDays(applied.to, -7));
-    const start = startOfDay(addDays(end, -6));
-    const rangeRows = filterRows(incidents, { from: toDateInputValue(start), to: toDateInputValue(end) });
-    const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
-    return Array.from({ length: 7 }, (_, idx) => {
-      const d = addDays(start, idx);
-      const key = toDateInputValue(d);
-      return {
-        dateKey: key,
-        label: `${d.getMonth() + 1}.${d.getDate()}`,
-        fullDate: `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`,
-        weekday: weekdays[d.getDay()],
-        value: rangeRows.filter((i) => toDateInputValue(parseDate(i.createdAt) || 0) === key).length,
-      };
-    });
-  }, [incidents, applied.to, filterRows]);
-
-  const typeDetailRows = useMemo(() => {
-    const prevMap = new Map(groupCount(previousIncidents, (i) => i.disasterType || "기타").map((r) => [r.label, r.value]));
-    return typeRows.map((row) => {
-      const typeIncidents = currentIncidents.filter((i) => (i.disasterType || "기타") === row.label);
-      const closedCount = typeIncidents.filter((i) => i.status === "CLOSED").length;
-      const highCount = typeIncidents.filter((i) => i.severity === "HIGH").length;
-      const inProgressCount = Math.max(0, typeIncidents.length - closedCount);
-      const topRegion = groupCount(typeIncidents, regionLabelOf)[0]?.label || "-";
-      return {
-        ...row,
-        pct: percent(row.value, totalIncidents),
-        high: highCount,
-        closed: closedCount,
-        inProgress: inProgressCount,
-        closeRate: percent(closedCount, typeIncidents.length),
-        avgHours: avgCloseHours(typeIncidents),
-        topRegion,
-        delta: changePercent(row.value, prevMap.get(row.label) || 0),
-      };
-    });
-  }, [typeRows, previousIncidents, currentIncidents, totalIncidents]);
-
-  const regionDetailRows = useMemo(() => {
-    const prevMap = new Map(groupCount(previousIncidents, regionLabelOf).map((r) => [r.label, r.value]));
-    return regionRows.map((row) => {
-      const regionInc = currentIncidents.filter((i) => regionLabelOf(i) === row.label);
-      return {
-        ...row,
-        pct: percent(row.value, totalIncidents),
-        closed: regionInc.filter((i) => i.status === "CLOSED").length,
-        high: regionInc.filter((i) => i.severity === "HIGH").length,
-        delta: changePercent(row.value, prevMap.get(row.label) || 0),
-      };
-    });
-  }, [regionRows, previousIncidents, currentIncidents, totalIncidents]);
-
-  const durationRows = useMemo(() => {
-    const ranges = [
-      { label: "1시간 이내", min: 0, max: 1 },
-      { label: "1~3시간", min: 1, max: 3 },
-      { label: "3~6시간", min: 3, max: 6 },
-      { label: "6~12시간", min: 6, max: 12 },
-      { label: "12시간 이상", min: 12, max: Infinity },
-    ];
-    const closedRows = currentIncidents.filter((i) => i.status === "CLOSED");
-    return ranges.map((range) => ({
-      label: range.label,
-      value: closedRows.filter((i) => {
-        const s = parseDate(i.createdAt); const e = parseDate(i.updatedAt);
-        if (!s || !e) return false;
-        const h = (e - s) / 3600000;
-        return h >= range.min && h < range.max;
-      }).length,
-    }));
-  }, [currentIncidents]);
+  const typeDetailRows = (data?.typeDetails ?? []).map((r) => ({
+    ...r,
+    pct: percent(r.value, totalIncidents),
+    inProgress: Math.max(0, r.value - r.closed),
+    closeRate: percent(r.closed, r.value),
+    avgHours: r.avgCloseHours,
+    delta: changePercent(r.value, r.previousValue),
+  }));
+  const regionDetailRows = (data?.regionDetails ?? []).map((r) => ({
+    ...r,
+    pct: percent(r.value, totalIncidents),
+    delta: changePercent(r.value, r.previousValue),
+  }));
 
   const quickRange = (days) => setFilters((f) => ({ ...f, ...getPresetRange(days) }));
   const applyFilters = () => {
     if (!filters.from || !filters.to || filters.from > filters.to) return;
+    setLoading(true);
     setApplied({ ...filters });
   };
   const resetFilters = () => {
     const range = getPresetRange(30);
     const next = { ...range, region: "ALL", type: "ALL" };
-    setFilters(next); setApplied(next);
+    setFilters(next); setLoading(true); setApplied(next);
   };
 
   const openPrintWindow = (autoPrint = true) => {
@@ -819,7 +588,7 @@ export default function StatisticsReportTab() {
           {updatedAt && <span className="mr-1 text-[10px] text-slate-400">{updatedAt.toLocaleString("ko-KR")} 업데이트</span>}
           <button onClick={() => openPrintWindow(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-600 transition-colors cursor-pointer hover:bg-slate-50 hover:border-slate-300"><FileDown className="h-4 w-4 text-red-500" />PDF 내보내기</button>
           <button onClick={downloadExcel} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-600 transition-colors cursor-pointer hover:bg-slate-50 hover:border-slate-300"><FileSpreadsheet className="h-4 w-4 text-emerald-600" />엑셀 다운로드</button>
-          <button onClick={load} disabled={loading} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-600 transition-colors cursor-pointer hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />새로고침</button>
+          <button onClick={reload} disabled={loading} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-600 transition-colors cursor-pointer hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />새로고침</button>
         </div>
       </div>
 
@@ -839,7 +608,7 @@ export default function StatisticsReportTab() {
       </div>
 
       {error && <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-[11px] font-semibold text-amber-700">{error}</div>}
-      {loading && !incidents.length && !reports.length ? <div className="flex h-[420px] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-blue-500" /></div> : (
+      {loading && !data ? <div className="flex h-[420px] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-blue-500" /></div> : (
         <>
           <div className="mb-3 grid grid-cols-2 gap-2.5 lg:grid-cols-5">{kpis.map((k)=><KpiCard key={k.label} {...k}/>)}</div>
 

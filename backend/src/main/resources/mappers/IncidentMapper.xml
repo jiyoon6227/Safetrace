@@ -27,18 +27,9 @@
         WHERE i.INCIDENT_ID = #{incidentId}
     </select>
 
-    <!-- 접수 순번 - 검색 조건과 무관하게 전체 사건을 접수일시(같으면 ID) 순으로 매김.
-         조건을 거는 바깥 쿼리와 분리해야 검색/페이지 이동 후에도 같은 번호가 유지됨 -->
-    <sql id="incidentRankJoin">
-        JOIN (SELECT INCIDENT_ID,
-                     ROW_NUMBER() OVER (ORDER BY CREATED_AT, INCIDENT_ID) AS INCIDENT_RANK
-              FROM SF_INCIDENT) rk ON rk.INCIDENT_ID = i.INCIDENT_ID
-    </sql>
-
     <select id="findAll" resultType="com.safetrace.domain.Incident">
-        SELECT i.*, m.NAME AS ASSIGNED_STAFF_NAME, <include refid="coverPhoto"/>, rk.INCIDENT_RANK
+        SELECT i.*, m.NAME AS ASSIGNED_STAFF_NAME, <include refid="coverPhoto"/>
         FROM SF_INCIDENT i
-        <include refid="incidentRankJoin"/>
         LEFT JOIN SF_MEMBER m ON i.ASSIGNED_STAFF_ID = m.MEMBER_ID
         ORDER BY i.CREATED_AT DESC
     </select>
@@ -75,9 +66,8 @@
     <!-- 사건 관리 목록 한 페이지 -->
     <select id="searchIncidents" parameterType="com.safetrace.dto.IncidentSearchCondition"
             resultType="com.safetrace.domain.Incident">
-        SELECT i.*, m.NAME AS ASSIGNED_STAFF_NAME, <include refid="coverPhoto"/>, rk.INCIDENT_RANK
+        SELECT i.*, m.NAME AS ASSIGNED_STAFF_NAME, <include refid="coverPhoto"/>
         FROM SF_INCIDENT i
-        <include refid="incidentRankJoin"/>
         LEFT JOIN SF_MEMBER m ON i.ASSIGNED_STAFF_ID = m.MEMBER_ID
         <where>
             <include refid="incidentFilterConditions"/>
@@ -271,4 +261,11 @@
         ORDER BY SORT_ORDER
     </select>
 
-</mapper>
+    <!-- 통계 집계용 - 사진/담당자 조인 없이 집계에 필요한 컬럼만 -->
+    <select id="findStatRows" resultType="com.safetrace.domain.Incident">
+        SELECT DISASTER_TYPE, SEVERITY, STATUS, REGION, CREATED_AT, UPDATED_AT
+        FROM SF_INCIDENT
+        ORDER BY CREATED_AT DESC
+    </select>
+
+</mapper>
