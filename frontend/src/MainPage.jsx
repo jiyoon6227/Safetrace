@@ -9,7 +9,8 @@ import { useEscapeKey } from "./hooks/useEscapeKey";
 import { WEATHER_LOCATION_CACHE_KEY } from "./pages/Main/constants";
 import { reportStateOf } from "./utils/reportState";
 import { coordToAddress, coordToRegion } from "./utils/kakaoGeo";
-import { readWeatherCachedLocation, distanceKm, pickPriorityIncident } from "./pages/Main/utils";
+import { readWeatherCachedLocation, pickPriorityIncident } from "./pages/Main/utils";
+import { distanceMeters } from "./utils/nearbyShelters";
 import MainHeader from "./pages/Main/MainHeader";
 import MainHero from "./pages/Main/MainHero";
 import QuickMenu from "./pages/Main/QuickMenu";
@@ -593,7 +594,7 @@ export default function MainPage() {
         const list = Array.isArray(data) ? data : [];
         const picked = pickPriorityIncident(list);
         setMainNearbyIncident(
-          picked ? { ...picked, distanceKm: distanceKm(lat, lng, picked.latitude, picked.longitude) } : null
+          picked ? { ...picked, distanceKm: distanceMeters(lat, lng, picked.latitude, picked.longitude) / 1000 } : null
         );
       })
       .catch(() => {

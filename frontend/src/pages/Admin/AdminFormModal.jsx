@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
-import { STOCK_FORMS, formatQty, validateStockForm } from "../../constants/resource";
+import { STOCK_FORMS, formatQty, returnableLabel, validateStockForm } from "../../constants/resource";
 
 const INPUT = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#0F2540]";
 
@@ -34,7 +34,7 @@ export default function AdminFormModal({ kind, target, options = {}, onSubmit, o
   // 대상 안내: 재고는 부서·품목과 현재 수량, 품목은 수정할 수 없는 단위·반납형 여부
   const subject = target?.stockId
     ? [`${target.departmentName} · ${target.itemName}`, `총 보유량 ${formatQty(target.totalQty, target.unit)} · 가용 ${formatQty(target.availableQty, target.unit)}`]
-    : target?.itemId && [target.name, `단위 ${target.unit} · ${target.returnable === "Y" ? "반납형" : "소모품"} (수정할 수 없음)`];
+    : target?.itemId && [target.name, `단위 ${target.unit} · ${returnableLabel(target)} (수정할 수 없음)`];
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-6" onClick={() => !submitting && onClose()}>

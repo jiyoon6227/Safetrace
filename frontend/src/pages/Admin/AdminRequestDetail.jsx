@@ -6,7 +6,7 @@ import RequestStatusBadge from "../ControlBoard/RequestStatusBadge";
 import AdminDetailPanel, { DetailInfo, SECTION_TITLE } from "./AdminDetailPanel";
 import {
   ACTION_BUTTON, ADMIN_ACTION_LABEL, ADMIN_BUTTON_STYLE, ADMIN_STATUS_LABEL, ITEM_CATEGORY_LABEL, RETURN_STATUS_LABEL, RETURN_STATUS_STYLE,
-  formatCode, formatQty, getAdminRequestActions,
+  formatCode, formatQty, getAdminRequestActions, returnableLabel,
 } from "../../constants/resource";
 
 // ADMIN 오른쪽 상세 패널 - 기본 정보, 처리 현황(수량), 처리 이력, 처리 버튼. 세 화면이 같이 쓴다:
@@ -105,7 +105,7 @@ export default function AdminRequestDetail({ request, history, applied, title = 
           <div className="flex flex-wrap items-baseline gap-x-2 text-base font-extrabold text-[#0F2540]">
             {request.itemName}
             <span className="text-[13px] font-semibold text-slate-500">
-              {ITEM_CATEGORY_LABEL[request.category] || request.category} · {request.returnable === "Y" ? "반납형" : "소모품"}
+              {ITEM_CATEGORY_LABEL[request.category] || request.category} · {returnableLabel(request)}
             </span>
           </div>
           <dl className="mt-2.5 grid grid-flow-col auto-cols-fr gap-1.5 text-center">

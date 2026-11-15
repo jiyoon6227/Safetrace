@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   ADMIN_REQUEST_FILTERS,
   ADMIN_STATUS_LABEL,
-  ADMIN_STATUS_FILTERS,
   formatCode,
   REQUEST_STATUS_FILTERS,
   parseIncidentIdParam,
@@ -21,7 +20,6 @@ import {
   needsClosureConfirm,
   validateLossForm,
   validateReason,
-  validateRejectReason,
   validateResourceRequestForm,
 } from "./resource";
 
@@ -150,22 +148,22 @@ describe("getAdminConfirmMessage", () => {
   });
 });
 
-describe("validateRejectReason", () => {
+describe("validateReason (반려 사유)", () => {
   it("빈 사유와 공백만 있는 사유는 거절한다", () => {
-    expect(validateRejectReason("")).not.toBe("");
-    expect(validateRejectReason("   ")).not.toBe("");
+    expect(validateReason("")).not.toBe("");
+    expect(validateReason("   ")).not.toBe("");
   });
 
   it("500자까지는 통과하고 501자부터 거절한다", () => {
-    expect(validateRejectReason("가".repeat(500))).toBe("");
-    expect(validateRejectReason("가".repeat(501))).not.toBe("");
+    expect(validateReason("가".repeat(500))).toBe("");
+    expect(validateReason("가".repeat(501))).not.toBe("");
   });
 });
 
-describe("ADMIN_STATUS_FILTERS", () => {
+describe("REQUEST_STATUS_FILTERS", () => {
   it("전체 필터가 맨 앞에 있고 값이 겹치지 않는다", () => {
-    expect(ADMIN_STATUS_FILTERS[0].value).toBe("");
-    const values = ADMIN_STATUS_FILTERS.map((f) => f.value);
+    expect(REQUEST_STATUS_FILTERS[0].value).toBe("");
+    const values = REQUEST_STATUS_FILTERS.map((f) => f.value);
     expect(new Set(values).size).toBe(values.length);
   });
 });
@@ -201,12 +199,6 @@ describe("parseIncidentIdParam", () => {
   });
 });
 
-describe("REQUEST_STATUS_FILTERS", () => {
-  it("ADMIN 필터와 같은 목록을 쓴다", () => {
-    expect(REQUEST_STATUS_FILTERS).toBe(ADMIN_STATUS_FILTERS);
-  });
-});
-
 describe("손실 확정 (출고된 요청)", () => {
   it("출고된 요청은 확정 가능 수량이 남아 있을 때만 손실 확정 버튼이 나온다", () => {
     expect(getAdminRequestActions({ status: "DISPATCHED", applicableReturnQty: 2 })).toEqual(["loss"]);
@@ -228,7 +220,6 @@ describe("손실 확정 (출고된 요청)", () => {
     const base = { maxQty: 3, quantity: "1", unit: "대" };
     expect(validateLossForm({ ...base, reason: " " })).toContain("손실 사유");
     expect(validateLossForm({ ...base, reason: "가".repeat(501) })).toContain("손실 사유");
-    expect(validateReason("", "반려 사유")).toBe(validateRejectReason(""));
   });
 
   it("처리 뒤 결과 안내: 남은 수량이 없으면 정산 완료, 대기 중 반납이 있으면 남은 수량에 포함한다", () => {

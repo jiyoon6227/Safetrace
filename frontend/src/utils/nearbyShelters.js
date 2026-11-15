@@ -11,6 +11,22 @@ const MAX_STORED_ENTRIES = 5;
 const memoryCache = new Map();
 const inflight = new Map();
 
+// 위경도 두 점 사이의 직선거리(미터) - 백엔드 GeoUtils와 같은 하버사인 공식
+export function distanceMeters(lat1, lng1, lat2, lng2) {
+  const toRad = (value) => (value * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(a));
+}
+
+// 미터 값 -> "850m" / "1.2km". 숫자가 아니면 안내 문구
+export function formatDistance(meters) {
+  const value = Number(meters);
+  if (!Number.isFinite(value)) return "거리 정보 없음";
+  return value >= 1000 ? `${(value / 1000).toFixed(1)}km` : `${Math.round(value)}m`;
+}
+
 const cacheKey = (lat, lng) => `${lat},${lng}`;
 
 function readStored(key) {

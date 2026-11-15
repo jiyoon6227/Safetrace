@@ -6,7 +6,7 @@ import ResourceSummaryCards from "../ControlBoard/ResourceSummaryCards";
 import { CATEGORY_ICON } from "../ControlBoard/ResourceRequestCard";
 import { formatDateTime } from "../ControlBoard/constants";
 import {
-  ITEM_CATEGORY_FILTERS, ITEM_CATEGORY_LABEL, STOCK_STATUS_FILTERS, STOCK_STATUS_LABEL, STOCK_STATUS_STYLE, formatQty,
+  ITEM_CATEGORY_FILTERS, ITEM_CATEGORY_LABEL, STOCK_STATUS_FILTERS, STOCK_STATUS_LABEL, STOCK_STATUS_STYLE, formatQty, returnableLabel,
 } from "../../constants/resource";
 import { useAdminStock } from "./useAdminStock";
 import AdminTable, { SHOW_3XL, SHOW_4XL } from "./AdminTable";
@@ -27,7 +27,6 @@ const ITEM_CARDS = [
   })),
 ];
 
-const typeLabel = (row) => (row.returnable === "Y" ? "반납형" : "소모품");
 const nameCell = (name, category, sub) => {
   const Icon = CATEGORY_ICON[category] || Package;
   return (
@@ -41,7 +40,7 @@ const nameCell = (name, category, sub) => {
 // 재고 표: 예약·출고 중 칸은 넓을 때만 보이고, 좁으면 가용 칸 아래에 붙는다
 const STOCK_COLUMNS = [
   { head: "부서", cell: (r) => <span className="font-bold text-slate-900">{r.departmentName}</span> },
-  { head: "품목", cell: (r) => nameCell(r.itemName, r.category, `${ITEM_CATEGORY_LABEL[r.category] || r.category} · ${typeLabel(r)}`) },
+  { head: "품목", cell: (r) => nameCell(r.itemName, r.category, `${ITEM_CATEGORY_LABEL[r.category] || r.category} · ${returnableLabel(r)}`) },
   { head: "총 보유량", cell: (r) => <b className="text-slate-900">{formatQty(r.totalQty, r.unit)}</b> },
   {
     head: "가용",
@@ -68,7 +67,7 @@ const ITEM_COLUMNS = [
   { head: "품목명", cell: (r) => nameCell(r.name, r.category) },
   { head: "분류", cell: (r) => <span className="text-slate-700">{ITEM_CATEGORY_LABEL[r.category] || r.category}</span> },
   { head: "단위", cell: (r) => <span className="text-slate-700">{r.unit}</span> },
-  { head: "유형", cell: (r) => <span className="text-slate-700">{typeLabel(r)}</span> },
+  { head: "유형", cell: (r) => <span className="text-slate-700">{returnableLabel(r)}</span> },
   { head: "설명", show: SHOW_4XL, cell: (r) => <span className="block max-w-[16rem] truncate text-slate-600">{r.description}</span> },
   { head: "등록일", show: SHOW_4XL, cell: (r) => <span className="text-slate-700">{formatDateTime(r.createdAt)}</span> },
 ];

@@ -11,7 +11,7 @@ import {
 import { authFetch } from "../api/client";
 import { STATUS_LABEL } from "../constants/status";
 import { coordToAddress } from "../utils/kakaoGeo";
-import { loadNearbyShelters } from "../utils/nearbyShelters";
+import { distanceMeters, formatDistance, loadNearbyShelters } from "../utils/nearbyShelters";
 import { LOCATION_CACHE_KEY, readCachedLocation } from "../utils/locationCache";
 
 const DEFAULT_CENTER = { lat: 36.5, lng: 127.8 };
@@ -19,27 +19,6 @@ const DEFAULT_CENTER = { lat: 36.5, lng: 127.8 };
 function toNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
-}
-
-function distanceMeters(lat1, lng1, lat2, lng2) {
-  const toRad = (value) => (value * Math.PI) / 180;
-  const earthRadius = 6371000;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLng / 2) ** 2;
-
-  return 2 * earthRadius * Math.asin(Math.sqrt(a));
-}
-
-function formatDistance(value) {
-  const distance = Number(value);
-  if (!Number.isFinite(distance)) return "거리 정보 없음";
-  if (distance >= 1000) return `${(distance / 1000).toFixed(1)}km`;
-  return `${Math.round(distance)}m`;
 }
 
 function makeMarkerElement(type) {

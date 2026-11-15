@@ -11,17 +11,10 @@ import {
 } from "lucide-react";
 import { authFetch } from "../api/client";
 import ServicePageLayout from "../components/ServicePageLayout";
-import { loadNearbyShelters, readCachedShelters } from "../utils/nearbyShelters";
+import { formatDistance, loadNearbyShelters, readCachedShelters } from "../utils/nearbyShelters";
 import { LOCATION_CACHE_KEY, readCachedLocation } from "../utils/locationCache";
 
 const PAGE_SIZE = 6;
-
-function formatDistance(distanceM) {
-  const value = Number(distanceM);
-  if (!Number.isFinite(value)) return "거리 정보 없음";
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}km`;
-  return `${Math.round(value)}m`;
-}
 
 function shelterKey(shelter) {
   return `${shelter.name || "대피시설"}|${shelter.address || ""}`;

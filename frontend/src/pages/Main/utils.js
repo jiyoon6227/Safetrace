@@ -77,18 +77,6 @@ export const formatWeatherObservationTime = (weather) => {
   return `${month}월 ${day}일 (${weekday}) ${hour}:${minute} 기준`;
 };
 
-// 위경도 두 점 사이의 거리(km) - 백엔드 GeoUtils(하버사인 공식)와 동일한 방식.
-// 히어로 카드에 "내 위치에서 약 X km" 표시할 때 씀.
-export function distanceKm(lat1, lng1, lat2, lng2) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-}
-
 // 사건 목록에서 히어로 카드에 띄울 "가장 심각한 사건" 하나만 뽑음 - HIGH > MEDIUM > LOW, 동급이면 최근 등록순.
 export const INCIDENT_SEVERITY_RANK = { HIGH: 0, MEDIUM: 1, LOW: 2 };
 export function pickPriorityIncident(incidents) {

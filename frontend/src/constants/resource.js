@@ -55,6 +55,9 @@ export function formatQty(qty, unit) {
   return `${Number(qty).toLocaleString("ko-KR")}${unit || ""}`;
 }
 
+// 품목 유형 표기: 반납형(사용 뒤 반납) / 소모품
+export const returnableLabel = (item) => (item.returnable === "Y" ? "반납형" : "소모품");
+
 // 자원 요청 버튼을 쓸 수 있는지 판단한다.
 // 서버도 같은 규칙으로 다시 검사하므로 화면에서는 "왜 못 누르는지" 안내하는 용도다.
 export function getResourceRequestAvailability(currentUser, incident) {
@@ -111,9 +114,6 @@ export const REQUEST_STATUS_FILTERS = [
   { value: "REJECTED", label: REQUEST_STATUS_LABEL.REJECTED },
   { value: "CANCELLED", label: REQUEST_STATUS_LABEL.CANCELLED },
 ];
-
-// ADMIN 화면과 STAFF 자원 관리 화면이 같은 필터를 쓴다
-export const ADMIN_STATUS_FILTERS = REQUEST_STATUS_FILTERS;
 
 // ADMIN 요청·출고 관리의 상태 이름: 지금 해야 할 일이 보이도록 부른다 (서버 상태값은 그대로)
 export const ADMIN_STATUS_LABEL = { ...REQUEST_STATUS_LABEL, APPROVED: "출고 대기", DISPATCHED: "출고 후 관리" };
@@ -202,8 +202,6 @@ export function validateReason(reason, label = "반려 사유") {
   }
   return "";
 }
-
-export const validateRejectReason = (reason) => validateReason(reason, "반려 사유");
 
 // 손실 확정 입력 검사 (수량은 확정 가능 수량 이하). 문제가 없으면 빈 문자열.
 export function validateLossForm({ quantity, maxQty, reason, unit }) {

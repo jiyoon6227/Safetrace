@@ -5,7 +5,7 @@ import RequestStatusBadge from "../ControlBoard/RequestStatusBadge";
 import { CATEGORY_ICON } from "../ControlBoard/ResourceRequestCard";
 import AdminDetailPanel, { DetailInfo, SECTION_TITLE } from "./AdminDetailPanel";
 import {
-  ACTION_BUTTON, ADMIN_BUTTON_STYLE, ITEM_CATEGORY_LABEL, STOCK_FORMS, STOCK_STATUS_LABEL, STOCK_STATUS_STYLE, formatQty, getStockActions,
+  ACTION_BUTTON, ADMIN_BUTTON_STYLE, ITEM_CATEGORY_LABEL, STOCK_FORMS, STOCK_STATUS_LABEL, STOCK_STATUS_STYLE, formatQty, getStockActions, returnableLabel,
 } from "../../constants/resource";
 
 // 재고 처리 버튼 색: 입고·사용 재개는 남색, 수량 조정은 어두운 테두리, 사용 중지는 붉은 테두리
@@ -15,8 +15,6 @@ const ACTION_STYLE = {
   stockDeactivate: ADMIN_BUTTON_STYLE.loss,
   stockReactivate: ADMIN_BUTTON_STYLE.approve,
 };
-const typeLabel = (item) => (item.returnable === "Y" ? "반납형" : "소모품");
-
 // 패널 맨 위 요약: 품목 아이콘, 이름, 보조 줄, 오른쪽 배지
 function PanelHead({ category, title, sub, badge }) {
   const Icon = CATEGORY_ICON[category] || Package;
@@ -70,7 +68,7 @@ export default function AdminStockDetail({ stock, history, onAction, onClose }) 
             ["부서", stock.departmentName],
             ["품목", stock.itemName],
             ["분류", ITEM_CATEGORY_LABEL[stock.category] || stock.category],
-            ["단위·유형", `${stock.unit} · ${typeLabel(stock)}`],
+            ["단위·유형", `${stock.unit} · ${returnableLabel(stock)}`],
             ["설명", stock.itemDescription],
             ["최종 변경", stock.updatedAt && formatDateTime(stock.updatedAt)],
           ]}
@@ -111,7 +109,7 @@ export function AdminItemDetail({ item, history, onEdit, onClose }) {
       onClose={onClose}
       actions={<button type="button" onClick={() => onEdit(item)} className={`grow ${ACTION_BUTTON} ${ADMIN_BUTTON_STYLE.approve}`}>품목 수정</button>}
     >
-      <PanelHead category={item.category} title={item.name} sub={ITEM_CATEGORY_LABEL[item.category] || item.category} badge={<span className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-[13px] font-bold text-slate-600">{typeLabel(item)}</span>} />
+      <PanelHead category={item.category} title={item.name} sub={ITEM_CATEGORY_LABEL[item.category] || item.category} badge={<span className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-[13px] font-bold text-slate-600">{returnableLabel(item)}</span>} />
 
       <section>
         <h3 className={SECTION_TITLE}><Info className="w-4 h-4 text-[#244D7C]" /> 기본 정보</h3>
@@ -120,7 +118,7 @@ export function AdminItemDetail({ item, history, onEdit, onClose }) {
             ["품목명", item.name],
             ["분류", ITEM_CATEGORY_LABEL[item.category] || item.category],
             ["단위", item.unit],
-            ["유형", typeLabel(item)],
+            ["유형", returnableLabel(item)],
             ["설명", item.description],
             ["등록일", item.createdAt && formatDateTime(item.createdAt)],
           ]}
