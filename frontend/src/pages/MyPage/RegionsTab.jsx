@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { authFetch } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
+import { addressToCoords, coordToRegion, openPostcode } from "../../utils/kakaoGeo";
 import {
   REGION_LABELS, DISASTER_TYPE_STYLE,
   SEVERITY_LABEL_KO, SEVERITY_STYLE, REPORT_STATUS_DOT,
@@ -272,71 +273,65 @@ export default function RegionsTab({ regions = [], onChanged, onOpenShelters, on
       setUvIndexLoading(true);
       setSheltersLoading(true);
       setDisasterMessagesLoading(true);
-      window.kakao.maps.load(() => {
-        const geocoder = new window.kakao.maps.services.Geocoder();
-        geocoder.coord2RegionCode(lng, lat, (result, status) => {
-          const regionCode = status === window.kakao.maps.services.Status.OK
-            ? result.find((r) => r.region_type === "H") || result[0]
-            : null;
-          const sido = regionCode?.region_1depth_name;
-          const gu = regionCode?.region_2depth_name;
+      coordToRegion(lat, lng).then((regionCode) => {
+        const sido = regionCode?.region_1depth_name;
+        const gu = regionCode?.region_2depth_name;
 
-          if (!sido) {
-            setAirQuality({ available: false });
-            setAirQualityLoading(false);
-            setUvIndex({ available: false });
-            setUvIndexLoading(false);
-          } else {
-            authFetch(`/api/environment/air-quality?sido=${encodeURIComponent(sido)}`)
-              .then(setAirQuality)
-              .catch(() => setAirQuality({ available: false }))
-              .finally(() => setAirQualityLoading(false));
+        if (!sido) {
+          setAirQuality({ available: false });
+          setAirQualityLoading(false);
+          setUvIndex({ available: false });
+          setUvIndexLoading(false);
+        } else {
+          authFetch(`/api/environment/air-quality?sido=${encodeURIComponent(sido)}`)
+            .then(setAirQuality)
+            .catch(() => setAirQuality({ available: false }))
+            .finally(() => setAirQualityLoading(false));
 
-            authFetch(`/api/environment/uv-index?sido=${encodeURIComponent(sido)}`)
-              .then(setUvIndex)
-              .catch(() => setUvIndex({ available: false }))
-              .finally(() => setUvIndexLoading(false));
-          }
+          authFetch(`/api/environment/uv-index?sido=${encodeURIComponent(sido)}`)
+            .then(setUvIndex)
+            .catch(() => setUvIndex({ available: false }))
+            .finally(() => setUvIndexLoading(false));
+        }
 
-          // 재난문자·대피시설 조회용 지역 이름 후보
-          const queries = buildRegionQueries(sido, gu);
-          const { regionQuery, regionFallback, regionShortFallback } = queries;
+        // 재난문자·대피시설 조회용 지역 이름 후보
+        const queries = buildRegionQueries(sido, gu);
+        const { regionQuery, regionFallback, regionShortFallback } = queries;
 
-          if (!regionQuery) {
-            setShelters([]);
-            setSheltersLoading(false);
-            setDisasterMessages([]);
-            setDisasterMessagesLoading(false);
-          } else {
-            authFetch(`/api/environment/shelters?guName=${encodeURIComponent(regionQuery)}&lat=${lat}&lng=${lng}&limit=3`)
-              .then((data) => {
-                if (data.length > 0 || !regionFallback) return data;
-                return authFetch(`/api/environment/shelters?guName=${encodeURIComponent(regionFallback)}&lat=${lat}&lng=${lng}&limit=3`);
-              })
-              .then((data) => {
-                if (data.length > 0 || !regionShortFallback) return data;
-                return authFetch(`/api/environment/shelters?guName=${encodeURIComponent(regionShortFallback)}&lat=${lat}&lng=${lng}&limit=3`);
-              })
-              .then(setShelters)
-              .catch(() => setShelters([]))
-              .finally(() => setSheltersLoading(false));
+        if (!regionQuery) {
+          setShelters([]);
+          setSheltersLoading(false);
+          setDisasterMessages([]);
+          setDisasterMessagesLoading(false);
+        } else {
+          authFetch(`/api/environment/shelters?guName=${encodeURIComponent(regionQuery)}&lat=${lat}&lng=${lng}&limit=3`)
+            .then((data) => {
+              if (data.length > 0 || !regionFallback) return data;
+              return authFetch(`/api/environment/shelters?guName=${encodeURIComponent(regionFallback)}&lat=${lat}&lng=${lng}&limit=3`);
+            })
+            .then((data) => {
+              if (data.length > 0 || !regionShortFallback) return data;
+              return authFetch(`/api/environment/shelters?guName=${encodeURIComponent(regionShortFallback)}&lat=${lat}&lng=${lng}&limit=3`);
+            })
+            .then(setShelters)
+            .catch(() => setShelters([]))
+            .finally(() => setSheltersLoading(false));
 
-            // 긴급재난문자 (행정안전부 재난안전데이터공유플랫폼) - 구 단위와 시/도 전체 동시 조회
-            const fetchRecent = (rgnNm) =>
-              authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(rgnNm)}&limit=20`);
+          // 긴급재난문자 (행정안전부 재난안전데이터공유플랫폼) - 구 단위와 시/도 전체 동시 조회
+          const fetchRecent = (rgnNm) =>
+            authFetch(`/api/environment/disaster-messages?rgnNm=${encodeURIComponent(rgnNm)}&limit=20`);
 
-            Promise.all([
-              fetchDistrictMessages(fetchRecent, queries, sido).catch(() => []),
-              fetchSidoWideMessages(fetchRecent, queries.regionSidoOnlyFallback),
-            ])
-              .then(([districtMessages, sidoMessages]) => {
-                setDisasterMessages(mergeDisasterMessages(districtMessages, sidoMessages).slice(0, 20));
-              })
-              .catch(() => setDisasterMessages([]))
-              .finally(() => setDisasterMessagesLoading(false));
-          }
-        });
-      });
+          Promise.all([
+            fetchDistrictMessages(fetchRecent, queries, sido).catch(() => []),
+            fetchSidoWideMessages(fetchRecent, queries.regionSidoOnlyFallback),
+          ])
+            .then(([districtMessages, sidoMessages]) => {
+              setDisasterMessages(mergeDisasterMessages(districtMessages, sidoMessages).slice(0, 20));
+            })
+            .catch(() => setDisasterMessages([]))
+            .finally(() => setDisasterMessagesLoading(false));
+        }
+      }).catch(() => {});
     }
     setLastUpdatedAt(new Date());
   };
@@ -416,31 +411,18 @@ export default function RegionsTab({ regions = [], onChanged, onOpenShelters, on
   // 카카오 실시간 검색(장소/건물명 위주)과 달리 정확한 지번 주소 검색에 강함.
   const openAddressSearch = () => {
     setError("");
-    if (!window.daum || !window.daum.Postcode) {
-      setError("주소 검색 서비스를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
-      return;
-    }
-    new window.daum.Postcode({
-      oncomplete: (data) => {
-        const fullAddress = data.roadAddress || data.jibunAddress;
-        if (!window.kakao?.maps) {
-          setError("지도 API를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
-          return;
-        }
-        setGeocoding(true);
-        window.kakao.maps.load(() => {
-          const geocoder = new window.kakao.maps.services.Geocoder();
-          geocoder.addressSearch(fullAddress, (result, status) => {
-            if (status !== window.kakao.maps.services.Status.OK || !result[0]) {
-              setGeocoding(false);
-              setError("선택한 주소의 좌표를 찾지 못했습니다. 다시 검색해주세요.");
-              return;
-            }
-            submitRegion(fullAddress, Number(result[0].y), Number(result[0].x));
-          });
-        });
-      },
-    }).open({ q: searchQuery });
+    const opened = openPostcode(async (fullAddress) => {
+      setGeocoding(true);
+      try {
+        const found = await addressToCoords(fullAddress);
+        if (!found) throw new Error("선택한 주소의 좌표를 찾지 못했습니다. 다시 검색해주세요.");
+        submitRegion(fullAddress, found.lat, found.lng);
+      } catch (err) {
+        setGeocoding(false);
+        setError(err.message);
+      }
+    }, { q: searchQuery });
+    if (!opened) setError("주소 검색 서비스를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
   };
 
   const removeRegion = async (memberRegionId) => {

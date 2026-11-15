@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { ChevronRight, Home, Loader2, Search, X } from "lucide-react";
 import { authFetch } from "../api/client";
 import SiteHeader from "../components/SiteHeader";
+import { formatDotDate } from "../utils/dateFormat";
 import {
   disasterFilterOf,
   disasterSummary,
@@ -18,16 +19,6 @@ const TABS = [
   { key: "guide", label: "행동요령" },
   { key: "notice", label: "공지사항" },
 ];
-
-function formatDate(value) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}.${m}.${day}`;
-}
 
 function normalize(value) {
   return String(value ?? "").trim().toLowerCase();
@@ -477,7 +468,7 @@ export default function SearchPage({ initialQuery = "", onNavigate }) {
                     {String(notice.content || "").replace(/\s+/g, " ")}
                   </span>
                   <span className="text-right text-[11px] text-slate-400">
-                    {formatDate(notice.createdAt)}
+                    {formatDotDate(notice.createdAt, "")}
                   </span>
                 </button>
               )}

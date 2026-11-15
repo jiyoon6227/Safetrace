@@ -6,6 +6,10 @@ import {
 } from "lucide-react";
 import { authFetch } from "../api/client";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import TablePagination from "./ControlBoard/TablePagination";
+import { toDateInputValue } from "../utils/dateFormat";
+import { formatDisasterDateTime, parseDisasterDate } from "../utils/disasterMessages";
+import { coordToRegion } from "../utils/kakaoGeo";
 import {
   buildRegionQueries, fetchDistrictMessages, fetchSidoWideMessages, mergeDisasterMessages,
 } from "../utils/disasterRegion";
@@ -89,29 +93,6 @@ const CATEGORY_META = {
   },
 };
 
-const parseMessageDate = (value) => {
-  if (!value) return null;
-  const normalized = String(value)
-    .trim()
-    .replace(/\./g, "-")
-    .replace(/\//g, "-")
-    .replace(" ", "T");
-  const date = new Date(normalized);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const formatMessageDate = (value) => {
-  const date = parseMessageDate(value);
-  if (!date) return value || "-";
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-};
-
-const toDateInputValue = (date) => {
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-};
-
 export default function DisasterNewsPage({
   initialRegionId,
   onBackToHome,
@@ -164,7 +145,7 @@ export default function DisasterNewsPage({
       .finally(() => setRegionsLoading(false));
   }, [initialRegionId]);
 
-  const loadMessages = (region) => {
+  const loadMessages = async (region) => {
     if (!region?.latitude || !region?.longitude) {
       setMessages([]);
       return;
@@ -189,52 +170,39 @@ export default function DisasterNewsPage({
     setError("");
     setMessagesLoading(true);
 
-    window.kakao.maps.load(() => {
-      const geocoder = new window.kakao.maps.services.Geocoder();
-      geocoder.coord2RegionCode(
-        Number(region.longitude),
-        Number(region.latitude),
-        async (result, status) => {
-          try {
-            const regionCode =
-              status === window.kakao.maps.services.Status.OK
-                ? result.find((r) => r.region_type === "H") || result[0]
-                : null;
+    try {
+      const regionCode = await coordToRegion(Number(region.latitude), Number(region.longitude));
+      const sido = regionCode?.region_1depth_name;
+      const gu = regionCode?.region_2depth_name;
 
-            const sido = regionCode?.region_1depth_name;
-            const gu = regionCode?.region_2depth_name;
+      if (!sido) {
+        setMessages([]);
+        setError("선택한 지역의 행정구역 정보를 찾지 못했습니다.");
+        return;
+      }
 
-            if (!sido) {
-              setMessages([]);
-              setError("선택한 지역의 행정구역 정보를 찾지 못했습니다.");
-              return;
-            }
+      const queries = buildRegionQueries(sido, gu);
 
-            const queries = buildRegionQueries(sido, gu);
+      const fetchHistory = (rgnNm) =>
+        authFetch(
+          `/api/environment/disaster-messages/history` +
+          `?rgnNm=${encodeURIComponent(rgnNm)}` +
+          `&startDate=${encodeURIComponent(startDate)}` +
+          `&endDate=${encodeURIComponent(endDate)}` +
+          `&limit=500`
+        );
 
-            const fetchHistory = (rgnNm) =>
-              authFetch(
-                `/api/environment/disaster-messages/history` +
-                `?rgnNm=${encodeURIComponent(rgnNm)}` +
-                `&startDate=${encodeURIComponent(startDate)}` +
-                `&endDate=${encodeURIComponent(endDate)}` +
-                `&limit=500`
-              );
+      // 구 단위 조회 후 시/도 전체 조회 (구 단위 실패 시 오류 표시)
+      const districtData = await fetchDistrictMessages(fetchHistory, queries, sido);
+      const sidoData = await fetchSidoWideMessages(fetchHistory, queries.regionSidoOnlyFallback);
 
-            // 구 단위 조회 후 시/도 전체 조회 (구 단위 실패 시 오류 표시)
-            const districtData = await fetchDistrictMessages(fetchHistory, queries, sido);
-            const sidoData = await fetchSidoWideMessages(fetchHistory, queries.regionSidoOnlyFallback);
-
-            setMessages(mergeDisasterMessages(districtData, sidoData));
-          } catch (e) {
-            setMessages([]);
-            setError(e?.message || "안전·재난 소식을 불러오지 못했습니다.");
-          } finally {
-            setMessagesLoading(false);
-          }
-        }
-      );
-    });
+      setMessages(mergeDisasterMessages(districtData, sidoData));
+    } catch (e) {
+      setMessages([]);
+      setError(e?.message || "안전·재난 소식을 불러오지 못했습니다.");
+    } finally {
+      setMessagesLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -277,8 +245,8 @@ export default function DisasterNewsPage({
         return matchesSearch(msg);
       })
       .sort((a, b) => {
-        const ta = parseMessageDate(a.createdAt)?.getTime() || 0;
-        const tb = parseMessageDate(b.createdAt)?.getTime() || 0;
+        const ta = parseDisasterDate(a.createdAt)?.getTime() || 0;
+        const tb = parseDisasterDate(b.createdAt)?.getTime() || 0;
         return sort === "oldest" ? ta - tb : tb - ta;
       });
   }, [messagesWithCategory, category, query, sort]);
@@ -294,15 +262,6 @@ export default function DisasterNewsPage({
     (safePage - 1) * PAGE_SIZE,
     safePage * PAGE_SIZE
   );
-
-  const visiblePages = useMemo(() => {
-    const start = Math.max(1, Math.min(safePage - 2, totalPages - 4));
-    const result = [];
-    for (let i = start; i <= Math.min(totalPages, start + 4); i += 1) {
-      result.push(i);
-    }
-    return result;
-  }, [safePage, totalPages]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
@@ -649,7 +608,7 @@ export default function DisasterNewsPage({
 
                         <div className="text-right shrink-0 hidden sm:block">
                           <p className="text-[11px] text-slate-500 whitespace-nowrap">
-                            {formatMessageDate(msg.createdAt)}
+                            {formatDisasterDateTime(msg.createdAt)}
                           </p>
                           <p className="text-[10px] text-slate-400 mt-1 max-w-[150px] truncate">
                             {msg.disasterType || meta.label}
@@ -669,42 +628,7 @@ export default function DisasterNewsPage({
                     총 {filteredMessages.length}건
                   </p>
 
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={safePage === 1}
-                      className="w-8 h-8 rounded-lg text-slate-400 hover:bg-slate-100 disabled:opacity-30 cursor-pointer disabled:cursor-default"
-                    >
-                      ‹
-                    </button>
-
-                    {visiblePages.map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setPage(p)}
-                        className={`w-8 h-8 rounded-lg text-xs font-bold cursor-pointer ${
-                          p === safePage
-                            ? "bg-blue-500 text-white"
-                            : "text-slate-500 hover:bg-slate-100"
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    ))}
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPage((p) => Math.min(totalPages, p + 1))
-                      }
-                      disabled={safePage === totalPages}
-                      className="w-8 h-8 rounded-lg text-slate-400 hover:bg-slate-100 disabled:opacity-30 cursor-pointer disabled:cursor-default"
-                    >
-                      ›
-                    </button>
-                  </div>
+                  <TablePagination variant="soft" windowSize={5} currentPage={safePage} totalPages={totalPages} setPage={setPage} />
 
                   <span className="w-[50px]" />
                 </div>
@@ -740,7 +664,7 @@ export default function DisasterNewsPage({
                       안전·재난 소식 상세
                     </p>
                     <p className="text-[10px] text-slate-400">
-                      {formatMessageDate(selectedMessage.createdAt)}
+                      {formatDisasterDateTime(selectedMessage.createdAt)}
                     </p>
                   </div>
                 </div>
@@ -792,7 +716,7 @@ export default function DisasterNewsPage({
                     <div>
                       <p className="text-[10px] text-slate-400">발송 시각</p>
                       <p className="text-xs font-semibold text-slate-600">
-                        {formatMessageDate(selectedMessage.createdAt)}
+                        {formatDisasterDateTime(selectedMessage.createdAt)}
                       </p>
                     </div>
                   </div>

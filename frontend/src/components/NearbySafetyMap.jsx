@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 import { authFetch } from "../api/client";
 import { STATUS_LABEL } from "../constants/status";
-import { SIDO_SHORT_NAME } from "../utils/disasterRegion";
+import { coordToAddress } from "../utils/kakaoGeo";
+import { loadNearbyShelters } from "../utils/nearbyShelters";
 import { LOCATION_CACHE_KEY, readCachedLocation } from "../utils/locationCache";
 
 const DEFAULT_CENTER = { lat: 36.5, lng: 127.8 };
@@ -94,6 +95,7 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap, focus
   const [locating, setLocating] = useState(false);
   const [locationNotice, setLocationNotice] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const forceRefreshRef = useRef(false);
 
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState("");
@@ -296,80 +298,26 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap, focus
     map.setBounds(bounds, 70, 70, 70, 70);
   }, [compact, mapReady, location, radiusKm]);
 
-  const fetchShelters = useCallback(
-    async (lat, lng) => {
-      if (!sdkReady || !window.kakao?.maps?.services) return [];
-
-      const region = await new Promise((resolve) => {
-        const geocoder = new window.kakao.maps.services.Geocoder();
-
-        geocoder.coord2RegionCode(lng, lat, (result, status) => {
-          if (status !== window.kakao.maps.services.Status.OK || !result?.length) {
-            resolve(null);
-            return;
-          }
-
-          resolve(result.find((item) => item.region_type === "H") || result[0]);
-        });
-      });
-
-      const sido = region?.region_1depth_name;
-      const gu = region?.region_2depth_name;
-      if (!sido) return [];
-
-      const queries = [
-        gu ? `${sido} ${gu}` : sido,
-        gu || null,
-        gu && SIDO_SHORT_NAME[sido] ? `${SIDO_SHORT_NAME[sido]} ${gu}` : null,
-      ].filter(Boolean);
-
-      for (const guName of queries) {
-        try {
-          const data = await authFetch(
-            `/api/environment/shelters?guName=${encodeURIComponent(guName)}&lat=${lat}&lng=${lng}&limit=100`
-          );
-          if (Array.isArray(data) && data.length > 0) return data;
-        } catch (error) {
-          console.warn("Shelter request failed", guName, error);
-        }
-      }
-
-      return [];
-    },
-    [sdkReady]
-  );
-
   /* 현재 위치의 주소명 + 주변 사건/대피시설 실제 데이터 조회 */
   useEffect(() => {
     if (!location || !sdkReady) return;
 
     let cancelled = false;
+    const force = forceRefreshRef.current;
+    forceRefreshRef.current = false;
 
     setDataLoading(true);
     setDataError("");
 
-    try {
-      const geocoder = new window.kakao.maps.services.Geocoder();
-      geocoder.coord2Address(location.lng, location.lat, (result, status) => {
-        if (cancelled) return;
-
-        if (status === window.kakao.maps.services.Status.OK && result?.[0]) {
-          const address =
-            result[0].road_address?.address_name || result[0].address?.address_name;
-          setLocationLabel(address || "현재 위치");
-        } else {
-          setLocationLabel("현재 위치");
-        }
-      });
-    } catch {
-      setLocationLabel("현재 위치");
-    }
+    coordToAddress(location.lat, location.lng)
+      .then((address) => !cancelled && setLocationLabel(address || "현재 위치"))
+      .catch(() => setLocationLabel("현재 위치"));
 
     Promise.allSettled([
       authFetch(
         `/api/incidents/nearby?lat=${location.lat}&lng=${location.lng}&radiusKm=${radiusKm}`
       ),
-      fetchShelters(location.lat, location.lng),
+      loadNearbyShelters(location.lat, location.lng, { force }).then((result) => result.list),
     ]).then(([incidentResult, shelterResult]) => {
       if (cancelled) return;
 
@@ -398,7 +346,7 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap, focus
     return () => {
       cancelled = true;
     };
-  }, [location, radiusKm, fetchShelters, sdkReady, refreshKey]);
+  }, [location, radiusKm, sdkReady, refreshKey]);
 
   const normalizedItems = useMemo(() => {
     if (!location) return [];
@@ -531,6 +479,7 @@ export default function NearbySafetyMap({ mode = "compact", onOpenFullMap, focus
     }
 
     setDataLoading(true);
+    forceRefreshRef.current = true;
     setRefreshKey((value) => value + 1);
   }, [location, requestLocation]);
 

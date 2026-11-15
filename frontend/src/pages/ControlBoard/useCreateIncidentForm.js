@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { authFetch, authUpload } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
+import { addressToCoords, openPostcode } from "../../utils/kakaoGeo";
 
 export function useCreateIncidentForm({
   reports, reportAddresses, selectedReportIds, setSelectedReportIds, setBulkMergeOpen, loadReports,
@@ -80,43 +81,23 @@ export function useCreateIncidentForm({
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState(null);
 
   // 주소 문자열 -> 위경도 좌표 변환 (카카오 Geocoder). ReportForm.jsx의 시민 제보 흐름과 동일한 방식.
-  const geocodeAddress = (address) => {
-    if (!window.kakao || !window.kakao.maps) {
-      setCreateError("지도 API를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
-      return;
-    }
+  const geocodeAddress = async (address) => {
     setGeocoding(true);
-    window.kakao.maps.load(() => {
-      const geocoder = new window.kakao.maps.services.Geocoder();
-      geocoder.addressSearch(address, (result, status) => {
-        setGeocoding(false);
-        if (status === window.kakao.maps.services.Status.OK && result[0]) {
-          setNewIncident((prev) => ({
-            ...prev,
-            region: address,
-            latitude: String(result[0].y),
-            longitude: String(result[0].x),
-          }));
-        } else {
-          setCreateError("좌표 변환에 실패했습니다. 다른 주소로 다시 검색해주세요.");
-        }
-      });
-    });
+    try {
+      const found = await addressToCoords(address);
+      if (!found) throw new Error("좌표 변환에 실패했습니다. 다른 주소로 다시 검색해주세요.");
+      setNewIncident((prev) => ({ ...prev, region: address, latitude: String(found.lat), longitude: String(found.lng) }));
+    } catch (err) {
+      setCreateError(err.message);
+    } finally {
+      setGeocoding(false);
+    }
   };
 
   // "주소 검색" 버튼 -> 다음(Daum) 우편번호 검색 팝업 오픈 (스크립트는 index.html에 전역으로 이미 로드돼있음)
   const handleAddressSearch = () => {
     setCreateError("");
-    if (!window.daum || !window.daum.Postcode) {
-      setCreateError("주소 검색 서비스를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
-      return;
-    }
-    new window.daum.Postcode({
-      oncomplete: (data) => {
-        const fullAddress = data.roadAddress || data.jibunAddress;
-        geocodeAddress(fullAddress);
-      },
-    }).open();
+    if (!openPostcode(geocodeAddress)) setCreateError("주소 검색 서비스를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
   };
 
   const handlePhotoChange = (e) => {

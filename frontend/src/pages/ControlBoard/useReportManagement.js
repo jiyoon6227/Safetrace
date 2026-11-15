@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { authFetch } from "../../api/client";
+import { coordToAddress } from "../../utils/kakaoGeo";
 import { getDefaultDateRange } from "./constants";
 import { createDateRangeHandlers } from "./dateRangeFilter";
 
@@ -81,14 +82,9 @@ export function useReportManagement({
   const resolveReportAddress = (report) => {
     if (report.address) { setReportAddresses((prev) => ({ ...prev, [report.reportId]: report.address })); return; }
     if (!window.kakao?.maps?.services || report.latitude == null || report.longitude == null) return;
-    const geocoder = new window.kakao.maps.services.Geocoder();
-    geocoder.coord2Address(report.longitude, report.latitude, (result, status) => {
-      const addr =
-        status === window.kakao.maps.services.Status.OK && result[0]
-          ? result[0].road_address?.address_name || result[0].address?.address_name || "주소 확인 불가"
-          : "주소 확인 불가";
-      setReportAddresses((prev) => ({ ...prev, [report.reportId]: addr }));
-    });
+    coordToAddress(report.latitude, report.longitude)
+      .then((addr) => setReportAddresses((prev) => ({ ...prev, [report.reportId]: addr || "주소 확인 불가" })))
+      .catch(() => {});
   };
 
   const loadReports = async () => {

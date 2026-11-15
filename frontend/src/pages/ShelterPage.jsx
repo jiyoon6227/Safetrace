@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { authFetch } from "../api/client";
 import ServicePageLayout from "../components/ServicePageLayout";
+import { loadNearbyShelters, readCachedShelters } from "../utils/nearbyShelters";
 import { LOCATION_CACHE_KEY, readCachedLocation } from "../utils/locationCache";
 
 const PAGE_SIZE = 6;
@@ -178,6 +179,41 @@ export default function ShelterPage({ initialRegionId, initialFocusShelter, onNa
     let active = true;
     let timerId = null;
     let attempts = 0;
+    const { lat, lng } = location;
+
+    const applyResult = ({ list, label, query: regionKey }) => {
+      setLocationLabel(label || "현재 위치");
+      setRegionQuery(regionKey || "");
+      setShelters(list);
+
+      const initialMatch = initialFocusShelter
+        ? list.find((shelter) => {
+            const sameName =
+              String(shelter.name || "") === String(initialFocusShelter.name || "");
+            const sameAddress =
+              String(shelter.address || "") === String(initialFocusShelter.address || "");
+            return sameName && sameAddress;
+          })
+        : null;
+
+      setSelectedKey(
+        initialMatch
+          ? shelterKey(initialMatch)
+          : list.length
+            ? shelterKey(list[0])
+            : null
+      );
+      setPage(1);
+    };
+
+    // 같은 위치로 이미 조회한 결과가 있으면 지도 SDK/API를 기다리지 않고 바로 보여준다.
+    const cached = readCachedShelters(lat, lng);
+    if (cached) {
+      applyResult(cached);
+      setLoading(false);
+      setError("");
+      return undefined;
+    }
 
     const resolveRegionAndLoad = () => {
       if (!active) return;
@@ -192,68 +228,26 @@ export default function ShelterPage({ initialRegionId, initialFocusShelter, onNa
         return;
       }
 
-      const { lat, lng } = location;
-      const geocoder = new window.kakao.maps.services.Geocoder();
-      geocoder.coord2RegionCode(lng, lat, async (result, status) => {
-        if (!active) return;
-        if (status !== window.kakao.maps.services.Status.OK || !result?.length) {
-          setError("현재 위치의 행정구역을 확인하지 못했습니다.");
-          return;
-        }
+      setLoading(true);
+      setError("");
 
-        const region = result.find((item) => item.region_type === "H") || result[0];
-        const sido = region?.region_1depth_name || "";
-        const gu = region?.region_2depth_name || "";
-        const label = [sido, gu].filter(Boolean).join(" ");
-        const primaryQuery = label || sido;
-        const fallbackQuery = gu || sido;
-
-        setLocationLabel(label || "현재 위치");
-        setRegionQuery(primaryQuery);
-        setLoading(true);
-        setError("");
-
-        try {
-          let data = await authFetch(
-            `/api/environment/shelters?guName=${encodeURIComponent(primaryQuery)}&lat=${lat}&lng=${lng}&limit=100`
-          );
-
-          if ((!Array.isArray(data) || data.length === 0) && fallbackQuery && fallbackQuery !== primaryQuery) {
-            data = await authFetch(
-              `/api/environment/shelters?guName=${encodeURIComponent(fallbackQuery)}&lat=${lat}&lng=${lng}&limit=100`
-            );
-          }
-
+      loadNearbyShelters(lat, lng)
+        .then((result) => {
           if (!active) return;
-          const list = Array.isArray(data) ? data : [];
-          setShelters(list);
-
-          const initialMatch = initialFocusShelter
-            ? list.find((shelter) => {
-                const sameName =
-                  String(shelter.name || "") === String(initialFocusShelter.name || "");
-                const sameAddress =
-                  String(shelter.address || "") === String(initialFocusShelter.address || "");
-                return sameName && sameAddress;
-              })
-            : null;
-
-          setSelectedKey(
-            initialMatch
-              ? shelterKey(initialMatch)
-              : list.length
-                ? shelterKey(list[0])
-                : null
-          );
-          setPage(1);
-        } catch (e) {
+          if (result.noRegion) {
+            setError("현재 위치의 행정구역을 확인하지 못했습니다.");
+            return;
+          }
+          applyResult(result);
+        })
+        .catch((e) => {
           if (!active) return;
           setShelters([]);
           setError(e?.message || "대피시설 정보를 불러오지 못했습니다.");
-        } finally {
+        })
+        .finally(() => {
           if (active) setLoading(false);
-        }
-      });
+        });
     };
 
     resolveRegionAndLoad();
@@ -600,4 +594,4 @@ export default function ShelterPage({ initialRegionId, initialFocusShelter, onNa
         )}
     </ServicePageLayout>
   );
-}
+}

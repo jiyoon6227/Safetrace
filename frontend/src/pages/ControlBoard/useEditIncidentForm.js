@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { authFetch } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
+import { addressToCoords, openPostcode } from "../../utils/kakaoGeo";
 
 export function useEditIncidentForm({
   selectedIncidentIdRef, loadIncidents, openIncidentDetail, setToast,
@@ -31,42 +32,22 @@ export function useEditIncidentForm({
   };
 
   // "새 사건 등록" 모달의 주소검색/geocode와 동일한 방식 - editIncident 상태를 대상으로만 분리
-  const geocodeEditAddress = (address) => {
-    if (!window.kakao || !window.kakao.maps) {
-      setEditError("지도 API를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
-      return;
-    }
+  const geocodeEditAddress = async (address) => {
     setEditGeocoding(true);
-    window.kakao.maps.load(() => {
-      const geocoder = new window.kakao.maps.services.Geocoder();
-      geocoder.addressSearch(address, (result, status) => {
-        setEditGeocoding(false);
-        if (status === window.kakao.maps.services.Status.OK && result[0]) {
-          setEditIncident((prev) => ({
-            ...prev,
-            region: address,
-            latitude: String(result[0].y),
-            longitude: String(result[0].x),
-          }));
-        } else {
-          setEditError("좌표 변환에 실패했습니다. 다른 주소로 다시 검색해주세요.");
-        }
-      });
-    });
+    try {
+      const found = await addressToCoords(address);
+      if (!found) throw new Error("좌표 변환에 실패했습니다. 다른 주소로 다시 검색해주세요.");
+      setEditIncident((prev) => ({ ...prev, region: address, latitude: String(found.lat), longitude: String(found.lng) }));
+    } catch (err) {
+      setEditError(err.message);
+    } finally {
+      setEditGeocoding(false);
+    }
   };
 
   const handleEditAddressSearch = () => {
     setEditError("");
-    if (!window.daum || !window.daum.Postcode) {
-      setEditError("주소 검색 서비스를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
-      return;
-    }
-    new window.daum.Postcode({
-      oncomplete: (data) => {
-        const fullAddress = data.roadAddress || data.jibunAddress;
-        geocodeEditAddress(fullAddress);
-      },
-    }).open();
+    if (!openPostcode(geocodeEditAddress)) setEditError("주소 검색 서비스를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
   };
 
   const handleUpdateIncident = async (e) => {

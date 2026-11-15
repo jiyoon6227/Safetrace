@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { authFetch } from "../../api/client";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import { STATUS_ORDER } from "./constants";
+import { usePagination } from "../../hooks/usePagination";
 
 export function useIncidentDetail({
   incidents, resolveReportAddress,
@@ -13,7 +14,6 @@ export function useIncidentDetail({
     selectedIncidentIdRef.current = selectedIncidentId;
   }, [selectedIncidentId]);
   const [timeline, setTimeline] = useState([]);
-  const [timelineLoading, setTimelineLoading] = useState(false);
   const [linkedReports, setLinkedReports] = useState([]);
   const [linkedReportsLoading, setLinkedReportsLoading] = useState(false);
   const [memo, setMemo] = useState("");
@@ -49,36 +49,25 @@ export function useIncidentDetail({
   }, [selectedIncidentId]);
   // "연결된 제보" 전체보기 팝업
   const [showLinkedReportsModal, setShowLinkedReportsModal] = useState(false);
-  const [linkedReportsModalPage, setLinkedReportsModalPage] = useState(1);
-  const LINKED_REPORTS_MODAL_PAGE_SIZE = 10;
-  const linkedReportsModalTotalPages = Math.max(1, Math.ceil(linkedReports.length / LINKED_REPORTS_MODAL_PAGE_SIZE));
-  const pagedLinkedReports = linkedReports.slice(
-    (linkedReportsModalPage - 1) * LINKED_REPORTS_MODAL_PAGE_SIZE,
-    linkedReportsModalPage * LINKED_REPORTS_MODAL_PAGE_SIZE
-  );
+  const {
+    page: linkedReportsModalPage, setPage: setLinkedReportsModalPage,
+    totalPages: linkedReportsModalTotalPages, pageItems: pagedLinkedReports,
+  } = usePagination(linkedReports, 10);
   useEffect(() => {
     if (showLinkedReportsModal) setLinkedReportsModalPage(1);
-  }, [showLinkedReportsModal, selectedIncidentId]);
-  useEffect(() => {
-    if (linkedReportsModalPage > linkedReportsModalTotalPages) {
-      setLinkedReportsModalPage(linkedReportsModalTotalPages);
-    }
-  }, [linkedReportsModalPage, linkedReportsModalTotalPages]);
+  }, [showLinkedReportsModal, selectedIncidentId, setLinkedReportsModalPage]);
   useEscapeKey(showLinkedReportsModal, () => setShowLinkedReportsModal(false));
 
   const openIncidentDetail = async (incidentId) => {
     setSelectedIncidentId(incidentId);
     setDetailError("");
     setMemo("");
-    setTimelineLoading(true);
     setLinkedReportsLoading(true);
     try {
       const data = await authFetch(`/api/incidents/${incidentId}/timeline`);
       setTimeline(data);
     } catch (err) {
       setDetailError(err.message);
-    } finally {
-      setTimelineLoading(false);
     }
     try {
       const reportsData = await authFetch(`/api/incidents/${incidentId}/reports`);

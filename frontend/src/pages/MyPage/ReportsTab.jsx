@@ -10,6 +10,7 @@ import {
 import { DISASTER_ICON } from "../../constants/disaster";
 import { STATUS_LABEL as STATUS_LABEL_KO } from "../../constants/status";
 import { reportStateOf } from "../../utils/reportState";
+import { coordToAddress } from "../../utils/kakaoGeo";
 
 // ---- 내 제보 내역 --------------------------------------------------------------
 
@@ -47,18 +48,11 @@ export default function ReportsTab({ reports = [], loading }) {
   useEffect(() => {
     const targets = reports.filter((r) => !r.incidentId && !reportAddresses[r.reportId]);
     if (targets.length === 0 || !window.kakao?.maps) return;
-    window.kakao.maps.load(() => {
-      const geocoder = new window.kakao.maps.services.Geocoder();
-      targets.forEach((r) => {
-        if (r.latitude == null || r.longitude == null) return;
-        geocoder.coord2Address(r.longitude, r.latitude, (result, status) => {
-          const addr =
-            status === window.kakao.maps.services.Status.OK && result[0]
-              ? result[0].road_address?.address_name || result[0].address?.address_name || "주소 확인 불가"
-              : "주소 확인 불가";
-          setReportAddresses((prev) => ({ ...prev, [r.reportId]: addr }));
-        });
-      });
+    targets.forEach((r) => {
+      if (r.latitude == null || r.longitude == null) return;
+      coordToAddress(r.latitude, r.longitude)
+        .then((addr) => setReportAddresses((prev) => ({ ...prev, [r.reportId]: addr || "주소 확인 불가" })))
+        .catch(() => {});
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reports]);

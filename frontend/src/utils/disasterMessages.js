@@ -1,3 +1,5 @@
+import { formatDotDateTime } from "./dateFormat";
+
 export const MAIN_DISASTER_FILTERS = [
   "전체",
   "호우",
@@ -36,13 +38,7 @@ export function formatDisasterTime(value) {
 export function formatDisasterDateTime(value) {
   const date = parseDisasterDate(value);
 
-  if (!date) return value || "-";
-
-  const pad = (n) => String(n).padStart(2, "0");
-
-  return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(
-    date.getDate()
-  )} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return date ? formatDotDateTime(date) : value || "-";
 }
 
 export function disasterFilterOf(message) {

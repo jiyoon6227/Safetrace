@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { X, MapPin, Loader2, Search, Camera } from "lucide-react";
 import { authFetch, authUpload } from "../api/client";
 import { useEscapeKey } from "../hooks/useEscapeKey";
+import { addressToCoords, coordToAddress, openPostcode } from "../utils/kakaoGeo";
 
 const DISASTER_TYPES = ["침수", "화재", "산사태", "강풍", "폭염", "한파", "기타"];
 const PHONE_PREFIXES = ["010", "011", "016", "017", "018", "019"];
@@ -53,20 +54,7 @@ export default function ReportForm({ onClose, onSuccess, variant = "modal" }) {
   useEscapeKey(!isPage, safeClose);
 
   const reverseGeocode = (lat, lng) => {
-    if (!window.kakao || !window.kakao.maps) return;
-
-    window.kakao.maps.load(() => {
-      const geocoder = new window.kakao.maps.services.Geocoder();
-      geocoder.coord2Address(lng, lat, (result, status) => {
-        if (status === window.kakao.maps.services.Status.OK && result[0]) {
-          const addr =
-            result[0].road_address?.address_name ||
-            result[0].address?.address_name ||
-            "";
-          setAddressResult(addr);
-        }
-      });
-    });
+    coordToAddress(lat, lng).then((addr) => addr != null && setAddressResult(addr)).catch(() => {});
   };
 
   const handleLocate = () => {
@@ -96,47 +84,23 @@ export default function ReportForm({ onClose, onSuccess, variant = "modal" }) {
     );
   };
 
-  const geocodeAddress = (address) => {
-    if (!window.kakao || !window.kakao.maps) {
-      setError("지도 API를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
-      return;
-    }
-
+  const geocodeAddress = async (address) => {
     setGeocoding(true);
-
-    window.kakao.maps.load(() => {
-      const geocoder = new window.kakao.maps.services.Geocoder();
-
-      geocoder.addressSearch(address, (result, status) => {
-        setGeocoding(false);
-
-        if (status === window.kakao.maps.services.Status.OK && result[0]) {
-          setCoords({
-            lat: Number(result[0].y),
-            lng: Number(result[0].x),
-          });
-          setAddressResult(address);
-        } else {
-          setError("좌표 변환에 실패했습니다. 다른 주소로 다시 검색해주세요.");
-        }
-      });
-    });
+    try {
+      const found = await addressToCoords(address);
+      if (!found) throw new Error("좌표 변환에 실패했습니다. 다른 주소로 다시 검색해주세요.");
+      setCoords(found);
+      setAddressResult(address);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGeocoding(false);
+    }
   };
 
   const handleAddressSearch = () => {
     setError("");
-
-    if (!window.daum || !window.daum.Postcode) {
-      setError("주소 검색 서비스를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
-      return;
-    }
-
-    new window.daum.Postcode({
-      oncomplete: (data) => {
-        const fullAddress = data.roadAddress || data.jibunAddress;
-        geocodeAddress(fullAddress);
-      },
-    }).open();
+    if (!openPostcode(geocodeAddress)) setError("주소 검색 서비스를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
   };
 
   const handlePhotoChange = (e) => {

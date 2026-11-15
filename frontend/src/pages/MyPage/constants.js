@@ -70,30 +70,7 @@ export const ROLE_LABEL = {
   STAFF: "담당 직원",
 };
 
-export const formatDateTime = (iso) => {
-  if (!iso) return "-";
-
-  const d = new Date(iso);
-
-  return d.toLocaleString("ko-KR", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
-
-export const formatDateTimeFull = (iso) => {
-  if (!iso) return "-";
-
-  const d = new Date(iso);
-
-  const pad = (n) => String(n).padStart(2, "0");
-
-  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(
-    d.getDate()
-  )} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
+export { formatDotDateTime as formatDateTimeFull, formatShortDateTime as formatDateTime } from "../../utils/dateFormat";
 
 export const SAFETY_STATUS_LABEL = {
   PENDING: "응답 대기중",

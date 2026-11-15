@@ -1,5 +1,6 @@
 import { Link2, X, Image as ImageIcon } from "lucide-react";
 import { formatDateTime } from "./constants";
+import TablePagination from "./TablePagination";
 
 export default function LinkedReportsModal({
   setShowLinkedReportsModal,
@@ -112,36 +113,7 @@ export default function LinkedReportsModal({
           <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-[12px] text-slate-500">
             <span className="justify-self-start">총 {linkedReports.length}건</span>
 
-            <div className="flex items-center justify-center gap-2">
-              <button
-                type="button"
-                disabled={linkedReportsModalPage === 1}
-                onClick={() => setLinkedReportsModalPage((p) => Math.max(1, p - 1))}
-                className="w-8 h-8 rounded-lg border border-slate-200 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              >
-                ‹
-              </button>
-
-              {Array.from({ length: linkedReportsModalTotalPages }, (_, i) => i + 1).map((page) => (
-                <button
-                  key={page}
-                  type="button"
-                  onClick={() => setLinkedReportsModalPage(page)}
-                  className={`w-8 h-8 rounded-lg border text-[12px] font-bold transition cursor-pointer ${linkedReportsModalPage === page ? "bg-blue-600 border-blue-600 text-white" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
-                >
-                  {page}
-                </button>
-              ))}
-
-              <button
-                type="button"
-                disabled={linkedReportsModalPage === linkedReportsModalTotalPages}
-                onClick={() => setLinkedReportsModalPage((p) => Math.min(linkedReportsModalTotalPages, p + 1))}
-                className="w-8 h-8 rounded-lg border border-slate-200 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              >
-                ›
-              </button>
-            </div>
+            <TablePagination variant="modal" currentPage={linkedReportsModalPage} totalPages={linkedReportsModalTotalPages} setPage={setLinkedReportsModalPage} />
 
             <span className="justify-self-end">{linkedReportsModalPage} / {linkedReportsModalTotalPages} 페이지</span>
           </div>

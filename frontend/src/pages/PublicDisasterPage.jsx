@@ -2,8 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
   Clock3,
   MapPin,
   Megaphone,
@@ -13,6 +11,8 @@ import {
 } from "lucide-react";
 import { authFetch } from "../api/client";
 import ServicePageLayout from "../components/ServicePageLayout";
+import { usePagination } from "../hooks/usePagination";
+import TablePagination from "./ControlBoard/TablePagination";
 import {
   MAIN_DISASTER_FILTERS,
   disasterFilterOf,
@@ -50,7 +50,6 @@ export default function PublicDisasterPage({
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [selectedMessage, setSelectedMessage] = useState(null);
-  const [page, setPage] = useState(1);
 
   const loadMessages = async () => {
     setLoading(true);
@@ -93,21 +92,12 @@ export default function PublicDisasterPage({
     });
   }, [messages, filter, query]);
 
+  const { page: safePage, setPage, totalPages, pageItems: visibleMessages } = usePagination(filteredMessages, PAGE_SIZE);
+
   useEffect(() => {
     setPage(1);
-  }, [filter, query]);
+  }, [filter, query, setPage]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredMessages.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const visibleMessages = filteredMessages.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-
-  const pageNumbers = useMemo(() => {
-    if (totalPages <= 10) return Array.from({ length: totalPages }, (_, index) => index + 1);
-    let start = Math.max(1, safePage - 4);
-    let end = Math.min(totalPages, start + 9);
-    start = Math.max(1, end - 9);
-    return Array.from({ length: end - start + 1 }, (_, index) => start + index);
-  }, [safePage, totalPages]);
 
 
   return (
@@ -266,40 +256,7 @@ export default function PublicDisasterPage({
           </div>
 
           {!loading && !error && filteredMessages.length > 0 && (
-            <div className="mt-7 flex items-center justify-center gap-1">
-              <button
-                type="button"
-                disabled={safePage <= 1}
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
-                className="flex h-8 w-8 items-center justify-center border border-slate-200 text-slate-400 disabled:opacity-30"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
-
-              {pageNumbers.map((pageNumber) => (
-                <button
-                  key={pageNumber}
-                  type="button"
-                  onClick={() => setPage(pageNumber)}
-                  className={`h-8 min-w-8 border px-2 text-[11px] font-bold ${
-                    pageNumber === safePage
-                      ? "border-[#0B5FB3] bg-[#0B5FB3] text-white"
-                      : "border-slate-200 bg-white text-slate-500 hover:border-[#0B5FB3] hover:text-[#0B5FB3]"
-                  }`}
-                >
-                  {pageNumber}
-                </button>
-              ))}
-
-              <button
-                type="button"
-                disabled={safePage >= totalPages}
-                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                className="flex h-8 w-8 items-center justify-center border border-slate-200 text-slate-400 disabled:opacity-30"
-              >
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <TablePagination variant="square" windowSize={10} currentPage={safePage} totalPages={totalPages} setPage={setPage} />
           )}
         </>
       )}

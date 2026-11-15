@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   ChevronUp,
   Eye,
@@ -14,7 +13,10 @@ import {
 } from "lucide-react";
 import { authFetch, authUpload, getCurrentUser } from "../api/client";
 import SiteHeader from "../components/SiteHeader";
+import { usePagination } from "../hooks/usePagination";
+import TablePagination from "./ControlBoard/TablePagination";
 import { buildServiceSidebarItems } from "../components/ServicePageLayout";
+import { formatDotDate, formatDotDateTime } from "../utils/dateFormat";
 
 const PAGE_SIZE = 10;
 
@@ -39,28 +41,6 @@ const FILTERS = [
   { key: "MAINTENANCE", label: "점검" },
   { key: "NORMAL", label: "안내" },
 ];
-
-function formatDateTime(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${y}.${m}.${day} ${hh}:${mm}`;
-}
-
-function formatDate(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}.${m}.${day}`;
-}
 
 function NoticeTypeBadge({ type }) {
   const meta = NOTICE_TYPE_META[type] || NOTICE_TYPE_META.NORMAL;
@@ -253,7 +233,6 @@ export default function NoticePage({ onNavigate, initialNoticeId = null }) {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
-  const [page, setPage] = useState(1);
   const [selectedNoticeId, setSelectedNoticeId] = useState(initialNoticeId);
   const [selectedNotice, setSelectedNotice] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -276,10 +255,6 @@ export default function NoticePage({ onNavigate, initialNoticeId = null }) {
   useEffect(() => {
     loadNotices();
   }, []);
-
-  useEffect(() => {
-    setPage(1);
-  }, [filter, searchQuery]);
 
   useEffect(() => {
     if (selectedNoticeId == null) {
@@ -307,9 +282,11 @@ export default function NoticePage({ onNavigate, initialNoticeId = null }) {
     });
   }, [notices, filter, searchQuery]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredNotices.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const pagedNotices = filteredNotices.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const { page: safePage, setPage, totalPages, pageItems: pagedNotices } = usePagination(filteredNotices, PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter, searchQuery, setPage]);
 
   const selectedNoticeIndex = useMemo(() => {
     if (selectedNoticeId == null) return -1;
@@ -464,7 +441,7 @@ export default function NoticePage({ onNavigate, initialNoticeId = null }) {
                             <td className="px-3 py-3.5 text-center"><NoticeTypeBadge type={notice.noticeType} /></td>
                             <td className="px-3 py-3.5 text-left font-semibold text-[#26384E]"><span className="block truncate">{notice.title}</span></td>
                             <td className="px-3 py-3.5 text-center text-slate-500">{notice.writerName || "담당자"}</td>
-                            <td className="px-3 py-3.5 text-center text-slate-500">{formatDate(notice.createdAt)}</td>
+                            <td className="px-3 py-3.5 text-center text-slate-500">{formatDotDate(notice.createdAt)}</td>
                             <td className="px-3 py-3.5 text-center text-slate-500">{notice.viewCount ?? 0}</td>
                           </tr>
                         );
@@ -475,13 +452,7 @@ export default function NoticePage({ onNavigate, initialNoticeId = null }) {
               </div>
 
               {!loading && filteredNotices.length > 0 && (
-                <div className="mt-7 flex items-center justify-center gap-1">
-                  <button type="button" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="flex h-8 w-8 items-center justify-center border border-slate-200 text-slate-400 disabled:opacity-30"><ChevronLeft className="h-3.5 w-3.5" /></button>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNo) => (
-                    <button key={pageNo} type="button" onClick={() => setPage(pageNo)} className={`h-8 min-w-8 border px-2 text-[11px] font-bold ${safePage === pageNo ? "border-[#0B5FB3] bg-[#0B5FB3] text-white" : "border-slate-200 bg-white text-slate-500 hover:border-[#0B5FB3] hover:text-[#0B5FB3]"}`}>{pageNo}</button>
-                  ))}
-                  <button type="button" disabled={safePage >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="flex h-8 w-8 items-center justify-center border border-slate-200 text-slate-400 disabled:opacity-30"><ChevronRight className="h-3.5 w-3.5" /></button>
-                </div>
+                <TablePagination variant="square" currentPage={safePage} totalPages={totalPages} setPage={setPage} />
               )}
             </>
           ) : (
@@ -508,7 +479,7 @@ export default function NoticePage({ onNavigate, initialNoticeId = null }) {
                         <h2 className="text-[19px] font-extrabold leading-8 text-[#1E2D40]">{selectedNotice.title}</h2>
                         <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-[11px] text-slate-500">
                           <span>작성자 : {selectedNotice.writerName || "담당자"}</span>
-                          <span>등록일 : {formatDateTime(selectedNotice.createdAt)}</span>
+                          <span>등록일 : {formatDotDateTime(selectedNotice.createdAt)}</span>
                           <span className="inline-flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> 조회수 : {selectedNotice.viewCount ?? 0}</span>
                         </div>
                       </div>

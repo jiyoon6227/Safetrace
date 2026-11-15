@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { User, Users, Bell, MapPin, Camera, Lock } from "lucide-react";
 import { authFetch, authUpload } from "../../api/client";
+import { openPostcode } from "../../utils/kakaoGeo";
 import { formatPhoneNumber, ROLE_LABEL, SAFETY_STATUS_STYLE, SAFETY_STATUS_LABEL } from "./constants";
 import PasswordChangeModal from "./PasswordChangeModal";
 
@@ -72,15 +73,9 @@ export default function InfoTab({
   };
 
   const openAddressSearch = () => {
-    if (!window.daum || !window.daum.Postcode) {
+    if (!openPostcode((address) => setDraft((prev) => ({ ...prev, address })))) {
       alert("주소 검색 스크립트를 불러오는 중입니다. 잠시 후 다시 시도해주세요.");
-      return;
     }
-    new window.daum.Postcode({
-      oncomplete: (data) => {
-        setDraft((prev) => ({ ...prev, address: data.roadAddress || data.address }));
-      },
-    }).open();
   };
 
   if (memberLoading) return <p className="text-sm text-slate-400">불러오는 중...</p>;

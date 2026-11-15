@@ -1,10 +1,6 @@
 import { WEATHER_LOCATION_CACHE_KEY } from "./constants";
 
-export const formatDateTime = (iso) => {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  return d.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-};
+export { formatShortDateTime as formatDateTime } from "../../utils/dateFormat";
 
 // "2026. 09. 07. 14:30" 형식 — 연/월/일 2자리 고정 + 24시간제 시:분
 export const formatDateTimeFull = (iso) => {

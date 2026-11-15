@@ -8,6 +8,7 @@ import { buildNotificationItems } from "./pages/MyPage/constants";
 import { useEscapeKey } from "./hooks/useEscapeKey";
 import { WEATHER_LOCATION_CACHE_KEY } from "./pages/Main/constants";
 import { reportStateOf } from "./utils/reportState";
+import { coordToAddress, coordToRegion } from "./utils/kakaoGeo";
 import { readWeatherCachedLocation, distanceKm, pickPriorityIncident } from "./pages/Main/utils";
 import MainHeader from "./pages/Main/MainHeader";
 import MainHero from "./pages/Main/MainHero";
@@ -348,20 +349,12 @@ export default function MainPage() {
         }
 
         if (window.kakao?.maps?.services?.Geocoder) {
-          const geocoder = new window.kakao.maps.services.Geocoder();
-          geocoder.coord2RegionCode(lng, lat, (result, status) => {
-            if (!active || status !== window.kakao.maps.services.Status.OK || !result?.length) {
-              resolve(null);
-              return;
-            }
-            const region = result.find((item) => item.region_type === "H") || result[0];
-            resolve({
-              sido: region?.region_1depth_name || "",
-              label: [region?.region_1depth_name, region?.region_2depth_name]
-                .filter(Boolean)
-                .join(" "),
-            });
-          });
+          coordToRegion(lat, lng)
+            .then((region) => resolve(active && region ? {
+              sido: region.region_1depth_name || "",
+              label: [region.region_1depth_name, region.region_2depth_name].filter(Boolean).join(" "),
+            } : null))
+            .catch(() => resolve(null));
           return;
         }
 
@@ -758,30 +751,14 @@ export default function MainPage() {
     const targets = myReports.filter((r) => !r.incidentId && !pendingReportAddresses[r.reportId]);
     if (targets.length === 0 || !window.kakao?.maps) return;
 
-    // Kakao SDK가 autoload=false라 services를 바로 쓰면 아직 준비되지 않은 경우가 있음.
-    // maps.load 안에서 Geocoder를 생성해야 신규 제보 주소도 정상 표시된다.
-    window.kakao.maps.load(() => {
-      if (!window.kakao?.maps?.services) return;
-
-      const geocoder = new window.kakao.maps.services.Geocoder();
-      targets.forEach((report) => {
-        if (report.latitude == null || report.longitude == null) {
-          setPendingReportAddresses((prev) => ({
-            ...prev,
-            [report.reportId]: "위치정보 없음",
-          }));
-          return;
-        }
-
-        geocoder.coord2Address(report.longitude, report.latitude, (result, status) => {
-          const addr =
-            status === window.kakao.maps.services.Status.OK && result[0]
-              ? result[0].road_address?.address_name || result[0].address?.address_name || "주소 확인 불가"
-              : "주소 확인 불가";
-
-          setPendingReportAddresses((prev) => ({ ...prev, [report.reportId]: addr }));
-        });
-      });
+    targets.forEach((report) => {
+      if (report.latitude == null || report.longitude == null) {
+        setPendingReportAddresses((prev) => ({ ...prev, [report.reportId]: "위치정보 없음" }));
+        return;
+      }
+      coordToAddress(report.latitude, report.longitude)
+        .then((addr) => setPendingReportAddresses((prev) => ({ ...prev, [report.reportId]: addr || "주소 확인 불가" })))
+        .catch(() => {});
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myReports]);
