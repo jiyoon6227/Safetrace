@@ -66,7 +66,7 @@ class WebSocketTicketServiceTest {
     void 티켓은_매번_다르고_JWT_같은_구조를_갖지_않는다() {
         Set<String> tickets = new HashSet<>();
         for (int i = 0; i < 200; i++) {
-            tickets.add(service.issue(7L));
+            tickets.add(service.issue((long) i)); // 회원별 발급 한도에 걸리지 않게 회원을 나눈다
         }
 
         assertEquals(200, tickets.size());
@@ -87,7 +87,7 @@ class WebSocketTicketServiceTest {
     @Test
     void 티켓이_너무_많이_쌓이면_새로_발급하지_않지만_만료된_것은_정리한다() {
         for (int i = 0; i < 10_000; i++) {
-            service.issue(1L);
+            service.issue((long) i);
         }
 
         TooManyRequestsException e = assertThrows(TooManyRequestsException.class, () -> service.issue(2L));
@@ -97,5 +97,49 @@ class WebSocketTicketServiceTest {
         String ticket = service.issue(2L);
 
         assertEquals(Long.valueOf(2L), service.consume(ticket));
+    }
+
+    @Test
+    void 한_회원이_1분에_받을_수_있는_티켓에는_한도가_있다() {
+        for (int i = 0; i < 30; i++) {
+            service.issue(7L);
+        }
+
+        TooManyRequestsException e = assertThrows(TooManyRequestsException.class, () -> service.issue(7L));
+
+        assertTrue(e.getRetryAfterSeconds() > 0);
+    }
+
+    @Test
+    void 발급_한도는_회원마다_따로_센다() {
+        for (int i = 0; i < 30; i++) {
+            service.issue(7L);
+        }
+
+        assertEquals(Long.valueOf(8L), service.consume(service.issue(8L)));
+    }
+
+    @Test
+    void 발급_한도는_1분이_지나면_풀린다() {
+        for (int i = 0; i < 30; i++) {
+            service.issue(7L);
+        }
+
+        now.addAndGet(60_000L);
+
+        assertEquals(Long.valueOf(7L), service.consume(service.issue(7L)));
+    }
+
+    @Test
+    void 회원의_미사용_티켓을_모두_폐기해도_다른_회원_티켓은_그대로다() {
+        String first = service.issue(7L);
+        String second = service.issue(7L);
+        String other = service.issue(8L);
+
+        service.revokeAll(7L);
+
+        assertNull(service.consume(first));
+        assertNull(service.consume(second));
+        assertEquals(Long.valueOf(8L), service.consume(other));
     }
 }

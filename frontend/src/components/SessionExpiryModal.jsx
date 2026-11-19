@@ -1,6 +1,7 @@
 // 세션 만료 임박 알림 팝업
 // - 기능: 로그인 토큰(JWT) 만료 5분 전부터 "연장하시겠습니까?" 팝업을 띄움
 // - "연장하기" 누르면 /api/auth/refresh 호출해서 새 토큰을 받아 localStorage 교체 (만료시간 리셋)
+//   단, 로그인한 뒤 서버가 정한 최대 시간이 지나면 연장이 거절되고 안내 문구를 보여줌
 // - 응답 없이 만료되면 자동 로그아웃 (토큰 삭제 + auth:invalid)
 import { useEffect, useRef, useState } from "react";
 import { getTokenExpiryMs, refreshToken, logout } from "../api/client";
@@ -22,6 +23,7 @@ export default function SessionExpiryModal() {
   const [visible, setVisible] = useState(false);
   const [remainingMs, setRemainingMs] = useState(0);
   const [extending, setExtending] = useState(false);
+  const [error, setError] = useState("");
   const loggedOutRef = useRef(false); // 만료로 인한 자동로그아웃 이벤트를 한 번만 쏘기 위한 가드
 
   useEffect(() => {
@@ -61,12 +63,13 @@ export default function SessionExpiryModal() {
   // "연장하기" 버튼 클릭 시 - 서버에 새 토큰 요청
   const handleExtend = async () => {
     setExtending(true);
+    setError("");
     try {
       await refreshToken(); // 내부에서 localStorage 토큰을 새 걸로 교체함
       setVisible(false); // 팝업 닫기 - 다음 tick에서 새로 늘어난 만료시각 기준으로 다시 판단됨
-    } catch {
-      // 연장 실패 시 401 처리는 authFetch에서 완료, 팝업만 닫기
-      setVisible(false);
+    } catch (e) {
+      // 401 처리는 authFetch에서 완료. 그 밖의 실패(최대 시간 도달 등)는 팝업에 이유를 보여줌
+      setError(e instanceof TypeError ? "서버에 연결하지 못했습니다." : e.message);
     } finally {
       setExtending(false);
     }
@@ -91,6 +94,7 @@ export default function SessionExpiryModal() {
           <span className="font-semibold text-red-500">{formatRemaining(remainingMs)}</span> 후
           자동으로 로그아웃됩니다. 계속 이용하시겠습니까?
         </p>
+        {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
         <div className="mt-5 flex gap-2">
           <button
             onClick={handleLogoutNow}

@@ -37,6 +37,10 @@ public class SafetyCheckWebSocketHandler extends TextWebSocketHandler {
         sessions.remove(session.getId());
     }
 
+    public void disconnect(Long memberId) {
+        WebSocketSessions.closeAllOf(sessions.values(), memberId);
+    }
+
     public void broadcastRequested(SafetyCheck check) {
         sendToRelatedMembers("SAFETY_CHECK_REQUESTED", check);
     }

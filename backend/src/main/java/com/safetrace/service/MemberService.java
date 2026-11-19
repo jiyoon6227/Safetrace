@@ -7,6 +7,7 @@ import com.safetrace.mapper.MemberMapper;
 import com.safetrace.util.MemberInputValidator;
 import com.safetrace.util.PasswordPolicy;
 import com.safetrace.util.UploadUrlValidator;
+import com.safetrace.websocket.WebSocketSessionRevoker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ public class MemberService {
     private final JwtTokenProvider jwtTokenProvider;
     private final EmailVerificationService emailVerificationService;
     private final MailService mailService;
+    private final WebSocketSessionRevoker webSocketSessionRevoker;
 
     // verificationToken: 이메일 인증(verify-code)을 통과했을 때 받은 값. 인증한 본인만 가입에 쓸 수 있다.
     public void signup(String loginId, String rawPassword, String name, String email, String verificationToken) {
@@ -70,15 +72,26 @@ public class MemberService {
     }
 
     // 로그아웃 - 이 회원이 발급받은 JWT를 전부 무효로 만든다 (다른 기기 포함)
+    // 이미 열려 있는 WebSocket 연결과 아직 안 쓴 티켓도 같이 끊는다
     public void logout(Long memberId) {
         memberMapper.increaseTokenVersion(memberId);
+        webSocketSessionRevoker.revoke(memberId);
     }
 
-    // 세션 연장용 토큰 재발급 (회원 존재·탈퇴 여부는 JwtAuthenticationFilter에서 검증 완료)
+    // 새 세션용 토큰 발급 - 세션 시작 시각이 지금으로 새로 잡힌다 (회원 존재·탈퇴 여부는 JwtAuthenticationFilter에서 검증 완료)
     public String reissueToken(Long memberId) {
         Member member = memberMapper.findById(memberId);
-        // 발급 시각 기준으로 만료시각(exp) 연장
         return jwtTokenProvider.generateToken(member.getMemberId(), member.getRole(), member.getName(), member.getCreatedAt(), member.getTokenVersion());
+    }
+
+    // 세션 연장 - 로그인 시각은 그대로 두고 만료시각만 늘린다. 최대 세션 시간에 닿았으면 더 늘리지 않는다.
+    public String refreshToken(Long memberId, String currentToken) {
+        if (jwtTokenProvider.isSessionLimitReached(currentToken)) {
+            throw new IllegalStateException("로그인 유지 가능 시간을 모두 사용했습니다. 다시 로그인해주세요.");
+        }
+        Member member = memberMapper.findById(memberId);
+        return jwtTokenProvider.generateRefreshedToken(member.getMemberId(), member.getRole(), member.getName(),
+                member.getCreatedAt(), member.getTokenVersion(), jwtTokenProvider.getSessionStartMs(currentToken));
     }
 
     // ---- 마이페이지 --------------------------------------------------------
@@ -121,6 +134,7 @@ public class MemberService {
         }
         PasswordPolicy.validate(newPassword, member.getLoginId());
         memberMapper.updatePassword(memberId, passwordEncoder.encode(newPassword));
+        webSocketSessionRevoker.revoke(memberId);
         return reissueToken(memberId);
     }
 
@@ -142,6 +156,7 @@ public class MemberService {
     // 탈퇴 - 실제 삭제 대신 IS_WITHDRAWN만 표시 (소프트 삭제). 참조 이력은 그대로 남음
     public void withdraw(Long memberId) {
         memberMapper.withdraw(memberId);
+        webSocketSessionRevoker.revoke(memberId);
     }
 
     // ---- 아이디/비밀번호 찾기 -----------------------------------------------
@@ -181,5 +196,6 @@ public class MemberService {
             throw new IllegalArgumentException("이메일 인증을 먼저 완료해주세요.");
         }
         memberMapper.updatePassword(member.getMemberId(), passwordEncoder.encode(newPassword));
+        webSocketSessionRevoker.revoke(member.getMemberId());
     }
 }

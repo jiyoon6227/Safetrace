@@ -3,6 +3,7 @@ package com.safetrace.service;
 import com.safetrace.config.JwtTokenProvider;
 import com.safetrace.domain.Member;
 import com.safetrace.mapper.MemberMapper;
+import com.safetrace.websocket.WebSocketSessionRevoker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -32,6 +33,7 @@ class MemberServiceTest {
     private JwtTokenProvider jwtTokenProvider;
     private EmailVerificationService emailVerificationService;
     private MailService mailService;
+    private WebSocketSessionRevoker webSocketSessionRevoker;
 
     private MemberService memberService;
 
@@ -42,13 +44,15 @@ class MemberServiceTest {
         jwtTokenProvider = mock(JwtTokenProvider.class);
         emailVerificationService = mock(EmailVerificationService.class);
         mailService = mock(MailService.class);
+        webSocketSessionRevoker = mock(WebSocketSessionRevoker.class);
 
         memberService = new MemberService(
                 memberMapper,
                 passwordEncoder,
                 jwtTokenProvider,
                 emailVerificationService,
-                mailService
+                mailService,
+                webSocketSessionRevoker
         );
     }
 
@@ -76,6 +80,7 @@ class MemberServiceTest {
 
         verify(memberMapper).updatePassword(1L, "encodedPassword");
         verify(emailVerificationService).consumeVerified(email, TOKEN);
+        verify(webSocketSessionRevoker).revoke(1L);
     }
 
     @Test
@@ -92,6 +97,7 @@ class MemberServiceTest {
         );
 
         verify(memberMapper, never()).updatePassword(anyLong(), anyString());
+        verify(webSocketSessionRevoker, never()).revoke(anyLong());
     }
 
     @Test
@@ -362,6 +368,7 @@ class MemberServiceTest {
         memberService.changePassword(1L, "currentPw123", "newPassword456");
 
         verify(memberMapper).updatePassword(1L, "newHash");
+        verify(webSocketSessionRevoker).revoke(1L);
     }
 
     @Test
@@ -421,6 +428,15 @@ class MemberServiceTest {
         memberService.logout(1L);
 
         verify(memberMapper).increaseTokenVersion(1L);
+        verify(webSocketSessionRevoker).revoke(1L);
+    }
+
+    @Test
+    void 탈퇴하면_실시간_연결과_미사용_티켓도_끊는다() {
+        memberService.withdraw(1L);
+
+        verify(memberMapper).withdraw(1L);
+        verify(webSocketSessionRevoker).revoke(1L);
     }
 
     @Test
@@ -440,7 +456,7 @@ class MemberServiceTest {
     }
 
     @Test
-    void 세션_연장으로_만든_토큰에도_회원의_현재_토큰_버전이_담긴다() {
+    void 새_세션용_토큰에도_회원의_현재_토큰_버전이_담긴다() {
         LocalDateTime createdAt = LocalDateTime.of(2026, 1, 1, 9, 0);
         Member stored = member("user1", "u1@test.com");
         stored.setRole("USER");
@@ -451,6 +467,33 @@ class MemberServiceTest {
         when(jwtTokenProvider.generateToken(1L, "USER", "이서연", createdAt, 5L)).thenReturn("token-v5");
 
         assertEquals("token-v5", memberService.reissueToken(1L));
+    }
+
+    @Test
+    void 세션_연장은_로그인_시각을_유지한_채_새_토큰을_만든다() {
+        LocalDateTime createdAt = LocalDateTime.of(2026, 1, 1, 9, 0);
+        Member stored = member("user1", "u1@test.com");
+        stored.setRole("USER");
+        stored.setName("이서연");
+        stored.setCreatedAt(createdAt);
+        stored.setTokenVersion(5L);
+        when(memberMapper.findById(1L)).thenReturn(stored);
+        when(jwtTokenProvider.isSessionLimitReached("old-token")).thenReturn(false);
+        when(jwtTokenProvider.getSessionStartMs("old-token")).thenReturn(123L);
+        when(jwtTokenProvider.generateRefreshedToken(1L, "USER", "이서연", createdAt, 5L, 123L)).thenReturn("refreshed");
+
+        assertEquals("refreshed", memberService.refreshToken(1L, "old-token"));
+
+        verify(jwtTokenProvider, never()).generateToken(any(), any(), any(), any(), anyLong());
+    }
+
+    @Test
+    void 최대_세션_시간에_닿은_토큰은_연장하지_않는다() {
+        when(jwtTokenProvider.isSessionLimitReached("old-token")).thenReturn(true);
+
+        assertThrows(IllegalStateException.class, () -> memberService.refreshToken(1L, "old-token"));
+
+        verify(jwtTokenProvider, never()).generateRefreshedToken(any(), any(), any(), any(), anyLong(), anyLong());
     }
 
     @Test
@@ -486,6 +529,7 @@ class MemberServiceTest {
 
         verify(memberMapper, never()).updatePassword(anyLong(), anyString());
         verify(jwtTokenProvider, never()).generateToken(any(), any(), any(), any(), anyLong());
+        verify(webSocketSessionRevoker, never()).revoke(anyLong());
     }
 
     // ---- 가족 검색 -----------------------------------------------------------

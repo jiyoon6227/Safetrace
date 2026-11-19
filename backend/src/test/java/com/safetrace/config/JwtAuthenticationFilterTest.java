@@ -33,7 +33,7 @@ class JwtAuthenticationFilterTest {
     private static final String SECRET = "test-secret-key-for-jwt-unit-tests-0123456789";
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 1, 1, 9, 0);
 
-    private final JwtTokenProvider provider = new JwtTokenProvider(SECRET, 3_600_000L);
+    private final JwtTokenProvider provider = new JwtTokenProvider(SECRET, 3_600_000L, 43_200_000L);
     private MemberMapper memberMapper;
     private JwtAuthenticationFilter filter;
 

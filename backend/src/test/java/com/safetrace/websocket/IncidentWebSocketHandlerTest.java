@@ -6,6 +6,7 @@ import com.safetrace.domain.Incident;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -18,8 +19,10 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -72,6 +75,24 @@ class IncidentWebSocketHandlerTest {
         handler.broadcastStatusChanged(incident(), "현장 도착");
 
         assertPublicPayload(receivedPayload(noRoleSession));
+    }
+
+    @Test
+    void 회원을_끊으면_그_회원의_연결만_닫는다() throws Exception {
+        handler.disconnect(2L);
+
+        verify(userSession).close(any(CloseStatus.class));
+        verify(staffSession, never()).close(any(CloseStatus.class));
+        verify(noRoleSession, never()).close(any(CloseStatus.class));
+    }
+
+    @Test
+    void 이미_닫힌_연결은_다시_닫지_않는다() throws Exception {
+        when(userSession.isOpen()).thenReturn(false);
+
+        handler.disconnect(2L);
+
+        verify(userSession, never()).close(any(CloseStatus.class));
     }
 
     private void assertPublicPayload(JsonNode payload) {

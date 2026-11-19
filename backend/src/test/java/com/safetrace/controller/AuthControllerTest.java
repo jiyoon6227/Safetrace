@@ -306,17 +306,30 @@ class AuthControllerTest {
         mockMvc.perform(post("/api/auth/refresh"))
                 .andExpect(status().isUnauthorized());
 
-        verify(memberService, never()).reissueToken(any());
+        verify(memberService, never()).refreshToken(any(), any());
     }
 
     @Test
-    void 인증된_세션_연장_요청은_새_토큰을_돌려준다() throws Exception {
+    void 인증된_세션_연장_요청은_현재_토큰으로_새_토큰을_돌려준다() throws Exception {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(7L, null, List.of(new SimpleGrantedAuthority("ROLE_USER"))));
-        when(memberService.reissueToken(7L)).thenReturn("renewed");
+        when(memberService.refreshToken(7L, "current-token")).thenReturn("renewed");
 
-        mockMvc.perform(post("/api/auth/refresh"))
+        mockMvc.perform(post("/api/auth/refresh").header("Authorization", "Bearer current-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").value("renewed"));
+    }
+
+    @Test
+    void 최대_세션_시간에_닿은_연장_요청은_401이_아니라_409로_알린다() throws Exception {
+        // 401이면 프론트가 자동 로그아웃하므로, 안내 문구만 보여주도록 409로 응답한다
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(7L, null, List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        when(memberService.refreshToken(7L, "current-token"))
+                .thenThrow(new IllegalStateException("로그인 유지 가능 시간을 모두 사용했습니다. 다시 로그인해주세요."));
+
+        mockMvc.perform(post("/api/auth/refresh").header("Authorization", "Bearer current-token"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("다시 로그인해주세요")));
     }
 }

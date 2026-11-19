@@ -94,7 +94,7 @@ class JwtWebSocketHandshakeInterceptorTest {
     @Test
     void 예전_방식의_token_파라미터는_JWT가_맞아도_받아주지_않는다() {
         when(memberMapper.findById(7L)).thenReturn(member("USER", "N"));
-        JwtTokenProvider provider = new JwtTokenProvider("test-secret-key-for-jwt-unit-tests-0123456789", 3_600_000L);
+        JwtTokenProvider provider = new JwtTokenProvider("test-secret-key-for-jwt-unit-tests-0123456789", 3_600_000L, 43_200_000L);
         String jwt = provider.generateToken(7L, "USER", "이서연", java.time.LocalDateTime.of(2026, 1, 1, 9, 0), 0L);
 
         assertFalse(handshake("token", jwt));

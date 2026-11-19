@@ -78,6 +78,7 @@ logging:
 jwt:
   secret: "YOUR_OWN_RANDOM_JWT_SECRET_MIN_32_BYTES"   # 32바이트 이상 무작위 문자열 (예: openssl rand -base64 48)
   expiration-ms: 3600000                              # 토큰 유효시간 1시간
+  max-session-ms: 43200000                            # 로그인 후 최대 12시간. 연장을 눌러도 이 시간을 넘길 수 없다 (생략하면 12시간)
 
 
 # ============================================================
@@ -85,7 +86,8 @@ jwt:
 # ============================================================
 app:
   upload-dir: uploads                          # 제보 사진 저장 경로 (backend 실행 폴더 기준)
-  frontend-base-url: http://localhost:5173     # CORS · WebSocket 허용 Origin, 안전확인 이메일 링크 주소
+  frontend-base-url: http://localhost:5173     # 안전확인 이메일 링크 주소
+  # allowed-origins: http://localhost:*,http://127.0.0.1:*   # CORS · WebSocket 허용 Origin (쉼표로 구분). 생략하면 frontend-base-url만 허용
   safety-check-token-expiry-hours: 24          # 안전확인 이메일 토큰 유효시간 (시간)
 
 

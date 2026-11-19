@@ -38,6 +38,10 @@ public class ReportWebSocketHandler extends TextWebSocketHandler {
         sessions.remove(session.getId());
     }
 
+    public void disconnect(Long memberId) {
+        WebSocketSessions.closeAllOf(sessions.values(), memberId);
+    }
+
     public void broadcastReportCreated(Report report) {
         sendReportEvent("REPORT_CREATED", report);
     }

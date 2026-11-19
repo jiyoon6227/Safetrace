@@ -56,10 +56,11 @@ public class AuthController {
     }
 
     // 세션 연장 - 만료 전인 기존 토큰으로 호출하면 만료시간만 새로 늘려서 재발급.
+    // 로그인한 시각부터 jwt.max-session-ms가 지나면 더 늘려주지 않고 409로 응답한다 (401이 아니라서 프론트가 자동 로그아웃시키지는 않는다)
     // (프론트의 SessionExpiryModal에서 "연장하기" 버튼 눌렀을 때 호출하는 API)
     // /api/auth/**는 permitAll이므로 인증 여부 직접 확인, 미인증 시 401 (프론트 authFetch의 자동 로그아웃 트리거)
     @PostMapping("/refresh")
-    public ResponseEntity<Map<String, String>> refresh() {
+    public ResponseEntity<Map<String, String>> refresh(HttpServletRequest request) {
         // JwtAuthenticationFilter가 유효한 토큰일 때만 SecurityContext에 인증정보를 넣어둠
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !(auth.getPrincipal() instanceof Long memberId)) {
@@ -67,7 +68,9 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("message", "세션 연장에 실패했습니다. 다시 로그인해주세요."));
         }
-        String token = memberService.reissueToken(memberId); // 만료시간만 새로 늘린 토큰 재발급
+        // 필터를 통과해 인증됐다면 Bearer 토큰이 반드시 있다
+        String currentToken = request.getHeader("Authorization").substring(7);
+        String token = memberService.refreshToken(memberId, currentToken);
         return ResponseEntity.ok(Map.of("token", token));
     }
 

@@ -38,6 +38,10 @@ public class IncidentWebSocketHandler extends TextWebSocketHandler {
         sessions.remove(session.getId());
     }
 
+    public void disconnect(Long memberId) {
+        WebSocketSessions.closeAllOf(sessions.values(), memberId);
+    }
+
     public void broadcastIncidentCreated(Incident incident) {
         broadcast("INCIDENT_CREATED", incident, null);
     }

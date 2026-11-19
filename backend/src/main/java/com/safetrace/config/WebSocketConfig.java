@@ -20,8 +20,9 @@ public class WebSocketConfig implements WebSocketConfigurer {
     private final ReportWebSocketHandler reportWebSocketHandler;
     private final JwtWebSocketHandshakeInterceptor jwtWebSocketHandshakeInterceptor;
 
-    @Value("${app.frontend-base-url}")
-    private String frontendBaseUrl;
+    // SecurityConfig의 CORS와 같은 값을 쓴다
+    @Value("${app.allowed-origins:${app.frontend-base-url}}")
+    private String[] allowedOrigins;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
@@ -32,26 +33,14 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
         registry.addHandler(incidentWebSocketHandler, "/ws/incidents")
                 .addInterceptors(jwtWebSocketHandshakeInterceptor)
-                .setAllowedOriginPatterns(
-                        "http://localhost:*",
-                        "http://127.0.0.1:*",
-                        frontendBaseUrl
-                );
+                .setAllowedOriginPatterns(allowedOrigins);
 
         registry.addHandler(safetyCheckWebSocketHandler, "/ws/safety-check")
                 .addInterceptors(jwtWebSocketHandshakeInterceptor)
-                .setAllowedOriginPatterns(
-                        "http://localhost:*",
-                        "http://127.0.0.1:*",
-                        frontendBaseUrl
-                );
+                .setAllowedOriginPatterns(allowedOrigins);
 
         registry.addHandler(reportWebSocketHandler, "/ws/reports")
                 .addInterceptors(jwtWebSocketHandshakeInterceptor)
-                .setAllowedOriginPatterns(
-                        "http://localhost:*",
-                        "http://127.0.0.1:*",
-                        frontendBaseUrl
-                );
+                .setAllowedOriginPatterns(allowedOrigins);
     }
 }
