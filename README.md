@@ -273,7 +273,7 @@ ADMIN 출고
 | 분류 | 기술 |
 |---|---|
 | **Language** | Java 21, JavaScript |
-| **Backend** | Spring Boot 3.3.4, Spring Security, JWT, MyBatis, WebSocket |
+| **Backend** | Spring Boot 3.5.16, Spring Security, JWT, MyBatis, WebSocket |
 | **Frontend** | React, Vite, Tailwind CSS, lucide-react |
 | **Database** | Oracle DB |
 | **Build&nbsp;/&nbsp;Test** | Maven, JUnit 5, Mockito, Vitest |
