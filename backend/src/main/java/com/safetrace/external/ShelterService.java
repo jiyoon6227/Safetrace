@@ -2,6 +2,7 @@ package com.safetrace.external;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.safetrace.util.LogSanitizer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -97,7 +98,7 @@ public class ShelterService {
             return Map.of("available", false);
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            log.warn("대피시설 요약 API 호출 실패: 원인={}", e.toString());
+            log.warn("대피시설 요약 API 호출 실패: 원인={}", LogSanitizer.describe(e));
             return Map.of("available", false);
         }
     }
@@ -322,7 +323,7 @@ public class ShelterService {
             log.warn("대피시설 API 타임아웃(5초 초과): guName={}", guName);
             return List.of();
         } catch (IOException | InterruptedException e) {
-            log.warn("대피시설 API 호출 실패: guName={}, 원인={}", guName, e.toString());
+            log.warn("대피시설 API 호출 실패: guName={}, 원인={}", guName, LogSanitizer.describe(e));
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             return List.of();
         }

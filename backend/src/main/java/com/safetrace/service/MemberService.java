@@ -4,6 +4,7 @@ import com.safetrace.config.JwtTokenProvider;
 import com.safetrace.domain.Member;
 import com.safetrace.dto.FamilyMemberSearchResponse;
 import com.safetrace.mapper.MemberMapper;
+import com.safetrace.util.PasswordPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,8 @@ public class MemberService {
     private final MailService mailService;
 
     public void signup(String loginId, String rawPassword, String name, String email) {
+        // 화면에서 거르더라도 API를 직접 호출하면 우회되므로 서버에서도 비밀번호 규칙을 검사
+        PasswordPolicy.validate(rawPassword, loginId);
         if (memberMapper.findByLoginId(loginId) != null) {
             throw new IllegalArgumentException("이미 존재하는 아이디입니다.");
         }
@@ -36,6 +39,10 @@ public class MemberService {
         if (isEmailTaken(email)) {
             throw new IllegalArgumentException("이미 사용 중인 이메일입니다.");
         }
+        // 인증 완료 상태는 1회용. 같은 인증으로 동시에 가입 요청이 여러 개 와도 한 요청만 통과한다.
+        if (!emailVerificationService.consumeVerified(email)) {
+            throw new IllegalArgumentException("이메일 인증을 먼저 완료해주세요.");
+        }
 
         Member member = new Member();
         member.setLoginId(loginId);
@@ -45,7 +52,6 @@ public class MemberService {
         member.setRole("USER");
 
         memberMapper.insert(member);
-        emailVerificationService.clearVerified(email);
     }
 
     public boolean isEmailTaken(String email) {
@@ -103,6 +109,7 @@ public class MemberService {
         if (!passwordEncoder.matches(currentPassword, withPassword.getPassword())) {
             throw new IllegalArgumentException("현재 비밀번호가 일치하지 않습니다.");
         }
+        PasswordPolicy.validate(newPassword, member.getLoginId());
         memberMapper.updatePassword(memberId, passwordEncoder.encode(newPassword));
     }
 
@@ -132,6 +139,7 @@ public class MemberService {
         if (member == null || name == null || !name.equals(member.getName())) {
             throw new IllegalArgumentException("일치하는 회원 정보가 없습니다.");
         }
+        emailVerificationService.reserveMailSend(email); // 같은 이메일로 메일이 계속 나가지 않도록 횟수 제한
         mailService.sendLoginId(email, member.getName(), member.getLoginId());
     }
 
@@ -151,10 +159,12 @@ public class MemberService {
         if (member == null || email == null || !email.equals(member.getEmail())) {
             throw new IllegalArgumentException("일치하는 회원 정보가 없습니다.");
         }
-        if (!emailVerificationService.isVerified(email)) {
+        // 규칙 위반이면 인증 상태를 쓰기 전에 거절 - 비밀번호만 고쳐서 다시 시도할 수 있다
+        PasswordPolicy.validate(newPassword, loginId);
+        // 인증 완료 상태는 1회용 + 10분 유효
+        if (!emailVerificationService.consumeVerified(email)) {
             throw new IllegalArgumentException("이메일 인증을 먼저 완료해주세요.");
         }
         memberMapper.updatePassword(member.getMemberId(), passwordEncoder.encode(newPassword));
-        emailVerificationService.clearVerified(email);
     }
-}
+}

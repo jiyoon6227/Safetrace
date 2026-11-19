@@ -2,6 +2,7 @@ package com.safetrace.external;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.safetrace.util.LogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -351,7 +352,7 @@ public class DisasterMessageService {
             if (response.statusCode() < 200
                     || response.statusCode() >= 300) {
                 log.warn("[DisasterMessage] HTTP {} 응답: region={}, url={}",
-                        response.statusCode(), rgnNm, url);
+                        response.statusCode(), rgnNm, LogSanitizer.mask(url));
                 throw new DisasterMessageApiException("HTTP " + response.statusCode());
             }
 
@@ -365,7 +366,7 @@ public class DisasterMessageService {
 
             if (!resultCode.isEmpty() && !"00".equals(resultCode)) {
                 log.warn("[DisasterMessage] resultCode={}, resultMsg={}, region={}, url={}",
-                        resultCode, header.path("resultMsg").asText(), rgnNm, url);
+                        resultCode, header.path("resultMsg").asText(), rgnNm, LogSanitizer.mask(url));
 
                 // "03"(NODATA)은 조회 자체는 성공했고 그 기간·지역에 문자가 없다는 뜻.
                 // 그 외(22=쿼터초과, 30=키오류 등)는 호출 자체가 실패한 것이므로 구분해서 던진다.
@@ -412,7 +413,7 @@ public class DisasterMessageService {
             return messages;
 
         } catch (HttpTimeoutException e) {
-            log.warn("[DisasterMessage] 타임아웃: region={}, url={}", rgnNm, url);
+            log.warn("[DisasterMessage] 타임아웃: region={}, url={}", rgnNm, LogSanitizer.mask(url));
             throw new DisasterMessageApiException("타임아웃");
 
         } catch (IOException | InterruptedException e) {
@@ -420,8 +421,8 @@ public class DisasterMessageService {
                 Thread.currentThread().interrupt();
             }
 
-            log.warn("[DisasterMessage] 호출 실패: region={}, 원인={}: {}", rgnNm,
-                    e.getClass().getName(), e.getMessage(), e);
+            // 예외 객체를 통째로 넘기지 않고 메시지만 가려서 남긴다 (예외 메시지에 요청 주소·키가 섞일 수 있음)
+            log.warn("[DisasterMessage] 호출 실패: region={}, 원인={}", rgnNm, LogSanitizer.describe(e));
             throw new DisasterMessageApiException(e.getClass().getSimpleName());
         }
     }
@@ -524,4 +525,4 @@ public class DisasterMessageService {
             return LocalDateTime.MIN;
         }
     }
-}
+}

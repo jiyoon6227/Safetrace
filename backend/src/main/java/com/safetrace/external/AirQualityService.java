@@ -2,6 +2,7 @@ package com.safetrace.external;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.safetrace.util.LogSanitizer;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -154,7 +155,8 @@ public class AirQualityService {
             JsonNode header = root.path("response").path("header");
             if (!"00".equals(header.path("resultCode").asText())) {
                 log.warn("[AirQuality] resultCode!=00: sido={}, resultCode={}, resultMsg={}, rawBody={}",
-                        sidoFullName, header.path("resultCode").asText(), header.path("resultMsg").asText(), response.body());
+                        sidoFullName, header.path("resultCode").asText(), header.path("resultMsg").asText(),
+                        LogSanitizer.mask(response.body()));
                 return Map.of("available", false, "message", header.path("resultMsg").asText("대기질 정보를 가져오지 못했습니다."));
             }
 
@@ -171,7 +173,7 @@ public class AirQualityService {
             }
 
             if (pm10Count == 0 && pm25Count == 0) {
-                log.warn("[AirQuality] 측정값 없음: sido={}, itemCount={}, rawBody={}", sidoFullName, items.size(), response.body());
+                log.warn("[AirQuality] 측정값 없음: sido={}, itemCount={}, rawBody={}", sidoFullName, items.size(), LogSanitizer.mask(response.body()));
                 return Map.of("available", false, "message", "측정 가능한 대기질 데이터가 없습니다.");
             }
 
@@ -189,11 +191,10 @@ public class AirQualityService {
             result.put("pm25Grade", pm25Avg != null ? gradePm25(pm25Avg) : null);
             return result;
         } catch (HttpTimeoutException e) {
-            log.warn("[AirQuality] 타임아웃: sido={}", sidoFullName, e);
+            log.warn("[AirQuality] 타임아웃: sido={}, 원인={}", sidoFullName, LogSanitizer.describe(e));
             return Map.of("available", false, "message", "대기질 서버 응답이 지연되고 있습니다.");
         } catch (IOException | InterruptedException e) {
-            log.warn("[AirQuality] 외부 API 호출 실패: sido={}, 원인={}: {}", sidoFullName,
-                    e.getClass().getName(), e.getMessage(), e);
+            log.warn("[AirQuality] 외부 API 호출 실패: sido={}, 원인={}", sidoFullName, LogSanitizer.describe(e));
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             return Map.of("available", false, "message", "대기질 정보를 가져오지 못했습니다.");
         }
@@ -222,4 +223,4 @@ public class AirQualityService {
         if (value <= 75) return "나쁨";
         return "매우나쁨";
     }
-}
+}

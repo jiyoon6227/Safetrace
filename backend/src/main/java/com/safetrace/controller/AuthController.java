@@ -1,7 +1,9 @@
 package com.safetrace.controller;
 
+import com.safetrace.service.AuthAttemptLimiter;
 import com.safetrace.service.EmailVerificationService;
 import com.safetrace.service.MemberService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +20,7 @@ public class AuthController {
 
     private final MemberService memberService;
     private final EmailVerificationService emailVerificationService;
+    private final AuthAttemptLimiter authAttemptLimiter;
 
     // body 예시: { "loginId": "test123", "password": "1234", "name": "곽지윤", "email": "a@b.com" }
     @PostMapping("/signup")
@@ -28,8 +31,13 @@ public class AuthController {
 
     // body 예시: { "loginId": "test123", "password": "1234" }
     @PostMapping("/login")
-    public Map<String, String> login(@RequestBody Map<String, String> body) {
-        String token = memberService.login(body.get("loginId"), body.get("password"));
+    public Map<String, String> login(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        String loginId = body.get("loginId");
+        String ip = clientIp(request);
+        // 비밀번호를 확인하기 전에 시도 횟수부터 차감 (동시에 여러 요청을 보내도 한도를 넘길 수 없음). 성공하면 초기화.
+        authAttemptLimiter.acquireLogin(loginId, ip);
+        String token = memberService.login(loginId, body.get("password"));
+        authAttemptLimiter.resetLogin(loginId, ip);
         return Map.of("token", token);
     }
 
@@ -51,7 +59,8 @@ public class AuthController {
 
     // 회원가입 - 이메일 인증코드 발송. body 예시: { "email": "a@b.com" }
     @PostMapping("/email/send-code")
-    public Map<String, String> sendVerificationCode(@RequestBody Map<String, String> body) {
+    public Map<String, String> sendVerificationCode(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        authAttemptLimiter.acquireMail(clientIp(request));
         String email = body.get("email");
         if (email == null || email.isBlank()) {
             throw new IllegalArgumentException("이메일을 입력해주세요.");
@@ -69,30 +78,39 @@ public class AuthController {
     public Map<String, String> verifyCode(@RequestBody Map<String, String> body) {
         boolean ok = emailVerificationService.verifyCode(body.get("email"), body.get("code"));
         if (!ok) {
-            throw new IllegalArgumentException("인증번호가 올바르지 않거나 만료되었습니다.");
+            throw new IllegalArgumentException("인증번호가 올바르지 않거나 만료되었습니다. 5회 이상 틀렸다면 인증번호를 다시 받아주세요.");
         }
         return Map.of("message", "이메일 인증이 완료되었습니다.");
     }
 
     // 아이디 찾기. body 예시: { "name": "곽지윤", "email": "a@b.com" }
     @PostMapping("/find-id")
-    public Map<String, String> findId(@RequestBody Map<String, String> body) {
+    public Map<String, String> findId(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        authAttemptLimiter.acquireMail(clientIp(request));
         memberService.findLoginId(body.get("name"), body.get("email"));
         return Map.of("message", "가입하신 이메일로 아이디를 보내드렸습니다.");
     }
 
     // 비밀번호 찾기 1단계 - 인증코드 발송. body 예시: { "loginId": "test123", "email": "a@b.com" }
     @PostMapping("/password/send-code")
-    public Map<String, String> sendPasswordResetCode(@RequestBody Map<String, String> body) {
+    public Map<String, String> sendPasswordResetCode(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        authAttemptLimiter.acquireMail(clientIp(request));
         memberService.sendPasswordResetCode(body.get("loginId"), body.get("email"));
         return Map.of("message", "인증번호를 발송했습니다.");
     }
 
     // 비밀번호 찾기 3단계 - 새 비밀번호로 교체. 이 전에 /api/auth/email/verify-code로 인증부터 완료해야 함.
-    // body 예시: { "loginId": "test123", "email": "a@b.com", "newPassword": "1234" }
+    // body 예시: { "loginId": "test123", "email": "a@b.com", "newPassword": "abcd1234" }
     @PostMapping("/password/reset")
     public Map<String, String> resetPassword(@RequestBody Map<String, String> body) {
         memberService.resetPassword(body.get("loginId"), body.get("email"), body.get("newPassword"));
         return Map.of("message", "비밀번호가 변경되었습니다.");
     }
-}
+
+    // 클라이언트 IP. 프록시(nginx) 뒤에서는 server.forward-headers-strategy=native 설정 덕분에
+    // 신뢰하는 프록시가 붙여준 X-Forwarded-For 값이 getRemoteAddr()에 반영된다.
+    // 직접 보낸 X-Forwarded-For 헤더를 여기서 따로 읽지 않는 이유: 헤더를 위조해 IP 제한을 피할 수 있기 때문.
+    private static String clientIp(HttpServletRequest request) {
+        return request.getRemoteAddr();
+    }
+}
