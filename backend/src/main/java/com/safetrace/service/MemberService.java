@@ -4,7 +4,9 @@ import com.safetrace.config.JwtTokenProvider;
 import com.safetrace.domain.Member;
 import com.safetrace.dto.FamilyMemberSearchResponse;
 import com.safetrace.mapper.MemberMapper;
+import com.safetrace.util.MemberInputValidator;
 import com.safetrace.util.PasswordPolicy;
+import com.safetrace.util.UploadUrlValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -22,17 +24,16 @@ public class MemberService {
     private final EmailVerificationService emailVerificationService;
     private final MailService mailService;
 
-    public void signup(String loginId, String rawPassword, String name, String email) {
-        // 화면에서 거르더라도 API를 직접 호출하면 우회되므로 서버에서도 비밀번호 규칙을 검사
+    // verificationToken: 이메일 인증(verify-code)을 통과했을 때 받은 값. 인증한 본인만 가입에 쓸 수 있다.
+    public void signup(String loginId, String rawPassword, String name, String email, String verificationToken) {
+        // 화면에서 거르더라도 API를 직접 호출하면 우회되므로 서버에서도 입력값과 비밀번호 규칙을 검사
+        MemberInputValidator.validateSignup(loginId, name, email);
         PasswordPolicy.validate(rawPassword, loginId);
         if (memberMapper.findByLoginId(loginId) != null) {
             throw new IllegalArgumentException("이미 존재하는 아이디입니다.");
         }
-        if (email == null || email.isBlank()) {
-            throw new IllegalArgumentException("이메일을 입력해주세요.");
-        }
         // 이메일 인증까지 완료된 이메일이어야 가입 가능
-        if (!emailVerificationService.isVerified(email)) {
+        if (!emailVerificationService.isVerified(email, verificationToken)) {
             throw new IllegalArgumentException("이메일 인증을 먼저 완료해주세요.");
         }
         // 인증코드 발송 후 다른 회원의 선가입 대비 재확인
@@ -40,7 +41,7 @@ public class MemberService {
             throw new IllegalArgumentException("이미 사용 중인 이메일입니다.");
         }
         // 인증 완료 상태는 1회용. 같은 인증으로 동시에 가입 요청이 여러 개 와도 한 요청만 통과한다.
-        if (!emailVerificationService.consumeVerified(email)) {
+        if (!emailVerificationService.consumeVerified(email, verificationToken)) {
             throw new IllegalArgumentException("이메일 인증을 먼저 완료해주세요.");
         }
 
@@ -89,6 +90,9 @@ public class MemberService {
     // 내정보 수정: 이름/전화/주소/프로필사진만 반영
     // (이메일은 가입 시 인증값으로 고정, UPDATE 쿼리에 EMAIL 미포함)
     public void updateMyInfo(Long memberId, Member updates) {
+        MemberInputValidator.validateProfile(
+                updates.getName(), updates.getPhone(), updates.getAddress(), updates.getAddressDetail());
+        UploadUrlValidator.requireValidOrBlank(updates.getProfileImageUrl());
         updates.setMemberId(memberId);
         memberMapper.update(updates);
     }
@@ -154,7 +158,8 @@ public class MemberService {
     }
 
     // 비밀번호 찾기 2단계 - 이메일 인증(verify-code)까지 끝난 뒤에만 새 비밀번호로 교체 가능
-    public void resetPassword(String loginId, String email, String newPassword) {
+    // verificationToken은 verify-code 성공 시 받은 값 (인증을 끝낸 본인만 재설정할 수 있게 함)
+    public void resetPassword(String loginId, String email, String newPassword, String verificationToken) {
         Member member = memberMapper.findByLoginId(loginId);
         if (member == null || email == null || !email.equals(member.getEmail())) {
             throw new IllegalArgumentException("일치하는 회원 정보가 없습니다.");
@@ -162,7 +167,7 @@ public class MemberService {
         // 규칙 위반이면 인증 상태를 쓰기 전에 거절 - 비밀번호만 고쳐서 다시 시도할 수 있다
         PasswordPolicy.validate(newPassword, loginId);
         // 인증 완료 상태는 1회용 + 10분 유효
-        if (!emailVerificationService.consumeVerified(email)) {
+        if (!emailVerificationService.consumeVerified(email, verificationToken)) {
             throw new IllegalArgumentException("이메일 인증을 먼저 완료해주세요.");
         }
         memberMapper.updatePassword(member.getMemberId(), passwordEncoder.encode(newPassword));

@@ -1,5 +1,6 @@
 package com.safetrace.controller;
 
+import com.safetrace.util.ImageSanitizer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -12,7 +13,9 @@ import java.util.UUID;
 
 // 현장 사진을 로컬 디스크(uploadDir)에 저장 후 /uploads/파일명 URL 반환 (서빙은 WebConfig)
 //
-// 업로드 경로는 절대경로로 변환 후 스트림 복사 (상대경로를 transferTo에 넘기면 Tomcat 임시폴더 기준으로 해석됨)
+// 업로드 경로는 절대경로로 변환 후 저장 (상대경로를 transferTo에 넘기면 Tomcat 임시폴더 기준으로 해석됨)
+// 확장자·Content-Type은 사용자가 마음대로 보낼 수 있으므로, 파일 내용으로 실제 이미지인지 다시 확인하고
+// 촬영 위치(GPS) 같은 메타데이터를 지운 파일만 저장한다. 저장 확장자도 확인된 실제 형식을 따른다.
 @RestController
 @RequestMapping("/api/uploads")
 public class UploadController {
@@ -46,16 +49,15 @@ public class UploadController {
             throw new IllegalArgumentException("이미지 파일만 업로드할 수 있습니다.");
         }
 
-        String savedName = UUID.randomUUID() + ext;
+        ImageSanitizer.Result image = ImageSanitizer.sanitize(file.getBytes());
+        String savedName = UUID.randomUUID() + image.extension();
 
         Path dirPath = Path.of(uploadDir).toAbsolutePath();
         Files.createDirectories(dirPath);
         Path target = dirPath.resolve(savedName);
 
-        try (var in = file.getInputStream()) {
-            Files.copy(in, target);
-        }
+        Files.write(target, image.data());
 
         return Map.of("url", "/uploads/" + savedName);
     }
-}
+}

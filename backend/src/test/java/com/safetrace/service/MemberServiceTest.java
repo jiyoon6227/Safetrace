@@ -20,6 +20,8 @@ import static org.mockito.Mockito.when;
 
 class MemberServiceTest {
 
+    private static final String TOKEN = "verification-token";
+
     private MemberMapper memberMapper;
     private PasswordEncoder passwordEncoder;
     private JwtTokenProvider jwtTokenProvider;
@@ -62,13 +64,13 @@ class MemberServiceTest {
         String newPassword = "newPassword123!";
 
         when(memberMapper.findByLoginId(loginId)).thenReturn(member(loginId, email));
-        when(emailVerificationService.consumeVerified(email)).thenReturn(true);
+        when(emailVerificationService.consumeVerified(email, TOKEN)).thenReturn(true);
         when(passwordEncoder.encode(newPassword)).thenReturn("encodedPassword");
 
-        memberService.resetPassword(loginId, email, newPassword);
+        memberService.resetPassword(loginId, email, newPassword, TOKEN);
 
         verify(memberMapper).updatePassword(1L, "encodedPassword");
-        verify(emailVerificationService).consumeVerified(email);
+        verify(emailVerificationService).consumeVerified(email, TOKEN);
     }
 
     @Test
@@ -77,11 +79,11 @@ class MemberServiceTest {
         String email = "test@test.com";
 
         when(memberMapper.findByLoginId(loginId)).thenReturn(member(loginId, email));
-        when(emailVerificationService.consumeVerified(email)).thenReturn(false);
+        when(emailVerificationService.consumeVerified(email, TOKEN)).thenReturn(false);
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> memberService.resetPassword(loginId, email, "newPassword123!")
+                () -> memberService.resetPassword(loginId, email, "newPassword123!", TOKEN)
         );
 
         verify(memberMapper, never()).updatePassword(anyLong(), anyString());
@@ -93,12 +95,12 @@ class MemberServiceTest {
         String loginId = "testuser";
         String email = "test@test.com";
         when(memberMapper.findByLoginId(loginId)).thenReturn(member(loginId, email));
-        when(emailVerificationService.consumeVerified(email)).thenReturn(true, false);
+        when(emailVerificationService.consumeVerified(email, TOKEN)).thenReturn(true, false);
         when(passwordEncoder.encode(anyString())).thenReturn("encodedPassword");
 
-        memberService.resetPassword(loginId, email, "newPassword123!");
+        memberService.resetPassword(loginId, email, "newPassword123!", TOKEN);
         assertThrows(IllegalArgumentException.class,
-                () -> memberService.resetPassword(loginId, email, "otherPassword123!"));
+                () -> memberService.resetPassword(loginId, email, "otherPassword123!", TOKEN));
 
         verify(memberMapper).updatePassword(anyLong(), anyString()); // 딱 한 번만 바뀐다
     }
@@ -109,9 +111,9 @@ class MemberServiceTest {
         String email = "test@test.com";
         when(memberMapper.findByLoginId(loginId)).thenReturn(member(loginId, email));
 
-        assertThrows(IllegalArgumentException.class, () -> memberService.resetPassword(loginId, email, "1234"));
+        assertThrows(IllegalArgumentException.class, () -> memberService.resetPassword(loginId, email, "1234", TOKEN));
 
-        verify(emailVerificationService, never()).consumeVerified(any()); // 인증은 아직 남아 있어 비밀번호만 고쳐 다시 시도 가능
+        verify(emailVerificationService, never()).consumeVerified(any(), any()); // 인증은 아직 남아 있어 비밀번호만 고쳐 다시 시도 가능
         verify(memberMapper, never()).updatePassword(anyLong(), anyString());
     }
 
@@ -120,9 +122,9 @@ class MemberServiceTest {
         when(memberMapper.findByLoginId("testuser")).thenReturn(member("testuser", "real@test.com"));
 
         assertThrows(IllegalArgumentException.class,
-                () -> memberService.resetPassword("testuser", "other@test.com", "newPassword123!"));
+                () -> memberService.resetPassword("testuser", "other@test.com", "newPassword123!", TOKEN));
 
-        verify(emailVerificationService, never()).consumeVerified(any());
+        verify(emailVerificationService, never()).consumeVerified(any(), any());
     }
 
     // ---- 회원가입 ------------------------------------------------------------
@@ -134,23 +136,23 @@ class MemberServiceTest {
 
         when(memberMapper.findByLoginId(loginId)).thenReturn(null);
         when(memberMapper.findByEmail(email)).thenReturn(null);
-        when(emailVerificationService.isVerified(email)).thenReturn(true);
-        when(emailVerificationService.consumeVerified(email)).thenReturn(true);
+        when(emailVerificationService.isVerified(email, TOKEN)).thenReturn(true);
+        when(emailVerificationService.consumeVerified(email, TOKEN)).thenReturn(true);
         when(passwordEncoder.encode("password123!")).thenReturn("encodedPassword");
 
-        memberService.signup(loginId, "password123!", "테스트", email);
+        memberService.signup(loginId, "password123!", "테스트", email, TOKEN);
 
         verify(memberMapper).insert(any(Member.class));
-        verify(emailVerificationService).consumeVerified(email);
+        verify(emailVerificationService).consumeVerified(email, TOKEN);
     }
 
     @Test
     void 이메일_인증을_안_했으면_가입을_막는다() {
         when(memberMapper.findByLoginId("newuser")).thenReturn(null);
-        when(emailVerificationService.isVerified("new@test.com")).thenReturn(false);
+        when(emailVerificationService.isVerified("new@test.com", TOKEN)).thenReturn(false);
 
         assertThrows(IllegalArgumentException.class,
-                () -> memberService.signup("newuser", "password123!", "테스트", "new@test.com"));
+                () -> memberService.signup("newuser", "password123!", "테스트", "new@test.com", TOKEN));
 
         verify(memberMapper, never()).insert(any(Member.class));
     }
@@ -161,13 +163,13 @@ class MemberServiceTest {
         String email = "new@test.com";
         when(memberMapper.findByLoginId(any())).thenReturn(null);
         when(memberMapper.findByEmail(email)).thenReturn(null);
-        when(emailVerificationService.isVerified(email)).thenReturn(true);
-        when(emailVerificationService.consumeVerified(email)).thenReturn(true, false);
+        when(emailVerificationService.isVerified(email, TOKEN)).thenReturn(true);
+        when(emailVerificationService.consumeVerified(email, TOKEN)).thenReturn(true, false);
         when(passwordEncoder.encode(anyString())).thenReturn("encodedPassword");
 
-        memberService.signup("newuser1", "password123!", "가입자1", email);
+        memberService.signup("newuser1", "password123!", "가입자1", email, TOKEN);
         assertThrows(IllegalArgumentException.class,
-                () -> memberService.signup("newuser2", "password123!", "가입자2", email));
+                () -> memberService.signup("newuser2", "password123!", "가입자2", email, TOKEN));
 
         verify(memberMapper).insert(any(Member.class)); // 1명만 가입된다
     }
@@ -176,16 +178,154 @@ class MemberServiceTest {
     void 규칙에_맞지_않는_비밀번호로는_가입할_수_없다() {
         String email = "new@test.com";
         when(memberMapper.findByLoginId("newuser")).thenReturn(null);
-        when(emailVerificationService.isVerified(email)).thenReturn(true);
-        when(emailVerificationService.consumeVerified(email)).thenReturn(true);
+        when(emailVerificationService.isVerified(email, TOKEN)).thenReturn(true);
+        when(emailVerificationService.consumeVerified(email, TOKEN)).thenReturn(true);
 
-        assertThrows(IllegalArgumentException.class, () -> memberService.signup("newuser", "1234", "테스트", email));
-        assertThrows(IllegalArgumentException.class, () -> memberService.signup("newuser", "abcdefgh", "테스트", email));
-        assertThrows(IllegalArgumentException.class, () -> memberService.signup("newuser", "newuser1234", "테스트", email));
-        assertThrows(IllegalArgumentException.class, () -> memberService.signup("newuser", null, "테스트", email));
+        assertThrows(IllegalArgumentException.class, () -> memberService.signup("newuser", "1234", "테스트", email, TOKEN));
+        assertThrows(IllegalArgumentException.class, () -> memberService.signup("newuser", "abcdefgh", "테스트", email, TOKEN));
+        assertThrows(IllegalArgumentException.class, () -> memberService.signup("newuser", "newuser1234", "테스트", email, TOKEN));
+        assertThrows(IllegalArgumentException.class, () -> memberService.signup("newuser", null, "테스트", email, TOKEN));
 
         verify(memberMapper, never()).insert(any(Member.class));
-        verify(emailVerificationService, never()).consumeVerified(any());
+        verify(emailVerificationService, never()).consumeVerified(any(), any());
+    }
+
+    @Test
+    void 가입은_받은_인증_토큰을_그대로_확인하고_사용처리한다() {
+        String email = "new@test.com";
+        when(memberMapper.findByLoginId("newuser")).thenReturn(null);
+        when(emailVerificationService.isVerified(email, "내_토큰")).thenReturn(true);
+        when(emailVerificationService.consumeVerified(email, "내_토큰")).thenReturn(true);
+        when(passwordEncoder.encode("password123!")).thenReturn("encodedPassword");
+
+        memberService.signup("newuser", "password123!", "테스트", email, "내_토큰");
+
+        verify(emailVerificationService).isVerified(email, "내_토큰");
+        verify(emailVerificationService).consumeVerified(email, "내_토큰");
+    }
+
+    @Test
+    void 토큰이_없거나_틀리면_가입을_막는다() {
+        String email = "new@test.com";
+        when(memberMapper.findByLoginId("newuser")).thenReturn(null);
+        when(emailVerificationService.isVerified(email, TOKEN)).thenReturn(true);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> memberService.signup("newuser", "password123!", "테스트", email, null));
+        assertThrows(IllegalArgumentException.class,
+                () -> memberService.signup("newuser", "password123!", "테스트", email, "남의_토큰"));
+
+        verify(memberMapper, never()).insert(any(Member.class));
+        verify(emailVerificationService, never()).consumeVerified(any(), any());
+    }
+
+    @Test
+    void 인증_상태를_쓰는_순간_토큰이_틀리면_가입되지_않는다() {
+        // isVerified와 consumeVerified 사이에 상태가 바뀌어 consume이 실패하는 경우
+        String email = "new@test.com";
+        when(memberMapper.findByLoginId("newuser")).thenReturn(null);
+        when(emailVerificationService.isVerified(email, TOKEN)).thenReturn(true);
+        when(emailVerificationService.consumeVerified(email, TOKEN)).thenReturn(false);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> memberService.signup("newuser", "password123!", "테스트", email, TOKEN));
+
+        verify(memberMapper, never()).insert(any(Member.class));
+    }
+
+    @Test
+    void 비밀번호재설정은_토큰이_틀리면_비밀번호를_바꾸지_않는다() {
+        String email = "test@test.com";
+        when(memberMapper.findByLoginId("testuser")).thenReturn(member("testuser", email));
+        when(emailVerificationService.consumeVerified(email, "남의_토큰")).thenReturn(false);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> memberService.resetPassword("testuser", email, "newPassword123!", "남의_토큰"));
+        assertThrows(IllegalArgumentException.class,
+                () -> memberService.resetPassword("testuser", email, "newPassword123!", null));
+
+        verify(memberMapper, never()).updatePassword(anyLong(), anyString());
+    }
+
+    @Test
+    void 아이디_이름_이메일_형식이_틀리면_인증_확인_전에_가입을_거절한다() {
+        String email = "new@test.com";
+
+        assertThrows(IllegalArgumentException.class, () -> memberService.signup("ab", "password123!", "테스트", email, TOKEN));
+        assertThrows(IllegalArgumentException.class, () -> memberService.signup("new user", "password123!", "테스트", email, TOKEN));
+        assertThrows(IllegalArgumentException.class, () -> memberService.signup("newuser", "password123!", "  ", email, TOKEN));
+        assertThrows(IllegalArgumentException.class, () -> memberService.signup("newuser", "password123!", "<script>", email, TOKEN));
+        assertThrows(IllegalArgumentException.class, () -> memberService.signup("newuser", "password123!", "테스트", "not-an-email", TOKEN));
+        assertThrows(IllegalArgumentException.class, () -> memberService.signup("newuser", "password123!", "테스트", "", TOKEN));
+        assertThrows(IllegalArgumentException.class, () -> memberService.signup("newuser", "password123!", "테스트", null, TOKEN));
+
+        verify(memberMapper, never()).insert(any(Member.class));
+        verify(emailVerificationService, never()).isVerified(any(), any());
+        verify(emailVerificationService, never()).consumeVerified(any(), any());
+    }
+
+    // ---- 내정보 수정 ---------------------------------------------------------
+
+    private Member updates(String name, String phone, String address, String addressDetail, String profileImageUrl) {
+        Member updates = new Member();
+        updates.setName(name);
+        updates.setPhone(phone);
+        updates.setAddress(address);
+        updates.setAddressDetail(addressDetail);
+        updates.setProfileImageUrl(profileImageUrl);
+        return updates;
+    }
+
+    @Test
+    void 내정보_수정은_올바른_값이면_저장한다() {
+        Member updates = updates("홍길동", "010-1234-5678", "대전광역시 유성구", "101동 202호", "/uploads/0a1b2c3d.png");
+
+        memberService.updateMyInfo(7L, updates);
+
+        assertEquals(7L, updates.getMemberId());
+        verify(memberMapper).update(updates);
+    }
+
+    @Test
+    void 내정보_수정에서_선택_항목은_비워도_저장된다() {
+        Member updates = updates("홍길동", "", null, null, "");
+
+        memberService.updateMyInfo(7L, updates);
+
+        verify(memberMapper).update(updates);
+    }
+
+    @Test
+    void 프로필_사진은_업로드한_파일_주소만_허용한다() {
+        String[] invalid = {
+                "http://evil.example/a.jpg",
+                "https://evil.example/a.png",
+                "javascript:alert(1)",
+                "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
+                "/uploads/../secret.jpg",
+                "/uploads/a.jpg?x=1",
+                "//evil.example/uploads/a.jpg",
+                "/uploads/a.html",
+        };
+        for (String url : invalid) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> memberService.updateMyInfo(7L, updates("홍길동", "010-1234-5678", null, null, url)));
+        }
+
+        verify(memberMapper, never()).update(any(Member.class));
+    }
+
+    @Test
+    void 내정보_수정에서_이름_전화번호_주소_형식이_틀리면_거절한다() {
+        assertThrows(IllegalArgumentException.class, () -> memberService.updateMyInfo(7L, updates(null, null, null, null, null)));
+        assertThrows(IllegalArgumentException.class, () -> memberService.updateMyInfo(7L, updates(" ", null, null, null, null)));
+        assertThrows(IllegalArgumentException.class, () -> memberService.updateMyInfo(7L, updates("a".repeat(51), null, null, null, null)));
+        assertThrows(IllegalArgumentException.class, () -> memberService.updateMyInfo(7L, updates("홍길동", "010-12", null, null, null)));
+        assertThrows(IllegalArgumentException.class, () -> memberService.updateMyInfo(7L, updates("홍길동", "<img src=x>", null, null, null)));
+        assertThrows(IllegalArgumentException.class, () -> memberService.updateMyInfo(7L, updates("홍길동", null, "a".repeat(201), null, null)));
+        assertThrows(IllegalArgumentException.class, () -> memberService.updateMyInfo(7L, updates("홍길동", null, null, "a".repeat(201), null)));
+
+        verify(memberMapper, never()).update(any(Member.class));
     }
 
     // ---- 비밀번호 변경 -------------------------------------------------------

@@ -180,4 +180,77 @@ class AuthControllerTest {
                 .andExpect(header().string("Retry-After", "30"))
                 .andExpect(jsonPath("$.message").value("인증번호는 30초 후에 다시 요청할 수 있습니다."));
     }
+
+    // ---- 이메일 인증 토큰 ------------------------------------------------------
+
+    @Test
+    void 인증코드가_맞으면_인증_토큰을_내려준다() throws Exception {
+        when(emailVerificationService.verifyCode("user@test.com", "123456")).thenReturn("issued-token");
+
+        mockMvc.perform(post("/api/auth/email/verify-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"user@test.com\",\"code\":\"123456\"}")
+                        .with(fromIp("203.0.113.10")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("이메일 인증이 완료되었습니다."))
+                .andExpect(jsonPath("$.verificationToken").value("issued-token"));
+    }
+
+    @Test
+    void 인증코드가_틀리면_토큰_없이_400으로_응답한다() throws Exception {
+        when(emailVerificationService.verifyCode("user@test.com", "000000")).thenReturn(null);
+
+        mockMvc.perform(post("/api/auth/email/verify-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"user@test.com\",\"code\":\"000000\"}")
+                        .with(fromIp("203.0.113.10")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.verificationToken").doesNotExist());
+    }
+
+    @Test
+    void 가입_요청의_인증_토큰이_서비스로_전달된다() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginId\":\"newuser\",\"password\":\"password123!\",\"name\":\"테스터\","
+                                + "\"email\":\"new@test.com\",\"verificationToken\":\"issued-token\"}")
+                        .with(fromIp("203.0.113.10")))
+                .andExpect(status().isOk());
+
+        verify(memberService).signup("newuser", "password123!", "테스터", "new@test.com", "issued-token");
+    }
+
+    @Test
+    void 토큰_없이_보낸_가입_요청은_토큰_null로_전달되어_서비스가_거절한다() throws Exception {
+        org.mockito.Mockito.doThrow(new IllegalArgumentException("이메일 인증을 먼저 완료해주세요."))
+                .when(memberService).signup("newuser", "password123!", "테스터", "new@test.com", null);
+
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginId\":\"newuser\",\"password\":\"password123!\",\"name\":\"테스터\","
+                                + "\"email\":\"new@test.com\"}")
+                        .with(fromIp("203.0.113.10")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("이메일 인증을 먼저 완료해주세요."));
+    }
+
+    @Test
+    void 비밀번호_재설정_요청의_인증_토큰이_서비스로_전달된다() throws Exception {
+        mockMvc.perform(post("/api/auth/password/reset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginId\":\"user1\",\"email\":\"a@test.com\","
+                                + "\"newPassword\":\"newPassword123!\",\"verificationToken\":\"issued-token\"}")
+                        .with(fromIp("203.0.113.10")))
+                .andExpect(status().isOk());
+
+        verify(memberService).resetPassword("user1", "a@test.com", "newPassword123!", "issued-token");
+    }
+
+    @Test
+    void 이메일_형식이_올바르지_않으면_인증코드를_보내지_않는다() throws Exception {
+        sendCode("not-an-email", "203.0.113.10").andExpect(status().isBadRequest());
+        sendCode("", "203.0.113.10").andExpect(status().isBadRequest());
+
+        verify(emailVerificationService, never()).sendCode(anyString());
+    }
 }

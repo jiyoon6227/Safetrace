@@ -98,6 +98,7 @@ function FindPasswordModal({ onClose }) {
   const [loginId, setLoginId] = useState("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
+  const [verificationToken, setVerificationToken] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
   const [loading, setLoading] = useState(false);
@@ -136,10 +137,11 @@ function FindPasswordModal({ onClose }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, code }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         throw new Error(data.message || "인증번호가 올바르지 않거나 만료되었습니다.");
       }
+      setVerificationToken(data.verificationToken);
       setStep(3);
     } catch (err) {
       setError(err.message);
@@ -160,7 +162,7 @@ function FindPasswordModal({ onClose }) {
       const res = await fetch("/api/auth/password/reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ loginId, email, newPassword }),
+        body: JSON.stringify({ loginId, email, newPassword, verificationToken }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -304,6 +306,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, onSearch, init
   // 이메일 인증 상태
   const [codeSent, setCodeSent] = useState(false);
   const [verificationCode, setVerificationCode] = useState("");
+  const [verificationToken, setVerificationToken] = useState("");
   const [emailVerified, setEmailVerified] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
   const [verifyingCode, setVerifyingCode] = useState(false);
@@ -348,6 +351,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, onSearch, init
     setEmailVerified(false);
     setCodeSent(false);
     setVerificationCode("");
+    setVerificationToken("");
     setEmailNotice("");
   };
 
@@ -362,7 +366,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, onSearch, init
       const res = await fetch("/api/auth/email/send-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: email.trim() }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -385,12 +389,13 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, onSearch, init
       const res = await fetch("/api/auth/email/verify-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code: verificationCode }),
+        body: JSON.stringify({ email: email.trim(), code: verificationCode }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         throw new Error(data.message || "인증번호가 올바르지 않습니다.");
       }
+      setVerificationToken(data.verificationToken);
       setEmailVerified(true);
       setEmailNotice("이메일 인증이 완료되었습니다.");
     } catch (err) {
@@ -426,7 +431,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, onSearch, init
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ loginId, password, name, email: email.trim() }),
+        body: JSON.stringify({ loginId, password, name, email: email.trim(), verificationToken }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -451,6 +456,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome, onSearch, init
   setEmailVerified(false);
   setCodeSent(false);
   setVerificationCode("");
+  setVerificationToken("");
   setEmailNotice("");
 };
 

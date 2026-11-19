@@ -5,6 +5,7 @@ import com.safetrace.domain.Report;
 import com.safetrace.mapper.IncidentMapper;
 import com.safetrace.mapper.ReportMapper;
 import com.safetrace.util.TransactionUtils;
+import com.safetrace.util.UploadUrlValidator;
 import com.safetrace.websocket.ReportWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
@@ -27,9 +28,6 @@ public class ReportService {
     // 시민이 현장제보를 등록
     @Transactional
     public Report createReport(Report report, Long memberId) {
-        report.setMemberId(memberId);
-        reportMapper.insert(report);
-
         // 사진은 컬럼이 아니라 SF_REPORT_PHOTO에만 저장 - photoUrl이 0번째(대표), additionalPhotoUrls가 이어서 쌓임
         List<String> photos = new java.util.ArrayList<>();
         if (report.getPhotoUrl() != null && !report.getPhotoUrl().isBlank()) {
@@ -40,7 +38,13 @@ public class ReportService {
                     .filter(url -> url != null && !url.isBlank())
                     .forEach(photos::add);
         }
+        // 업로드 API로 올린 /uploads/ 파일만 허용 - 제보를 저장하기 전에 먼저 확인
+        photos.forEach(UploadUrlValidator::requireValidOrBlank);
         photos = photos.stream().limit(MAX_PHOTOS).toList();
+
+        report.setMemberId(memberId);
+        reportMapper.insert(report);
+
         for (int i = 0; i < photos.size(); i++) {
             reportMapper.insertPhoto(report.getReportId(), photos.get(i), i);
         }

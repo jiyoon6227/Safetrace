@@ -3,6 +3,7 @@ package com.safetrace.controller;
 import com.safetrace.service.AuthAttemptLimiter;
 import com.safetrace.service.EmailVerificationService;
 import com.safetrace.service.MemberService;
+import com.safetrace.util.MemberInputValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -22,10 +23,12 @@ public class AuthController {
     private final EmailVerificationService emailVerificationService;
     private final AuthAttemptLimiter authAttemptLimiter;
 
-    // body 예시: { "loginId": "test123", "password": "1234", "name": "곽지윤", "email": "a@b.com" }
+    // body 예시: { "loginId": "test123", "password": "abcd1234", "name": "곽지윤", "email": "a@b.com", "verificationToken": "..." }
+    // verificationToken은 /api/auth/email/verify-code 응답으로 받은 값
     @PostMapping("/signup")
     public Map<String, String> signup(@RequestBody Map<String, String> body) {
-        memberService.signup(body.get("loginId"), body.get("password"), body.get("name"), body.get("email"));
+        memberService.signup(body.get("loginId"), body.get("password"), body.get("name"), body.get("email"),
+                body.get("verificationToken"));
         return Map.of("message", "회원가입 완료");
     }
 
@@ -62,9 +65,7 @@ public class AuthController {
     public Map<String, String> sendVerificationCode(@RequestBody Map<String, String> body, HttpServletRequest request) {
         authAttemptLimiter.acquireMail(clientIp(request));
         String email = body.get("email");
-        if (email == null || email.isBlank()) {
-            throw new IllegalArgumentException("이메일을 입력해주세요.");
-        }
+        MemberInputValidator.validateEmail(email);
         if (memberService.isEmailTaken(email)) {
             throw new IllegalArgumentException("이미 사용 중인 이메일입니다.");
         }
@@ -73,14 +74,15 @@ public class AuthController {
     }
 
     // 회원가입 - 이메일 인증코드 확인. body 예시: { "email": "a@b.com", "code": "123456" }
+    // 성공하면 verificationToken을 내려주고, 가입/비밀번호 재설정 때 이 값을 같이 보내야 한다.
     // 비밀번호 찾기 2단계(코드 확인)에서도 사용
     @PostMapping("/email/verify-code")
     public Map<String, String> verifyCode(@RequestBody Map<String, String> body) {
-        boolean ok = emailVerificationService.verifyCode(body.get("email"), body.get("code"));
-        if (!ok) {
+        String verificationToken = emailVerificationService.verifyCode(body.get("email"), body.get("code"));
+        if (verificationToken == null) {
             throw new IllegalArgumentException("인증번호가 올바르지 않거나 만료되었습니다. 5회 이상 틀렸다면 인증번호를 다시 받아주세요.");
         }
-        return Map.of("message", "이메일 인증이 완료되었습니다.");
+        return Map.of("message", "이메일 인증이 완료되었습니다.", "verificationToken", verificationToken);
     }
 
     // 아이디 찾기. body 예시: { "name": "곽지윤", "email": "a@b.com" }
@@ -100,10 +102,11 @@ public class AuthController {
     }
 
     // 비밀번호 찾기 3단계 - 새 비밀번호로 교체. 이 전에 /api/auth/email/verify-code로 인증부터 완료해야 함.
-    // body 예시: { "loginId": "test123", "email": "a@b.com", "newPassword": "abcd1234" }
+    // body 예시: { "loginId": "test123", "email": "a@b.com", "newPassword": "abcd1234", "verificationToken": "..." }
     @PostMapping("/password/reset")
     public Map<String, String> resetPassword(@RequestBody Map<String, String> body) {
-        memberService.resetPassword(body.get("loginId"), body.get("email"), body.get("newPassword"));
+        memberService.resetPassword(body.get("loginId"), body.get("email"), body.get("newPassword"),
+                body.get("verificationToken"));
         return Map.of("message", "비밀번호가 변경되었습니다.");
     }
 

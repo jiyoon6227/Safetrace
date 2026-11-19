@@ -15,6 +15,9 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -68,8 +71,10 @@ class EmailVerificationServiceTest {
     void 맞는_코드면_인증이_완료된다() {
         service.sendCode(EMAIL);
 
-        assertTrue(service.verifyCode(EMAIL, mail.lastCode()));
-        assertTrue(service.isVerified(EMAIL));
+        String token = service.verifyCode(EMAIL, mail.lastCode());
+
+        assertNotNull(token);
+        assertTrue(service.isVerified(EMAIL, token));
     }
 
     @Test
@@ -84,8 +89,8 @@ class EmailVerificationServiceTest {
         service.sendCode(EMAIL);
         String code = mail.lastCode();
 
-        assertTrue(service.verifyCode(EMAIL, code));
-        assertFalse(service.verifyCode(EMAIL, code));
+        assertNotNull(service.verifyCode(EMAIL, code));
+        assertNull(service.verifyCode(EMAIL, code));
     }
 
     @Test
@@ -95,11 +100,11 @@ class EmailVerificationServiceTest {
         String wrong = wrongCodeFor(code);
 
         for (int i = 0; i < 5; i++) {
-            assertFalse(service.verifyCode(EMAIL, wrong));
+            assertNull(service.verifyCode(EMAIL, wrong));
         }
 
-        assertFalse(service.verifyCode(EMAIL, code));
-        assertFalse(service.isVerified(EMAIL));
+        assertNull(service.verifyCode(EMAIL, code));
+        assertFalse(service.isVerified(EMAIL, "아무_토큰"));
     }
 
     @Test
@@ -108,10 +113,10 @@ class EmailVerificationServiceTest {
         String code = mail.lastCode();
 
         for (int i = 0; i < 4; i++) {
-            assertFalse(service.verifyCode(EMAIL, wrongCodeFor(code)));
+            assertNull(service.verifyCode(EMAIL, wrongCodeFor(code)));
         }
 
-        assertTrue(service.verifyCode(EMAIL, code));
+        assertNotNull(service.verifyCode(EMAIL, code));
     }
 
     @Test
@@ -125,7 +130,7 @@ class EmailVerificationServiceTest {
         now.addAndGet(60 * SECOND);
         service.sendCode(EMAIL);
 
-        assertTrue(service.verifyCode(EMAIL, mail.lastCode()));
+        assertNotNull(service.verifyCode(EMAIL, mail.lastCode()));
     }
 
     @Test
@@ -135,7 +140,7 @@ class EmailVerificationServiceTest {
 
         now.addAndGet(5 * MINUTE);
 
-        assertFalse(service.verifyCode(EMAIL, code));
+        assertNull(service.verifyCode(EMAIL, code));
     }
 
     @Test
@@ -145,14 +150,14 @@ class EmailVerificationServiceTest {
 
         now.addAndGet(5 * MINUTE - 1);
 
-        assertTrue(service.verifyCode(EMAIL, code));
+        assertNotNull(service.verifyCode(EMAIL, code));
     }
 
     @Test
     void 발송하지_않은_이메일이나_null은_실패한다() {
-        assertFalse(service.verifyCode("nobody@test.com", "123456"));
-        assertFalse(service.verifyCode(null, "123456"));
-        assertFalse(service.verifyCode(EMAIL, null));
+        assertNull(service.verifyCode("nobody@test.com", "123456"));
+        assertNull(service.verifyCode(null, "123456"));
+        assertNull(service.verifyCode(EMAIL, null));
         assertEquals(0, service.codeCount()); // 확인만 한 이메일로 메모리에 항목이 생기지 않는다
     }
 
@@ -163,7 +168,7 @@ class EmailVerificationServiceTest {
 
         AtomicInteger success = new AtomicInteger();
         runConcurrently(32, () -> {
-            if (service.verifyCode(EMAIL, code)) {
+            if (service.verifyCode(EMAIL, code) != null) {
                 success.incrementAndGet();
             }
         });
@@ -180,7 +185,7 @@ class EmailVerificationServiceTest {
         runConcurrently(64, () -> service.verifyCode(EMAIL, wrong));
 
         // 틀린 시도가 5회를 넘게 반영됐든 아니든, 이미 5회 이상 틀렸으므로 폐기되어 맞는 코드도 통하지 않아야 한다
-        assertFalse(service.verifyCode(EMAIL, code));
+        assertNull(service.verifyCode(EMAIL, code));
     }
 
     @Test
@@ -195,42 +200,46 @@ class EmailVerificationServiceTest {
         // 3회 실패 상태에서 동시에 틀린 값 2개를 보내면 둘 다 반영되어 정확히 5회째에서 폐기된다
         runConcurrently(2, () -> service.verifyCode(EMAIL, wrong));
 
-        assertFalse(service.verifyCode(EMAIL, code));
+        assertNull(service.verifyCode(EMAIL, code));
     }
 
     // ---- 인증 완료 상태 ------------------------------------------------
 
+    private String verifiedToken() {
+        service.sendCode(EMAIL);
+        String token = service.verifyCode(EMAIL, mail.lastCode());
+        assertNotNull(token);
+        return token;
+    }
+
     @Test
     void 인증_완료_상태는_10분이_지나면_사라진다() {
-        service.sendCode(EMAIL);
-        service.verifyCode(EMAIL, mail.lastCode());
+        String token = verifiedToken();
 
         now.addAndGet(10 * MINUTE - 1);
-        assertTrue(service.isVerified(EMAIL));
+        assertTrue(service.isVerified(EMAIL, token));
 
         now.addAndGet(1);
-        assertFalse(service.isVerified(EMAIL));
-        assertFalse(service.consumeVerified(EMAIL));
+        assertFalse(service.isVerified(EMAIL, token));
+        assertFalse(service.consumeVerified(EMAIL, token));
     }
 
     @Test
     void 인증_완료_상태는_한_번만_쓸_수_있다() {
-        service.sendCode(EMAIL);
-        service.verifyCode(EMAIL, mail.lastCode());
+        String token = verifiedToken();
 
-        assertTrue(service.consumeVerified(EMAIL));
-        assertFalse(service.consumeVerified(EMAIL));
-        assertFalse(service.isVerified(EMAIL));
+        assertTrue(service.consumeVerified(EMAIL, token));
+        assertFalse(service.consumeVerified(EMAIL, token));
+        assertFalse(service.isVerified(EMAIL, token));
     }
 
     @Test
     void 동시에_인증_상태를_써도_한_번만_성공한다() throws Exception {
-        service.sendCode(EMAIL);
-        service.verifyCode(EMAIL, mail.lastCode());
+        String token = verifiedToken();
 
         AtomicInteger success = new AtomicInteger();
         runConcurrently(32, () -> {
-            if (service.consumeVerified(EMAIL)) {
+            if (service.consumeVerified(EMAIL, token)) {
                 success.incrementAndGet();
             }
         });
@@ -240,24 +249,92 @@ class EmailVerificationServiceTest {
 
     @Test
     void 새_코드를_요청하면_이전_인증_완료_상태는_지워진다() {
-        service.sendCode(EMAIL);
-        service.verifyCode(EMAIL, mail.lastCode());
-        assertTrue(service.isVerified(EMAIL));
+        String token = verifiedToken();
+        assertTrue(service.isVerified(EMAIL, token));
 
         now.addAndGet(60 * SECOND);
         service.sendCode(EMAIL);
 
-        assertFalse(service.isVerified(EMAIL));
+        assertFalse(service.isVerified(EMAIL, token));
     }
 
     @Test
     void 쓰기_전에는_isVerified를_여러_번_불러도_상태가_유지된다() {
-        service.sendCode(EMAIL);
-        service.verifyCode(EMAIL, mail.lastCode());
+        String token = verifiedToken();
 
-        assertTrue(service.isVerified(EMAIL));
-        assertTrue(service.isVerified(EMAIL));
-        assertTrue(service.consumeVerified(EMAIL));
+        assertTrue(service.isVerified(EMAIL, token));
+        assertTrue(service.isVerified(EMAIL, token));
+        assertTrue(service.consumeVerified(EMAIL, token));
+    }
+
+    // ---- 인증 요청자 확인(인증 토큰) -------------------------------------
+
+    @Test
+    void 이메일_주소만_알고_토큰이_없으면_인증_상태를_쓸_수_없다() {
+        verifiedToken();
+
+        assertFalse(service.isVerified(EMAIL, null));
+        assertFalse(service.isVerified(EMAIL, ""));
+        assertFalse(service.consumeVerified(EMAIL, null));
+        assertFalse(service.consumeVerified(EMAIL, ""));
+    }
+
+    @Test
+    void 토큰이_틀리면_인증_상태를_쓸_수_없다() {
+        String token = verifiedToken();
+
+        assertFalse(service.isVerified(EMAIL, token + "x"));
+        assertFalse(service.consumeVerified(EMAIL, "다른_사람이_추측한_토큰"));
+    }
+
+    @Test
+    void 틀린_토큰으로_시도해도_정상_사용자의_인증_상태는_지워지지_않는다() {
+        String token = verifiedToken();
+
+        assertFalse(service.consumeVerified(EMAIL, "다른_사람이_추측한_토큰"));
+
+        assertTrue(service.isVerified(EMAIL, token));
+        assertTrue(service.consumeVerified(EMAIL, token));
+    }
+
+    @Test
+    void 다른_이메일의_토큰으로는_쓸_수_없다() {
+        String token = verifiedToken();
+        service.sendCode("other@test.com");
+        String otherToken = service.verifyCode("other@test.com", mail.lastCode());
+
+        assertFalse(service.isVerified(EMAIL, otherToken));
+        assertFalse(service.consumeVerified("other@test.com", token));
+        assertTrue(service.consumeVerified(EMAIL, token));
+        assertTrue(service.consumeVerified("other@test.com", otherToken));
+    }
+
+    @Test
+    void 다시_인증하면_이전_토큰은_못_쓰고_새_토큰만_쓸_수_있다() {
+        String oldToken = verifiedToken();
+
+        now.addAndGet(60 * SECOND);
+        service.sendCode(EMAIL);
+        String newToken = service.verifyCode(EMAIL, mail.lastCode());
+
+        assertNotEquals(oldToken, newToken);
+        assertFalse(service.consumeVerified(EMAIL, oldToken));
+        assertTrue(service.consumeVerified(EMAIL, newToken));
+    }
+
+    @Test
+    void 토큰은_추측하기_어려운_길이의_URL_안전_문자열이다() {
+        String token = verifiedToken();
+
+        assertTrue(token.matches("[A-Za-z0-9_-]{43}")); // 32바이트 난수를 Base64URL로 표현
+    }
+
+    @Test
+    void 이메일이나_토큰이_null이면_인증_상태_확인은_실패한다() {
+        String token = verifiedToken();
+
+        assertFalse(service.isVerified(null, token));
+        assertFalse(service.consumeVerified(null, token));
     }
 
     // ---- 재발송 제한 / 발송 횟수 제한 --------------------------------------
@@ -283,7 +360,7 @@ class EmailVerificationServiceTest {
 
         assertThrows(TooManyRequestsException.class, () -> service.sendCode(EMAIL));
 
-        assertTrue(service.verifyCode(EMAIL, code));
+        assertNotNull(service.verifyCode(EMAIL, code));
     }
 
     @Test
@@ -296,9 +373,9 @@ class EmailVerificationServiceTest {
         String newCode = mail.lastCode();
 
         if (!oldCode.equals(newCode)) { // 우연히 같은 번호가 나오면 구분할 수 없으므로 건너뛴다
-            assertFalse(service.verifyCode(EMAIL, oldCode));
+            assertNull(service.verifyCode(EMAIL, oldCode));
         }
-        assertTrue(service.verifyCode(EMAIL, newCode));
+        assertNotNull(service.verifyCode(EMAIL, newCode));
     }
 
     @Test
@@ -374,7 +451,7 @@ class EmailVerificationServiceTest {
         service.sendCode(EMAIL); // 60초를 기다리지 않아도 된다
 
         assertEquals(1, mail.codes.size());
-        assertTrue(service.verifyCode(EMAIL, mail.lastCode()));
+        assertNotNull(service.verifyCode(EMAIL, mail.lastCode()));
     }
 
     @Test

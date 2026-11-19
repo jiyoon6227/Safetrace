@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,6 +23,7 @@ import java.util.function.LongSupplier;
 //  - 인증코드 유효시간 5분, 틀리면 5회째에서 그 코드는 폐기(새 코드를 받아야 함)
 //  - 같은 이메일로 다시 발송하려면 60초 대기, 이메일 1개당 1시간에 5회까지만 발송
 //  - 인증 완료 상태는 10분 동안만 유효하고, 가입/비밀번호 재설정에서 1번만 쓸 수 있음
+//  - 인증에 성공하면 인증 토큰을 내려주고, 가입/재설정 때 그 토큰을 같이 보내야 함 (이메일 주소만 알아서는 인증 상태를 쓸 수 없음)
 //  - 위 상태 변경은 모두 ConcurrentHashMap.compute 안에서 처리해서, 동시에 요청을 여러 개 보내도 횟수 제한을 넘을 수 없음
 //  - 만료된 항목은 주기적으로 지우고, 보관 개수에도 상한을 둠
 @Service
@@ -42,8 +44,8 @@ public class EmailVerificationService {
     private final SecureRandom random = new SecureRandom();
 
     private final Map<String, CodeEntry> codes = new ConcurrentHashMap<>();
-    // 인증 완료된 이메일 -> 완료 상태가 끝나는 시각
-    private final Map<String, Long> verifiedUntil = new ConcurrentHashMap<>();
+    // 인증 완료된 이메일 -> 인증 토큰 + 완료 상태가 끝나는 시각
+    private final Map<String, VerifiedEntry> verified = new ConcurrentHashMap<>();
     private final AttemptLimiter sendLimiter;
     private final AtomicLong lastPurgeMs;
 
@@ -96,7 +98,7 @@ public class EmailVerificationService {
             throw rejected.get();
         }
 
-        verifiedUntil.remove(email); // 새 인증 시작 시 기존 인증 완료 상태 초기화
+        verified.remove(email); // 새 인증 시작 시 기존 인증 완료 상태 초기화
         try {
             mailService.sendVerificationCode(email, code);
         } catch (RuntimeException e) {
@@ -106,9 +108,10 @@ public class EmailVerificationService {
         }
     }
 
-    public boolean verifyCode(String email, String code) {
+    // 코드가 맞으면 인증 토큰을 돌려주고, 틀리거나 만료됐으면 null
+    public String verifyCode(String email, String code) {
         if (email == null || code == null) {
-            return false;
+            return null;
         }
         long now = clockMs.getAsLong();
         AtomicReference<Boolean> matched = new AtomicReference<>(false);
@@ -131,29 +134,39 @@ public class EmailVerificationService {
                     entry.sentAtMs(), entry.expiresAtMs(), failed);
         });
 
-        if (matched.get()) {
-            verifiedUntil.put(email, now + VERIFIED_TTL_MS);
-            return true;
+        if (!matched.get()) {
+            return null;
         }
-        return false;
+        String token = newToken();
+        verified.put(email, new VerifiedEntry(token, now + VERIFIED_TTL_MS));
+        return token;
     }
 
-    // 가입/비밀번호 재설정 직전에 인증된 이메일인지 확인용 (사용 처리는 하지 않음 - 쓸 때는 consumeVerified)
-    public boolean isVerified(String email) {
-        if (email == null) {
+    // 가입/비밀번호 재설정 직전에 인증된 이메일 + 인증 토큰인지 확인용 (사용 처리는 하지 않음 - 쓸 때는 consumeVerified)
+    public boolean isVerified(String email, String token) {
+        if (email == null || token == null) {
             return false;
         }
-        Long until = verifiedUntil.get(email);
-        return until != null && clockMs.getAsLong() < until;
+        VerifiedEntry entry = verified.get(email);
+        return entry != null && clockMs.getAsLong() < entry.untilMs() && sameCode(entry.token(), token);
     }
 
     // 인증 완료 상태를 1번만 쓰게 한다. 동시에 두 요청이 와도 한 쪽만 true를 받는다.
-    public boolean consumeVerified(String email) {
-        if (email == null) {
+    // 토큰이 다르면 상태를 건드리지 않아서, 남이 엉뚱한 토큰을 보내도 정상 사용자의 인증이 지워지지 않는다.
+    public boolean consumeVerified(String email, String token) {
+        if (email == null || token == null) {
             return false;
         }
-        Long until = verifiedUntil.remove(email);
-        return until != null && clockMs.getAsLong() < until;
+        long now = clockMs.getAsLong();
+        AtomicReference<Boolean> ok = new AtomicReference<>(false);
+        verified.computeIfPresent(email, (key, entry) -> {
+            if (now < entry.untilMs() && sameCode(entry.token(), token)) {
+                ok.set(true);
+                return null;
+            }
+            return entry;
+        });
+        return ok.get();
     }
 
     /**
@@ -175,6 +188,12 @@ public class EmailVerificationService {
         return key.length() <= 200 ? key : key.substring(0, 200);
     }
 
+    private String newToken() {
+        byte[] bytes = new byte[32];
+        random.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
     // 문자열 비교 시간 차이로 코드를 추측하지 못하게 일정한 시간으로 비교
     private static boolean sameCode(String expected, String actual) {
         return MessageDigest.isEqual(
@@ -191,7 +210,7 @@ public class EmailVerificationService {
 
     private void purgeExpired(long now) {
         codes.values().removeIf(entry -> now >= entry.expiresAtMs());
-        verifiedUntil.values().removeIf(until -> now >= until);
+        verified.values().removeIf(entry -> now >= entry.untilMs());
     }
 
     // 테스트·점검용
@@ -200,8 +219,10 @@ public class EmailVerificationService {
     }
 
     int verifiedCount() {
-        return verifiedUntil.size();
+        return verified.size();
     }
 
     private record CodeEntry(String code, long sentAtMs, long expiresAtMs, int failedAttempts) {}
+
+    private record VerifiedEntry(String token, long untilMs) {}
 }

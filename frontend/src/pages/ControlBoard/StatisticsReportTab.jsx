@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { authFetch } from "../../api/client";
 import { toDateInputValue } from "../../utils/dateFormat";
+import { escapeHtml } from "../../utils/escapeHtml";
 
 const TAB_ITEMS = [
   { key: "overview", label: "전체" },
@@ -522,11 +523,11 @@ export default function StatisticsReportTab() {
     const topRegion = regionRows.slice(0, 8);
     const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>SafeTrace 재난·안전 통계보고서</title>
       <style>body{font-family:Arial,'Noto Sans KR',sans-serif;color:#0f2540;margin:36px}h1{font-size:26px;margin:0}small{color:#64748b}.head{border-bottom:2px solid #0f2540;padding-bottom:18px;margin-bottom:22px}.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.k{border:1px solid #e2e8f0;border-radius:12px;padding:12px}.k b{display:block;font-size:20px;margin-top:4px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:22px}.box{border:1px solid #e2e8f0;border-radius:12px;padding:16px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:8px;border-bottom:1px solid #e2e8f0;text-align:left}th{background:#f8fafc}.bar{height:8px;background:#e2e8f0;border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:#3b82f6}@media print{button{display:none}body{margin:16mm}}</style></head><body>
-      <div class="head"><h1>SafeTrace 재난·안전 통계보고서</h1><small>${applied.from} ~ ${applied.to} · 지역 ${applied.region === "ALL" ? "전체" : applied.region} · 유형 ${applied.type === "ALL" ? "전체" : applied.type}</small></div>
-      <div class="kpis">${kpis.map((k) => `<div class="k"><small>${k.label}</small><b>${k.value}</b><small>${k.sub}</small></div>`).join("")}</div>
-      <div class="grid"><div class="box"><h3>재난 유형별</h3><table><tr><th>유형</th><th>건수</th><th>비율</th></tr>${topType.map((r) => `<tr><td>${r.label}</td><td>${r.value}</td><td>${percent(r.value,totalIncidents).toFixed(1)}%</td></tr>`).join("")}</table></div>
-      <div class="box"><h3>지역별</h3><table><tr><th>지역</th><th>건수</th><th>비율</th></tr>${topRegion.map((r) => `<tr><td>${r.label}</td><td>${r.value}</td><td>${percent(r.value,totalIncidents).toFixed(1)}%</td></tr>`).join("")}</table></div></div>
-      <div class="box" style="margin-top:18px"><h3>대응 상태</h3>${statusRows.map((r) => `<p style="display:grid;grid-template-columns:90px 1fr 55px;gap:10px;align-items:center;font-size:12px"><span>${STATUS_META[r.status]?.label}</span><span class="bar"><i style="width:${percent(r.value,Math.max(1,totalIncidents))}%"></i></span><b>${r.value}건</b></p>`).join("")}</div>
+      <div class="head"><h1>SafeTrace 재난·안전 통계보고서</h1><small>${escapeHtml(applied.from)} ~ ${escapeHtml(applied.to)} · 지역 ${applied.region === "ALL" ? "전체" : escapeHtml(applied.region)} · 유형 ${applied.type === "ALL" ? "전체" : escapeHtml(applied.type)}</small></div>
+      <div class="kpis">${kpis.map((k) => `<div class="k"><small>${escapeHtml(k.label)}</small><b>${escapeHtml(k.value)}</b><small>${escapeHtml(k.sub)}</small></div>`).join("")}</div>
+      <div class="grid"><div class="box"><h3>재난 유형별</h3><table><tr><th>유형</th><th>건수</th><th>비율</th></tr>${topType.map((r) => `<tr><td>${escapeHtml(r.label)}</td><td>${escapeHtml(r.value)}</td><td>${percent(r.value,totalIncidents).toFixed(1)}%</td></tr>`).join("")}</table></div>
+      <div class="box"><h3>지역별</h3><table><tr><th>지역</th><th>건수</th><th>비율</th></tr>${topRegion.map((r) => `<tr><td>${escapeHtml(r.label)}</td><td>${escapeHtml(r.value)}</td><td>${percent(r.value,totalIncidents).toFixed(1)}%</td></tr>`).join("")}</table></div></div>
+      <div class="box" style="margin-top:18px"><h3>대응 상태</h3>${statusRows.map((r) => `<p style="display:grid;grid-template-columns:90px 1fr 55px;gap:10px;align-items:center;font-size:12px"><span>${escapeHtml(STATUS_META[r.status]?.label ?? r.status)}</span><span class="bar"><i style="width:${percent(r.value,Math.max(1,totalIncidents))}%"></i></span><b>${escapeHtml(r.value)}건</b></p>`).join("")}</div>
       <p style="margin-top:22px;font-size:10px;color:#94a3b8">※ 평균 처리시간은 종료 사건의 CREATED_AT부터 최종 UPDATED_AT까지를 기준으로 계산합니다.</p>
       <script>window.onload=()=>{${autoPrint ? "setTimeout(()=>window.print(),250);" : ""}}</script></body></html>`;
     const win = window.open("", "_blank", "width=1100,height=850");
