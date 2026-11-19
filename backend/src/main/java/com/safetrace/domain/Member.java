@@ -1,5 +1,6 @@
 package com.safetrace.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 import java.time.LocalDateTime;
 
@@ -23,4 +24,6 @@ public class Member {
     private String isWithdrawn;
     private LocalDateTime withdrawnAt;
     private LocalDateTime createdAt;
+    @JsonIgnore
+    private long tokenVersion; // JWT 무효화용 버전 (로그아웃·비밀번호 변경 시 +1)
 }

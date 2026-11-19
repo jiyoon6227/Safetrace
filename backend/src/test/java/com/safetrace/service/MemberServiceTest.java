@@ -7,11 +7,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -368,7 +373,7 @@ class MemberServiceTest {
         stored.setName("이서연");
         when(memberMapper.findByLoginId("user1")).thenReturn(stored);
         when(passwordEncoder.matches("1234", "storedHash")).thenReturn(true);
-        when(jwtTokenProvider.generateToken(any(), any(), any(), any())).thenReturn("token");
+        when(jwtTokenProvider.generateToken(any(), any(), any(), any(), anyLong())).thenReturn("token");
 
         assertEquals("token", memberService.login("user1", "1234"));
     }
@@ -407,5 +412,122 @@ class MemberServiceTest {
         assertThrows(IllegalArgumentException.class, () -> memberService.findLoginId("누구", "nobody@test.com"));
 
         verify(emailVerificationService, never()).reserveMailSend(anyString());
+    }
+
+    // ---- JWT 무효화 ----------------------------------------------------------
+
+    @Test
+    void 로그아웃하면_회원의_토큰_버전을_올린다() {
+        memberService.logout(1L);
+
+        verify(memberMapper).increaseTokenVersion(1L);
+    }
+
+    @Test
+    void 로그인으로_만든_토큰에는_회원의_현재_토큰_버전이_담긴다() {
+        LocalDateTime createdAt = LocalDateTime.of(2026, 1, 1, 9, 0);
+        Member stored = member("user1", "u1@test.com");
+        stored.setPassword("storedHash");
+        stored.setRole("USER");
+        stored.setName("이서연");
+        stored.setCreatedAt(createdAt);
+        stored.setTokenVersion(3L);
+        when(memberMapper.findByLoginId("user1")).thenReturn(stored);
+        when(passwordEncoder.matches("pw123456", "storedHash")).thenReturn(true);
+        when(jwtTokenProvider.generateToken(1L, "USER", "이서연", createdAt, 3L)).thenReturn("token-v3");
+
+        assertEquals("token-v3", memberService.login("user1", "pw123456"));
+    }
+
+    @Test
+    void 세션_연장으로_만든_토큰에도_회원의_현재_토큰_버전이_담긴다() {
+        LocalDateTime createdAt = LocalDateTime.of(2026, 1, 1, 9, 0);
+        Member stored = member("user1", "u1@test.com");
+        stored.setRole("USER");
+        stored.setName("이서연");
+        stored.setCreatedAt(createdAt);
+        stored.setTokenVersion(5L);
+        when(memberMapper.findById(1L)).thenReturn(stored);
+        when(jwtTokenProvider.generateToken(1L, "USER", "이서연", createdAt, 5L)).thenReturn("token-v5");
+
+        assertEquals("token-v5", memberService.reissueToken(1L));
+    }
+
+    @Test
+    void 비밀번호를_바꾸면_올라간_버전으로_새_토큰을_돌려준다() {
+        Member before = member("testuser", "test@test.com");
+        Member withPassword = member("testuser", "test@test.com");
+        withPassword.setPassword("storedHash");
+        Member after = member("testuser", "test@test.com");
+        after.setTokenVersion(1L);
+        // 첫 조회는 변경 전, 변경 뒤 새 토큰을 만들 때의 조회는 버전이 올라간 상태
+        when(memberMapper.findById(1L)).thenReturn(before, after);
+        when(memberMapper.findByLoginId("testuser")).thenReturn(withPassword);
+        when(passwordEncoder.matches("currentPw123", "storedHash")).thenReturn(true);
+        when(passwordEncoder.encode("newPassword456")).thenReturn("newHash");
+        when(jwtTokenProvider.generateToken(any(), any(), any(), any(), eq(1L))).thenReturn("new-token");
+
+        String token = memberService.changePassword(1L, "currentPw123", "newPassword456");
+
+        assertEquals("new-token", token);
+        verify(memberMapper).updatePassword(1L, "newHash");
+    }
+
+    @Test
+    void 현재_비밀번호가_틀리면_토큰을_새로_만들지_않는다() {
+        Member found = member("testuser", "test@test.com");
+        Member withPassword = member("testuser", "test@test.com");
+        withPassword.setPassword("storedHash");
+        when(memberMapper.findById(1L)).thenReturn(found);
+        when(memberMapper.findByLoginId("testuser")).thenReturn(withPassword);
+        when(passwordEncoder.matches("wrongPw", "storedHash")).thenReturn(false);
+
+        assertThrows(IllegalArgumentException.class, () -> memberService.changePassword(1L, "wrongPw", "newPassword456"));
+
+        verify(memberMapper, never()).updatePassword(anyLong(), anyString());
+        verify(jwtTokenProvider, never()).generateToken(any(), any(), any(), any(), anyLong());
+    }
+
+    // ---- 가족 검색 -----------------------------------------------------------
+
+    @Test
+    void 너무_짧은_검색어는_조회하지_않고_거절한다() {
+        for (String keyword : new String[]{null, "", " ", "a"}) {
+            assertThrows(IllegalArgumentException.class, () -> memberService.searchMembers(keyword, 1L), "거절: " + keyword);
+        }
+
+        verify(memberMapper, never()).searchByLoginId(anyString());
+    }
+
+    @Test
+    void 검색어의_와일드카드는_이스케이프해서_조회한다() {
+        when(memberMapper.searchByLoginId("a\\_b")).thenReturn(List.of());
+        when(memberMapper.searchByLoginId("\\%\\%")).thenReturn(List.of());
+
+        memberService.searchMembers("a_b", 1L);
+        memberService.searchMembers("%%", 1L);
+
+        verify(memberMapper).searchByLoginId("a\\_b");
+        verify(memberMapper).searchByLoginId("\\%\\%");
+        verify(memberMapper, never()).searchByLoginId("a_b");
+        verify(memberMapper, never()).searchByLoginId("%%");
+    }
+
+    @Test
+    void 검색_결과에서_본인은_빠지고_화면에_필요한_정보만_담긴다() {
+        Member me = member("mine01", "me@test.com");
+        Member other = member("mine02", "other@test.com");
+        other.setMemberId(2L);
+        other.setName("다른회원");
+        other.setPassword("hash");
+        when(memberMapper.searchByLoginId("mine")).thenReturn(List.of(me, other));
+
+        var results = memberService.searchMembers(" mine ", 1L);
+
+        assertEquals(1, results.size());
+        assertEquals(Long.valueOf(2L), results.get(0).memberId());
+        assertEquals("mine02", results.get(0).loginId());
+        assertEquals("다른회원", results.get(0).name());
+        assertTrue(results.stream().noneMatch(r -> r.memberId().equals(1L)));
     }
 }

@@ -19,4 +19,5 @@ public interface MemberMapper {
     void updatePassword(@Param("memberId") Long memberId, @Param("encodedPassword") String encodedPassword);
     void updateNotificationSettings(Member member); // 알림설정 3종
     void withdraw(@Param("memberId") Long memberId); // 탈퇴 처리 (소프트 삭제)
+    void increaseTokenVersion(@Param("memberId") Long memberId); // 이 회원의 기존 JWT 전부 무효화 (로그아웃)
 }

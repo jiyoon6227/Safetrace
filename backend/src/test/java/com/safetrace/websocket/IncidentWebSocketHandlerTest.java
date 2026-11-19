@@ -78,7 +78,9 @@ class IncidentWebSocketHandlerTest {
         JsonNode incident = payload.get("incident");
 
         assertEquals("STATUS_CHANGED", payload.get("eventType").asText());
-        assertEquals("현장 도착", payload.get("memo").asText());
+        // 담당자가 적은 조치내역은 STAFF가 아닌 세션에는 보내지 않는다
+        assertFalse(payload.has("memo"));
+        assertFalse(payload.toString().contains("현장 도착"));
         assertEquals(1L, incident.get("incidentId").asLong());
         assertEquals("RESPONDING", incident.get("status").asText());
 

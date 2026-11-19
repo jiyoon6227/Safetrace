@@ -3,7 +3,7 @@
 // - "연장하기" 누르면 /api/auth/refresh 호출해서 새 토큰을 받아 localStorage 교체 (만료시간 리셋)
 // - 응답 없이 만료되면 자동 로그아웃 (토큰 삭제 + auth:invalid)
 import { useEffect, useRef, useState } from "react";
-import { getTokenExpiryMs, refreshToken } from "../api/client";
+import { getTokenExpiryMs, refreshToken, logout } from "../api/client";
 
 // 만료 이만큼 전부터 "연장하시겠습니까?" 팝업을 띄움
 const WARNING_BEFORE_MS = 5 * 60 * 1000; // 5분
@@ -74,7 +74,7 @@ export default function SessionExpiryModal() {
 
   // "로그아웃" 버튼 클릭 시 - 연장 안 하고 바로 로그아웃
   const handleLogoutNow = () => {
-    localStorage.removeItem("token");
+    logout(); // 서버에서도 토큰 무효화 (브라우저 토큰 삭제 포함)
     window.dispatchEvent(new Event("auth:invalid")); // MainPage.jsx가 이 이벤트 듣고 화면 상태 정리
     setVisible(false);
   };

@@ -129,6 +129,24 @@ export async function refreshToken() {
   return data.token;
 }
 
+// 로그아웃: 서버에 토큰 무효화를 요청하고 브라우저의 토큰을 지운다 (서버 요청이 실패해도 로그아웃은 진행)
+// authFetch를 쓰면 401 처리(auth:invalid)가 같이 돌아서 일반 fetch로 보낸다
+export async function logout() {
+  const token = localStorage.getItem("token");
+  localStorage.removeItem("token");
+  if (!token) return;
+
+  try {
+    await fetch(`${BASE_URL}/api/auth/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      keepalive: true,
+    });
+  } catch {
+    // 서버에 닿지 않아도 이 브라우저에서는 이미 로그아웃된 상태
+  }
+}
+
 // 마이페이지 "최근 알림" - 재난 알림(관심지역 반경 매칭)/제보 알림(내 제보 상태변경).
 // 서버가 실제 이벤트(Incident 생성/상태변경) 시점에 만들어둔 알림만 내려줌.
 export function getNotifications() {

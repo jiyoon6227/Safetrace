@@ -37,14 +37,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 // 1) DB에 이 ID의 회원이 실제로 존재하고 탈퇴하지 않았는지 확인
                 // 2) 그 회원의 CREATED_AT이 토큰 발급 당시와 지금이 같은지 확인
                 //    (DB 재시딩으로 같은 ID가 재생성된 회원 차단)
+                // 3) 토큰의 버전이 회원의 현재 버전과 같은지 확인
+                //    (로그아웃·비밀번호 변경 전에 발급된 토큰 차단)
                 Member member = memberMapper.findById(memberId);
 
                 boolean isSameMemberInstance = member != null
                         && member.getCreatedAt() != null
-                        && member.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-                           == jwtTokenProvider.getCreatedAtEpochMs(token);
+                        && Long.valueOf(member.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli())
+                           .equals(jwtTokenProvider.getCreatedAtEpochMs(token));
 
-                if (isSameMemberInstance && !"Y".equals(member.getIsWithdrawn())) {
+                if (isSameMemberInstance && !"Y".equals(member.getIsWithdrawn())
+                        && member.getTokenVersion() == jwtTokenProvider.getTokenVersion(token)) {
                     var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + member.getRole()));
                     var authentication = new UsernamePasswordAuthenticationToken(memberId, null, authorities);
                     SecurityContextHolder.getContext().setAuthentication(authentication);

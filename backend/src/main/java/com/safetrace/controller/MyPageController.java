@@ -42,11 +42,12 @@ public class MyPageController {
     }
 
     // body 예시: { "currentPassword": "1234", "newPassword": "5678" }
+    // 변경하면 기존 JWT가 전부 무효가 되므로 새 토큰을 같이 내려준다
     @PutMapping("/password")
     public Map<String, String> changePassword(@RequestBody Map<String, String> body, Authentication authentication) {
         Long memberId = (Long) authentication.getPrincipal();
-        memberService.changePassword(memberId, body.get("currentPassword"), body.get("newPassword"));
-        return Map.of("message", "비밀번호가 변경되었습니다.");
+        String token = memberService.changePassword(memberId, body.get("currentPassword"), body.get("newPassword"));
+        return Map.of("message", "비밀번호가 변경되었습니다.", "token", token);
     }
 
     @DeleteMapping

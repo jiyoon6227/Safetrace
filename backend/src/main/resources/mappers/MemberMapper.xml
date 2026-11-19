@@ -16,7 +16,7 @@
         SF_MEMBER.MEMBER_ID, LOGIN_ID, PASSWORD, SF_MEMBER.NAME, EMAIL, PHONE, PROFILE_IMAGE_URL,
         ADDRESS, ADDRESS_DETAIL, ROLE, SF_MEMBER.DEPARTMENT_ID, SF_DEPARTMENT.NAME AS DEPARTMENT_NAME,
         EMAIL_NOTIFY_ENABLED, DISASTER_NOTIFY_ENABLED, REPORT_NOTIFY_ENABLED,
-        IS_WITHDRAWN, WITHDRAWN_AT, CREATED_AT
+        IS_WITHDRAWN, WITHDRAWN_AT, CREATED_AT, TOKEN_VERSION
     </sql>
 
     <!-- STAFF 부서명 표시용 LEFT JOIN - 시민(DEPARTMENT_ID NULL)은 DEPARTMENT_NAME도 자연히 NULL -->
@@ -47,12 +47,14 @@
           AND IS_WITHDRAWN = 'N'
     </select>
 
-    <!-- 가족 등록 - 로그인ID로 상대방 검색 (탈퇴한 회원 제외) -->
+    <!-- 가족 등록 - 로그인ID로 상대방 검색 (탈퇴한 회원 제외, 최대 20건, %·_ 는 MemberService에서 이스케이프) -->
     <select id="searchByLoginId" resultType="Member">
         SELECT <include refid="memberColumns"/>
         <include refid="memberFromDept"/>
-        WHERE LOGIN_ID LIKE '%' || #{loginId} || '%'
+        WHERE LOGIN_ID LIKE '%' || #{loginId} || '%' ESCAPE '\'
           AND IS_WITHDRAWN = 'N'
+        ORDER BY LOGIN_ID
+        FETCH FIRST 20 ROWS ONLY
     </select>
 
     <!-- 마이페이지 - 내정보 수정 (이름/전화/주소/프로필사진, 이메일·비밀번호·역할 제외) -->
@@ -66,9 +68,17 @@
         WHERE MEMBER_ID = #{memberId}
     </update>
 
+    <!-- 비밀번호를 바꾸면 TOKEN_VERSION도 올려서 기존 JWT를 무효화 -->
     <update id="updatePassword">
         UPDATE SF_MEMBER
-        SET PASSWORD = #{encodedPassword}
+        SET PASSWORD = #{encodedPassword},
+            TOKEN_VERSION = TOKEN_VERSION + 1
+        WHERE MEMBER_ID = #{memberId}
+    </update>
+
+    <update id="increaseTokenVersion">
+        UPDATE SF_MEMBER
+        SET TOKEN_VERSION = TOKEN_VERSION + 1
         WHERE MEMBER_ID = #{memberId}
     </update>
 

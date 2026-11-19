@@ -6,10 +6,12 @@ import com.safetrace.domain.Report;
 import com.safetrace.external.DisasterMessageService;
 import com.safetrace.external.ShelterService;
 import com.safetrace.external.WeatherService;
+import com.safetrace.service.AiRequestLimiter;
 import com.safetrace.service.GroqService;
 import com.safetrace.service.IncidentService;
 import com.safetrace.service.MemberService;
 import com.safetrace.service.ReportService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -30,14 +32,19 @@ public class AiController {
     private final ShelterService shelterService;
     private final MemberService memberService;
     private final ReportService reportService;
+    private final AiRequestLimiter aiRequestLimiter;
 
     /** 메인 화면 AI 상황 브리핑: 실제 SafeTrace/공공 API 데이터를 모아 Groq가 요약 */
     @GetMapping("/briefing")
     public Map<String, Object> briefing(
             @RequestParam double lat,
             @RequestParam double lng,
-            @RequestParam String region
+            @RequestParam String region,
+            Authentication authentication,
+            HttpServletRequest httpRequest
     ) {
+        // 외부 API를 부르기 전에 횟수부터 차감
+        aiRequestLimiter.acquireBriefing(memberIdOf(authentication), httpRequest.getRemoteAddr());
         Map<String, Object> weather = weatherService.getCurrentWeather(lat, lng);
         List<Incident> incidents = incidentService.getActiveIncidentsNearby(lat, lng, 3.0);
         List<Map<String, Object>> disasterMessages;
@@ -67,8 +74,10 @@ public class AiController {
     @PostMapping("/chat")
     public Map<String, Object> chat(
             @RequestBody ChatRequest request,
-            Authentication authentication
+            Authentication authentication,
+            HttpServletRequest httpRequest
     ) {
+        aiRequestLimiter.acquireChat(memberIdOf(authentication), httpRequest.getRemoteAddr());
         String question = request.message() == null ? "" : request.message().trim();
         if (question.isBlank()) throw new IllegalArgumentException("질문 내용을 입력해주세요.");
         if (question.length() > 1200) throw new IllegalArgumentException("질문은 1200자 이하로 입력해주세요.");
@@ -104,6 +113,11 @@ public class AiController {
         result.put("hasCurrentLocation", request.lat() != null && request.lng() != null);
         result.put("loggedIn", memberName != null);
         return result;
+    }
+
+    // 비로그인 요청이면 null
+    private static Long memberIdOf(Authentication authentication) {
+        return authentication != null && authentication.getPrincipal() instanceof Long memberId ? memberId : null;
     }
 
     public record ChatRequest(

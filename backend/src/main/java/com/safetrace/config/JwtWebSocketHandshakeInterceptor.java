@@ -2,6 +2,7 @@ package com.safetrace.config;
 
 import com.safetrace.domain.Member;
 import com.safetrace.mapper.MemberMapper;
+import com.safetrace.service.WebSocketTicketService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
@@ -11,12 +12,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 
-import java.time.ZoneId;
 import java.util.Map;
 
 /**
- * 브라우저 WebSocket은 일반 fetch처럼 Authorization 헤더를 직접 넣을 수 없어서
- * 연결 URL의 ?token=... 값을 받아 JWT를 검증한다.
+ * 브라우저 WebSocket은 일반 fetch처럼 Authorization 헤더를 직접 넣을 수 없다.
+ * JWT를 접속 주소에 실으면 접속 로그에 남기 때문에, /api/ws/ticket으로 받은 1회용 티켓(30초 유효)을
+ * 연결 URL의 ?ticket=... 로 받아 확인한다.
  *
  * 검증 성공 시 memberId / role을 WebSocketSession attributes에 저장하고,
  * 각 Handler가 해당 사용자에게 필요한 이벤트만 골라 보낼 수 있게 한다.
@@ -25,7 +26,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class JwtWebSocketHandshakeInterceptor implements HandshakeInterceptor {
 
-    private final JwtTokenProvider jwtTokenProvider;
+    private final WebSocketTicketService webSocketTicketService;
     private final MemberMapper memberMapper;
 
     @Override
@@ -39,24 +40,17 @@ public class JwtWebSocketHandshakeInterceptor implements HandshakeInterceptor {
             return false;
         }
 
-        String token = servletRequest.getServletRequest().getParameter("token");
-        if (token == null || token.isBlank() || !jwtTokenProvider.validateToken(token)) {
+        Long memberId = webSocketTicketService.consume(servletRequest.getServletRequest().getParameter("ticket"));
+        if (memberId == null) {
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return false;
         }
 
         try {
-            Long memberId = jwtTokenProvider.getMemberId(token);
+            // 티켓을 받은 뒤 탈퇴했을 수 있으므로 회원 상태는 한 번 더 확인
             Member member = memberMapper.findById(memberId);
 
-            boolean isSameMemberInstance = member != null
-                    && member.getCreatedAt() != null
-                    && member.getCreatedAt()
-                    .atZone(ZoneId.systemDefault())
-                    .toInstant()
-                    .toEpochMilli() == jwtTokenProvider.getCreatedAtEpochMs(token);
-
-            if (!isSameMemberInstance || "Y".equals(member.getIsWithdrawn())) {
+            if (member == null || "Y".equals(member.getIsWithdrawn())) {
                 response.setStatusCode(HttpStatus.UNAUTHORIZED);
                 return false;
             }

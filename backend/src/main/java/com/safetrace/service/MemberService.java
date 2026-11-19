@@ -66,14 +66,19 @@ public class MemberService {
             throw new IllegalArgumentException("아이디 또는 비밀번호가 올바르지 않습니다.");
         }
 
-        return jwtTokenProvider.generateToken(member.getMemberId(), member.getRole(), member.getName(), member.getCreatedAt());
+        return jwtTokenProvider.generateToken(member.getMemberId(), member.getRole(), member.getName(), member.getCreatedAt(), member.getTokenVersion());
+    }
+
+    // 로그아웃 - 이 회원이 발급받은 JWT를 전부 무효로 만든다 (다른 기기 포함)
+    public void logout(Long memberId) {
+        memberMapper.increaseTokenVersion(memberId);
     }
 
     // 세션 연장용 토큰 재발급 (회원 존재·탈퇴 여부는 JwtAuthenticationFilter에서 검증 완료)
     public String reissueToken(Long memberId) {
         Member member = memberMapper.findById(memberId);
         // 발급 시각 기준으로 만료시각(exp) 연장
-        return jwtTokenProvider.generateToken(member.getMemberId(), member.getRole(), member.getName(), member.getCreatedAt());
+        return jwtTokenProvider.generateToken(member.getMemberId(), member.getRole(), member.getName(), member.getCreatedAt(), member.getTokenVersion());
     }
 
     // ---- 마이페이지 --------------------------------------------------------
@@ -103,7 +108,8 @@ public class MemberService {
     }
 
     // 비밀번호 변경 - 현재 비밀번호가 맞는지 먼저 검증
-    public void changePassword(Long memberId, String currentPassword, String newPassword) {
+    // 변경하면 기존 JWT가 전부 무효가 되므로 새 토큰을 돌려준다
+    public String changePassword(Long memberId, String currentPassword, String newPassword) {
         Member member = memberMapper.findById(memberId);
         if (member == null) {
             throw new IllegalArgumentException("존재하지 않는 회원입니다.");
@@ -115,12 +121,15 @@ public class MemberService {
         }
         PasswordPolicy.validate(newPassword, member.getLoginId());
         memberMapper.updatePassword(memberId, passwordEncoder.encode(newPassword));
+        return reissueToken(memberId);
     }
 
     // 가족 등록용 회원 검색 - 로그인ID 부분일치, 본인은 결과에서 제외
     // 화면에 필요한 최소 정보만 DTO로 반환해 개인정보 노출을 막는다.
+    // 너무 짧은 검색어는 막고, %·_ 는 이스케이프한다. 결과는 SQL에서 20건까지만.
     public List<FamilyMemberSearchResponse> searchMembers(String loginId, Long excludeMemberId) {
-        return memberMapper.searchByLoginId(loginId).stream()
+        String keyword = MemberInputValidator.toLoginIdSearchKeyword(loginId);
+        return memberMapper.searchByLoginId(keyword).stream()
                 .filter(m -> !m.getMemberId().equals(excludeMemberId))
                 .map(m -> new FamilyMemberSearchResponse(
                         m.getMemberId(),
@@ -158,6 +167,7 @@ public class MemberService {
     }
 
     // 비밀번호 찾기 2단계 - 이메일 인증(verify-code)까지 끝난 뒤에만 새 비밀번호로 교체 가능
+    // 교체하면 TOKEN_VERSION이 같이 올라가서 예전에 발급된 JWT는 전부 무효가 된다
     // verificationToken은 verify-code 성공 시 받은 값 (인증을 끝낸 본인만 재설정할 수 있게 함)
     public void resetPassword(String loginId, String email, String newPassword, String verificationToken) {
         Member member = memberMapper.findByLoginId(loginId);

@@ -454,6 +454,66 @@ class IncidentServiceTest {
         verifyNoInteractions(resourceClosureService);
     }
 
+    // ---- 사진 주소 검증 ------------------------------------------------------
+
+    private Incident newIncidentWithPhoto(String photoUrl) {
+        Incident incident = new Incident();
+        incident.setIncidentId(5L);
+        incident.setTitle("도로 침수");
+        incident.setAssignedStaffId(10L);
+        incident.setPhotoUrl(photoUrl);
+        return incident;
+    }
+
+    @Test
+    void 사건_등록_시_업로드_경로가_아닌_사진_주소는_저장하기_전에_거절한다() {
+        when(memberMapper.findById(10L)).thenReturn(activeStaff());
+
+        for (String url : new String[]{
+                "https://evil.example/a.jpg", "http://evil.example/a.jpg", "//evil.example/a.jpg",
+                "javascript:alert(1)", "data:image/png;base64,AAAA", "/uploads/../secret.jpg",
+                "/uploads/a.svg", "/uploads/a.html", "/uploads/a b.jpg", "/other/a.jpg"
+        }) {
+            Incident incident = newIncidentWithPhoto(url);
+            assertThrows(IllegalArgumentException.class, () -> incidentService.createIncident(incident), "거절: " + url);
+        }
+
+        verify(incidentMapper, never()).insertIncident(any());
+        verify(incidentMapper, never()).insertPhoto(anyLong(), anyString(), anyInt());
+        verify(incidentMapper, never()).insertLog(any());
+    }
+
+    @Test
+    void 사건_등록_시_업로드한_사진은_대표_사진으로_저장된다() {
+        when(memberMapper.findById(10L)).thenReturn(activeStaff());
+
+        incidentService.createIncident(newIncidentWithPhoto("/uploads/abc123.jpg"));
+
+        verify(incidentMapper).insertIncident(any());
+        verify(incidentMapper).insertPhoto(5L, "/uploads/abc123.jpg", 0);
+    }
+
+    @Test
+    void 사건_등록_시_사진은_선택_항목이라_비어_있어도_등록된다() {
+        when(memberMapper.findById(10L)).thenReturn(activeStaff());
+
+        incidentService.createIncident(newIncidentWithPhoto(null));
+        incidentService.createIncident(newIncidentWithPhoto("  "));
+
+        verify(incidentMapper, times(2)).insertIncident(any());
+        verify(incidentMapper, never()).insertPhoto(anyLong(), anyString(), anyInt());
+    }
+
+    @Test
+    void 현장사진_추가_시_업로드_경로가_아닌_주소는_조회나_저장_없이_거절한다() {
+        for (String url : new String[]{null, "", "  ", "https://evil.example/a.jpg", "javascript:alert(1)", "/uploads/../a.jpg", "/uploads/a.svg"}) {
+            assertThrows(IllegalArgumentException.class, () -> incidentService.addIncidentPhoto(1L, url, 10L), "거절: " + url);
+        }
+
+        verify(incidentMapper, never()).findById(anyLong());
+        verify(incidentMapper, never()).insertPhoto(anyLong(), anyString(), anyInt());
+    }
+
     private Incident incidentWithStatus(String status) {
         Incident incident = new Incident();
         incident.setIncidentId(1L);

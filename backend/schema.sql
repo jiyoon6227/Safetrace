@@ -71,6 +71,7 @@ CREATE TABLE SF_MEMBER (
     IS_WITHDRAWN              CHAR(1)         DEFAULT 'N' NOT NULL,  -- 탈퇴 여부 (Y/N) - 소프트 삭제, 실제 행은 안 지움
     WITHDRAWN_AT               TIMESTAMP,                          -- 탈퇴 처리 일시 (미탈퇴 시 NULL)
     CREATED_AT                TIMESTAMP       DEFAULT SYSTIMESTAMP, -- 가입일시
+    TOKEN_VERSION             NUMBER          DEFAULT 0 NOT NULL,  -- JWT 무효화용 버전 (로그아웃·비밀번호 변경 시 +1)
     CONSTRAINT CK_SF_MEMBER_ROLE CHECK (ROLE IN ('USER', 'STAFF', 'ADMIN'))
 );
 
@@ -92,6 +93,7 @@ COMMENT ON COLUMN SF_MEMBER.REPORT_NOTIFY_ENABLED IS '내 제보 상태변경 �
 COMMENT ON COLUMN SF_MEMBER.IS_WITHDRAWN IS '탈퇴 여부 (Y/N) - 소프트 삭제, 실제 행은 안 지움';
 COMMENT ON COLUMN SF_MEMBER.WITHDRAWN_AT IS '탈퇴 처리 일시 (미탈퇴 시 NULL)';
 COMMENT ON COLUMN SF_MEMBER.CREATED_AT IS '가입일시';
+COMMENT ON COLUMN SF_MEMBER.TOKEN_VERSION IS 'JWT 무효화용 버전 - 로그아웃·비밀번호 변경 시 1씩 증가, 토큰에 담긴 값과 다르면 그 토큰은 거절';
 
 -- 2-1. 회원 관심지역 테이블============================================
 --      회원 한 명이 관심지역을 여러 개 등록할 수 있도록 별도 테이블로 분리

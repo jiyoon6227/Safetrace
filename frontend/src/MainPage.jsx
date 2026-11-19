@@ -2,7 +2,7 @@ import { lazy, Suspense, useState, useEffect, useRef, useMemo } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import NearbySafetyMap from "./components/NearbySafetyMap";
 import SiteFooter from "./components/SiteFooter";
-import { getCurrentUser, authFetch, getNotifications } from "./api/client";
+import { getCurrentUser, authFetch, getNotifications, logout } from "./api/client";
 import { connectIncidentSocket, connectSafetyCheckSocket, connectReportSocket } from "./api/socket";
 import { buildNotificationItems } from "./pages/MyPage/constants";
 import { useEscapeKey } from "./hooks/useEscapeKey";
@@ -889,7 +889,7 @@ export default function MainPage() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
+    logout(); // 서버에서도 토큰 무효화 (브라우저 토큰 삭제 포함)
     setToken(null);
     goTo("home");
   };

@@ -28,7 +28,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
         // HTTP Upgrade 자체는 SecurityConfig에서 통과시키고,
         // 실제 WebSocket 접속 허용 여부는
-        // JwtWebSocketHandshakeInterceptor가 JWT를 검증한다.
+        // JwtWebSocketHandshakeInterceptor가 1회용 티켓을 확인해서 정한다.
 
         registry.addHandler(incidentWebSocketHandler, "/ws/incidents")
                 .addInterceptors(jwtWebSocketHandshakeInterceptor)

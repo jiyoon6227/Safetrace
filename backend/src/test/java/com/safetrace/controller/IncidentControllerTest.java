@@ -119,6 +119,19 @@ class IncidentControllerTest {
     }
 
     @Test
+    void 종료_로그의_조치내역도_공개_타임라인에는_나오지_않는다() {
+        IncidentLog closed = log();
+        closed.setNewStatus("CLOSED");
+        closed.setMemo("조치 완료");
+        when(incidentService.getTimeline(1L)).thenReturn(List.of(closed));
+
+        JsonNode json = objectMapper.valueToTree(incidentController.getTimeline(1L, null).get(0));
+
+        assertEquals("CLOSED", json.get("newStatus").asText());
+        assertFalse(json.toString().contains("조치 완료"));
+    }
+
+    @Test
     void 비로그인_지역조회는_공개용응답을_반환한다() {
         assertPublicIncident(incidentController.getByRegion("서울", null).get(0));
     }
@@ -216,9 +229,11 @@ class IncidentControllerTest {
         assertEquals(100L, json.get("logId").asLong());
         assertEquals("RECEIVED", json.get("prevStatus").asText());
         assertEquals("RESPONDING", json.get("newStatus").asText());
-        assertEquals("도로 통제 완료", json.get("memo").asText());
         assertTrue(json.has("changedAt"));
+        // 조치내역(memo)은 비로그인·일반 회원에게 내려주지 않는다
+        assertFalse(json.has("memo"));
         assertFalse(json.has("changedBy"));
+        assertFalse(json.toString().contains("도로 통제 완료"));
     }
 
     private Authentication user() {

@@ -68,9 +68,9 @@ public class IncidentWebSocketHandler extends TextWebSocketHandler {
         safeIncident.put("updatedAt", incident.getUpdatedAt());
 
         Map<String, Object> staffPayload = buildPayload(eventType, safeIncident, memo);
-        Map<String, Object> publicPayload = buildPayload(eventType, IncidentPublicResponse.from(incident), memo);
+        Map<String, Object> publicPayload = buildPayload(eventType, IncidentPublicResponse.from(incident), null);
 
-        // STAFF가 아닌 세션에는 담당자·종료 사유를 보내지 않음
+        // STAFF가 아닌 세션에는 담당자·종료 사유·조치내역(memo)을 보내지 않음
         for (WebSocketSession session : sessions.values()) {
             send(session, isStaff(session) ? staffPayload : publicPayload);
         }

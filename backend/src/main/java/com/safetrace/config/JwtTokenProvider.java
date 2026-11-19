@@ -23,9 +23,10 @@ public class JwtTokenProvider {
         this.expirationMs = expirationMs;
     }
 
-    // 토큰 생성: memberId, role, name, createdAt 포함
+    // 토큰 생성: memberId, role, name, createdAt, tokenVersion 포함
     // (createdAt: DB 재시딩으로 같은 ID가 재생성된 회원 구분용)
-    public String generateToken(Long memberId, String role, String name, LocalDateTime createdAt) {
+    // (tokenVersion: 로그아웃·비밀번호 변경 전에 만든 토큰을 거절하기 위한 값)
+    public String generateToken(Long memberId, String role, String name, LocalDateTime createdAt, long tokenVersion) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMs);
         long createdAtEpochMs = createdAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
@@ -35,6 +36,7 @@ public class JwtTokenProvider {
                 .claim("role", role)
                 .claim("name", name)
                 .claim("createdAt", createdAtEpochMs)
+                .claim("tv", tokenVersion)
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(key)
@@ -59,6 +61,12 @@ public class JwtTokenProvider {
 
     public Long getCreatedAtEpochMs(String token) {
         return parseClaims(token).get("createdAt", Long.class);
+    }
+
+    // 버전이 없는 예전 토큰은 0으로 본다 (DB 기본값과 동일)
+    public long getTokenVersion(String token) {
+        Object version = parseClaims(token).get("tv");
+        return version instanceof Number number ? number.longValue() : 0L;
     }
 
     public boolean validateToken(String token) {

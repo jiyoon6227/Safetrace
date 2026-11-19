@@ -20,10 +20,12 @@ export default function PasswordChangeModal({ onClose }) {
     }
     setSaving(true);
     try {
-      await authFetch("/api/mypage/password", {
+      const data = await authFetch("/api/mypage/password", {
         method: "PUT",
         body: JSON.stringify({ currentPassword, newPassword }),
       });
+      // 이전 토큰이 전부 무효가 되므로 서버가 준 새 토큰으로 교체
+      if (data.token) localStorage.setItem("token", data.token);
       alert("비밀번호가 변경되었습니다.");
       onClose();
     } catch (err) {

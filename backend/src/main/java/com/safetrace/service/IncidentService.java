@@ -16,6 +16,7 @@ import com.safetrace.mapper.IncidentMapper;
 import com.safetrace.mapper.MemberMapper;
 import com.safetrace.util.GeoUtils;
 import com.safetrace.util.TransactionUtils;
+import com.safetrace.util.UploadUrlValidator;
 import com.safetrace.websocket.IncidentWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -77,6 +78,9 @@ public class IncidentService {
         }
 
         requireActiveStaff(incident.getAssignedStaffId(), "사건 담당자");
+
+        // 업로드 API로 올린 /uploads/ 파일만 허용
+        UploadUrlValidator.requireValidOrBlank(incident.getPhotoUrl());
 
         incidentMapper.insertIncident(incident);
 
@@ -444,6 +448,10 @@ public class IncidentService {
      */
     @Transactional
     public Incident addIncidentPhoto(Long incidentId, String photoUrl, Long staffId) {
+        // 값이 반드시 있어야 하고, 업로드 API로 올린 /uploads/ 파일만 허용
+        if (!UploadUrlValidator.isValid(photoUrl)) {
+            throw new IllegalArgumentException("이미지 주소가 올바르지 않습니다. 사진을 다시 올려주세요.");
+        }
         Incident incident = incidentMapper.findById(incidentId);
         if (incident == null) {
             throw new IllegalArgumentException("존재하지 않는 Incident 입니다: " + incidentId);

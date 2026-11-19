@@ -4,13 +4,19 @@ import com.safetrace.config.GlobalExceptionHandler;
 import com.safetrace.service.AuthAttemptLimiter;
 import com.safetrace.service.EmailVerificationService;
 import com.safetrace.service.MemberService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -252,5 +258,65 @@ class AuthControllerTest {
         sendCode("", "203.0.113.10").andExpect(status().isBadRequest());
 
         verify(emailVerificationService, never()).sendCode(anyString());
+    }
+
+    // ---- 로그아웃 (JWT 무효화) -----------------------------------------------
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void 로그인한_회원이_로그아웃하면_그_회원의_토큰이_무효화된다() throws Exception {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(7L, null, List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+
+        mockMvc.perform(post("/api/auth/logout"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("로그아웃되었습니다."));
+
+        verify(memberService).logout(7L);
+    }
+
+    @Test
+    void 인증되지_않은_로그아웃_요청은_아무것도_무효화하지_않고_성공으로_응답한다() throws Exception {
+        mockMvc.perform(post("/api/auth/logout"))
+                .andExpect(status().isOk());
+
+        verify(memberService, never()).logout(any());
+    }
+
+    @Test
+    void 익명_사용자_로그아웃도_아무것도_무효화하지_않는다() throws Exception {
+        // permitAll 경로에서 Spring Security가 넣는 익명 인증의 principal은 문자열이다
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("anonymousUser", null, List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+
+        mockMvc.perform(post("/api/auth/logout"))
+                .andExpect(status().isOk());
+
+        verify(memberService, never()).logout(any());
+    }
+
+    // ---- 세션 연장 (토큰 재발급) ---------------------------------------------
+
+    @Test
+    void 인증되지_않은_세션_연장_요청은_401로_거절한다() throws Exception {
+        mockMvc.perform(post("/api/auth/refresh"))
+                .andExpect(status().isUnauthorized());
+
+        verify(memberService, never()).reissueToken(any());
+    }
+
+    @Test
+    void 인증된_세션_연장_요청은_새_토큰을_돌려준다() throws Exception {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(7L, null, List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        when(memberService.reissueToken(7L)).thenReturn("renewed");
+
+        mockMvc.perform(post("/api/auth/refresh"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").value("renewed"));
     }
 }

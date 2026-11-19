@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { authFetch } from "../../api/client";
 import { toDateInputValue } from "../../utils/dateFormat";
+import { escapeCsv } from "../../utils/escapeCsv";
 import { escapeHtml } from "../../utils/escapeHtml";
 
 const TAB_ITEMS = [
@@ -68,11 +69,6 @@ function getPresetRange(days) {
   const end = new Date();
   const start = addDays(end, -(days - 1));
   return { from: toDateInputValue(start), to: toDateInputValue(end) };
-}
-
-function escapeCsv(value) {
-  const text = String(value ?? "");
-  return `"${text.replaceAll('"', '""')}"`;
 }
 
 function KpiCard({ icon: Icon, label, value, sub, delta, goodWhenDown = false, tone = "blue" }) {

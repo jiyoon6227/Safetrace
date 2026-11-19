@@ -14,6 +14,8 @@ public final class MemberInputValidator {
     static final int NAME_MAX = 50;
     static final int EMAIL_MAX = 100;
     static final int ADDRESS_MAX = 200;
+    static final int SEARCH_KEYWORD_MIN = 2;
+    static final int SEARCH_KEYWORD_MAX = 30;
 
     private MemberInputValidator() {}
 
@@ -60,6 +62,15 @@ public final class MemberInputValidator {
 
     public static boolean isValidPhone(String phone) {
         return phone != null && PHONE.matcher(phone).matches();
+    }
+
+    // 가족 등록 검색어 - 공백 제거·길이 확인 후 LIKE용으로 %, _, \ 를 이스케이프 (ESCAPE '\')
+    public static String toLoginIdSearchKeyword(String raw) {
+        String keyword = raw == null ? "" : raw.trim();
+        if (keyword.length() < SEARCH_KEYWORD_MIN || keyword.length() > SEARCH_KEYWORD_MAX) {
+            throw new IllegalArgumentException("검색할 아이디를 " + SEARCH_KEYWORD_MIN + "자 이상 " + SEARCH_KEYWORD_MAX + "자 이하로 입력해주세요.");
+        }
+        return keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     // 내정보 수정에서 받는 이름·전화·주소·상세주소 검증 (프로필 사진 URL은 UploadUrlValidator)

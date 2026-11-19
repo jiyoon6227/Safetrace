@@ -3,6 +3,7 @@ package com.safetrace.util;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -100,5 +101,35 @@ class MemberInputValidatorTest {
         assertThrows(IllegalArgumentException.class, () -> MemberInputValidator.validateProfile("홍길동", null, "가".repeat(201), null));
         assertThrows(IllegalArgumentException.class, () -> MemberInputValidator.validateProfile("홍길동", null, null, "가".repeat(201)));
         assertDoesNotThrow(() -> MemberInputValidator.validateProfile("홍길동", null, "가".repeat(200), "가".repeat(200)));
+    }
+
+    // ---- 가족 검색어 ---------------------------------------------------------
+
+    @Test
+    void 검색어는_앞뒤_공백을_지우고_2자_이상_30자_이하여야_한다() {
+        assertEquals("ab", MemberInputValidator.toLoginIdSearchKeyword("  ab  "));
+        assertEquals("a".repeat(30), MemberInputValidator.toLoginIdSearchKeyword("a".repeat(30)));
+
+        for (String keyword : new String[]{null, "", "   ", "a", " a ", "a".repeat(31)}) {
+            assertThrows(IllegalArgumentException.class, () -> MemberInputValidator.toLoginIdSearchKeyword(keyword), "거절: " + keyword);
+        }
+    }
+
+    @Test
+    void 검색어의_퍼센트와_밑줄과_역슬래시는_글자_그대로_찾도록_이스케이프한다() {
+        assertEquals("\\%\\%", MemberInputValidator.toLoginIdSearchKeyword("%%"));
+        assertEquals("a\\_b", MemberInputValidator.toLoginIdSearchKeyword("a_b"));
+        assertEquals("a\\\\b", MemberInputValidator.toLoginIdSearchKeyword("a\\b"));
+        // 이스케이프 문자가 먼저 처리되어야 %를 이스케이프한 뒤의 역슬래시가 다시 이중으로 처리되지 않는다
+        assertEquals("\\\\\\%", MemberInputValidator.toLoginIdSearchKeyword("\\%"));
+        assertEquals("user.01", MemberInputValidator.toLoginIdSearchKeyword("user.01"));
+    }
+
+    @Test
+    void 와일드카드만으로_이루어진_검색어도_전체_조회가_되지_않는다() {
+        // "%%"는 이스케이프되면 "\%\%"(길이 4)가 되어 글자 그대로 찾는다. 길이 검사는 이스케이프 전 글자 수 기준이다.
+        assertEquals("\\%\\%", MemberInputValidator.toLoginIdSearchKeyword("%%"));
+        assertThrows(IllegalArgumentException.class, () -> MemberInputValidator.toLoginIdSearchKeyword("%"));
+        assertThrows(IllegalArgumentException.class, () -> MemberInputValidator.toLoginIdSearchKeyword("_"));
     }
 }

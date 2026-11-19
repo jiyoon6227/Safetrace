@@ -44,6 +44,17 @@ public class AuthController {
         return Map.of("token", token);
     }
 
+    // 로그아웃 - 이 회원의 JWT를 서버에서도 전부 무효로 만든다
+    // /api/auth/**는 permitAll이므로 인증 여부 직접 확인, 미인증이어도 성공으로 응답
+    @PostMapping("/logout")
+    public Map<String, String> logout() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof Long memberId) {
+            memberService.logout(memberId);
+        }
+        return Map.of("message", "로그아웃되었습니다.");
+    }
+
     // 세션 연장 - 만료 전인 기존 토큰으로 호출하면 만료시간만 새로 늘려서 재발급.
     // (프론트의 SessionExpiryModal에서 "연장하기" 버튼 눌렀을 때 호출하는 API)
     // /api/auth/**는 permitAll이므로 인증 여부 직접 확인, 미인증 시 401 (프론트 authFetch의 자동 로그아웃 트리거)
