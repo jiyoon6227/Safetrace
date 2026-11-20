@@ -19,6 +19,8 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class WeatherAlertService {
@@ -26,10 +28,10 @@ public class WeatherAlertService {
     private static final String BASE_URL =
             "https://apis.data.go.kr/1360000/WthrWrnInfoService/getPwnStatus";
 
-    private static final String[] WEATHER_TYPES = {
-            "강풍", "호우", "한파", "건조", "폭풍해일", "풍랑",
-            "태풍", "대설", "황사", "폭염", "지진해일"
-    };
+    // 특보현황 통보문은 "o 풍랑주의보 : 구역, 구역(세부구역)" 형태로 유형·등급별 한 줄씩 나열된다.
+    private static final Pattern STATUS_BULLET = Pattern.compile("(?:^|\\s)o\\s+");
+    private static final Pattern STATUS_LINE = Pattern.compile("^([가-힣]+?)(주의보|경보)\\s*:\\s*(.*)$");
+    private static final Pattern STATUS_MARK = Pattern.compile("(?:^|\\s)o\\s+[가-힣]+?(?:주의보|경보)\\s*:");
 
     private final String serviceKey;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -91,59 +93,7 @@ public class WeatherAlertService {
             }
 
             JsonNode itemNode = apiResponse.path("body").path("items").path("item");
-            List<JsonNode> items = toList(itemNode);
-
-            // getPwnStatus는 '현재 특보현황'이므로 반환된 항목을 모두 현재 발효중으로 취급
-            LinkedHashMap<String, Map<String, Object>> dedup = new LinkedHashMap<>();
-
-            for (JsonNode item : items) {
-                String region = firstText(item,
-                        "areaName", "areaNm", "regName", "regNm",
-                        "pwnArea", "warnArea", "wrnArea", "pwnRegNm", "region");
-
-                String type = firstText(item,
-                        "warnVar", "wrnType", "pwnType", "pwnNm", "wrnNm", "type");
-
-                String level = firstText(item,
-                        "warnStress", "wrnLevel", "pwnLevel", "level");
-
-                String announcedAt = firstText(item,
-                        "tmFc", "announceTime", "announcedAt", "tm", "tmEf");
-
-                // 명세 필드명이 바뀌거나 다른 이름으로 내려오는 경우 값 자체를 탐색해서 보완
-                if (region.isBlank()) region = detectRegion(item);
-                if (type.isBlank()) type = detectWeatherType(item);
-                if (level.isBlank()) level = detectLevel(item);
-
-                // 종류·등급을 하나도 못 찾았다면 "o 없음" 같은 '특보 없음' 안내 문장이므로 특보로 세지 않는다.
-                if (type.isBlank() && level.isBlank()) continue;
-
-                String rawText = flattenText(item);
-
-                // 특보현황 API는 한 항목의 지역 필드에 여러 구역을 쉼표로 묶어서 내려줄 수 있다.
-                // 예: "남해동부안쪽먼바다, 남해동부바깥먼바다, ..."
-                // 이를 그대로 두면 여러 구역이 1개 구역으로 집계되므로 구역별로 분리한다.
-                if (region.isBlank()) region = "전국";
-                List<String> regions = splitRegions(region);
-                if (regions.isEmpty()) regions = List.of(region);
-
-                for (String regionName : regions) {
-                    String title = buildTitle(type, level, regionName, rawText);
-
-                    Map<String, Object> alert = new LinkedHashMap<>();
-                    alert.put("region", regionName);
-                    alert.put("regionParent", parentRegion(regionName));
-                    alert.put("type", type);
-                    alert.put("level", level);
-                    alert.put("title", title);
-                    alert.put("announcedAt", announcedAt);
-
-                    String key = regionName + "|" + type + "|" + level;
-                    dedup.putIfAbsent(key, alert);
-                }
-            }
-
-            List<Map<String, Object>> active = new ArrayList<>(dedup.values());
+            List<Map<String, Object>> active = collectActiveAlerts(toList(itemNode));
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("available", true);
@@ -186,73 +136,121 @@ public class WeatherAlertService {
         return "";
     }
 
-    private String detectWeatherType(JsonNode item) {
-        String all = flattenText(item);
-        for (String type : WEATHER_TYPES) {
-            if (all.contains(type)) return type;
+    // getPwnStatus는 '현재 특보현황'이므로 발표시각이 가장 최근인 통보문만 현재 발효 중인 특보로 본다.
+    List<Map<String, Object>> collectActiveAlerts(List<JsonNode> items) {
+        String latest = "";
+        for (JsonNode item : items) {
+            String announcedAt = announcedAt(item);
+            if (announcedAt.compareTo(latest) > 0) latest = announcedAt;
         }
-        return "";
-    }
 
-    private String detectLevel(JsonNode item) {
-        String all = flattenText(item);
-        if (all.contains("경보")) return "경보";
-        if (all.contains("주의보")) return "주의보";
-        return "";
-    }
-
-    private String detectRegion(JsonNode item) {
-        Iterator<Map.Entry<String, JsonNode>> fields = item.fields();
-        while (fields.hasNext()) {
-            Map.Entry<String, JsonNode> field = fields.next();
-            if (!field.getValue().isValueNode()) continue;
-            String value = field.getValue().asText("").trim();
-            if (looksLikeRegion(value)) return value;
+        LinkedHashMap<String, Map<String, Object>> dedup = new LinkedHashMap<>();
+        for (JsonNode item : items) {
+            String announcedAt = announcedAt(item);
+            if (!announcedAt.equals(latest)) continue;
+            addStatusAlerts(statusText(item), announcedAt, dedup);
         }
-        return "";
+        return new ArrayList<>(dedup.values());
     }
 
-    private boolean looksLikeRegion(String value) {
-        if (value == null || value.isBlank()) return false;
-        return value.contains("특별시") || value.contains("광역시") || value.contains("특별자치")
-                || value.contains("경기도") || value.contains("강원") || value.contains("충청")
-                || value.contains("전라") || value.contains("경상") || value.contains("제주")
-                || value.contains("앞바다") || value.contains("먼바다") || value.contains("해역");
+    private String announcedAt(JsonNode item) {
+        return firstText(item, "tmFc", "announceTime", "announcedAt", "tm", "tmEf");
     }
 
-    private String flattenText(JsonNode item) {
-        StringBuilder sb = new StringBuilder();
+    private String statusText(JsonNode item) {
+        String text = firstText(item, "t6");
+        if (!text.isBlank()) return text;
+
         Iterator<Map.Entry<String, JsonNode>> fields = item.fields();
         while (fields.hasNext()) {
             JsonNode value = fields.next().getValue();
-            if (value.isValueNode()) {
-                String text = value.asText("").trim();
-                if (!text.isBlank()) sb.append(text).append(' ');
-            }
+            if (!value.isValueNode()) continue;
+            String candidate = value.asText("").replaceAll("\\s+", " ").trim();
+            if (STATUS_MARK.matcher(candidate).find()) return candidate;
         }
-        return sb.toString().replaceAll("\\s+", " ").trim();
+        return "";
     }
 
-    private List<String> splitRegions(String rawRegion) {
-        if (rawRegion == null || rawRegion.isBlank()) return List.of();
+    private void addStatusAlerts(String statusText, String announcedAt, Map<String, Map<String, Object>> dedup) {
+        String normalized = statusText.replaceAll("\\s+", " ").trim();
+
+        for (String line : STATUS_BULLET.split(normalized)) {
+            Matcher matcher = STATUS_LINE.matcher(line.trim());
+            if (!matcher.matches()) continue;
+
+            String type = matcher.group(1);
+            String level = matcher.group(2);
+
+            for (String zone : splitTopLevel(matcher.group(3))) {
+                String parent = parentRegion(zone.contains("(") ? zone.substring(0, zone.indexOf('(')).trim() : zone);
+
+                for (String regionName : expandZone(zone)) {
+                    Map<String, Object> alert = new LinkedHashMap<>();
+                    alert.put("region", regionName);
+                    alert.put("regionParent", parent);
+                    alert.put("type", type);
+                    alert.put("level", level);
+                    alert.put("title", regionName + " " + type + level);
+                    alert.put("announcedAt", announcedAt);
+
+                    dedup.putIfAbsent(regionName + "|" + type + "|" + level, alert);
+                }
+            }
+        }
+    }
+
+    // 괄호 밖의 쉼표로만 구역을 나눈다. 예: "경기도(안산, 화성), 서해5도" -> "경기도(안산, 화성)", "서해5도"
+    private List<String> splitTopLevel(String text) {
+        List<String> result = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int depth = 0;
+
+        for (char ch : text.toCharArray()) {
+            if (ch == '(') depth++;
+            else if (ch == ')' && depth > 0) depth--;
+
+            if (ch == ',' && depth == 0) {
+                addIfNotBlank(result, current.toString());
+                current.setLength(0);
+            } else {
+                current.append(ch);
+            }
+        }
+        addIfNotBlank(result, current.toString());
+        return result;
+    }
+
+    private void addIfNotBlank(List<String> list, String text) {
+        String value = text.trim();
+        if (!value.isBlank() && !list.contains(value)) list.add(value);
+    }
+
+    // "전북자치도(고창, 부안(위도면 제외))" -> "전북자치도 고창", "전북자치도 부안(위도면 제외)"
+    // 괄호 안이 '제외'로 끝나는 경우는 제외 구역을 뺀 하나의 구역이므로 그대로 둔다.
+    private List<String> expandZone(String zone) {
+        int open = zone.indexOf('(');
+        if (open <= 0 || !zone.endsWith(")") || !wrapsToEnd(zone, open)) return List.of(zone);
+
+        String head = zone.substring(0, open).trim();
+        String inner = zone.substring(open + 1, zone.length() - 1).trim();
+        if (inner.isBlank() || inner.endsWith("제외")) return List.of(zone);
 
         List<String> result = new ArrayList<>();
-        String[] parts = rawRegion.split("\\s*[,;/\\n]+\\s*");
-        for (String part : parts) {
-            String value = part == null ? "" : part.trim();
-            if (!value.isBlank() && !result.contains(value)) {
-                result.add(value);
-            }
+        for (String child : splitTopLevel(inner)) {
+            result.add(head + " " + child);
         }
         return result;
     }
 
-    private String buildTitle(String type, String level, String region, String rawText) {
-        String warning = (type + level).trim();
-        if (!warning.isBlank() && !region.isBlank()) return region + " " + warning;
-        if (!warning.isBlank()) return warning;
-        if (!rawText.isBlank()) return rawText.length() > 80 ? rawText.substring(0, 80) + "…" : rawText;
-        return "발효 중인 기상특보";
+    private boolean wrapsToEnd(String zone, int open) {
+        int depth = 0;
+        for (int i = open; i < zone.length(); i++) {
+            char ch = zone.charAt(i);
+            if (ch == '(') depth++;
+            else if (ch == ')') depth--;
+            if (depth == 0 && i < zone.length() - 1) return false;
+        }
+        return depth == 0;
     }
 
     private String parentRegion(String region) {

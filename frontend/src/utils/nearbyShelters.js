@@ -1,5 +1,5 @@
 import { authFetch } from "../api/client";
-import { SIDO_SHORT_NAME } from "./disasterRegion";
+import { buildRegionQueries } from "./disasterRegion";
 import { coordToRegion } from "./kakaoGeo";
 
 // 내 위치 기준 대피시설 조회 결과를 화면 사이에서 공유한다.
@@ -75,11 +75,8 @@ async function fetchShelters(lat, lng) {
   if (!sido) return { list: [], label: "", query: "", noRegion: true };
 
   const label = [sido, gu].filter(Boolean).join(" ");
-  const queries = [
-    label,
-    gu || null,
-    gu && SIDO_SHORT_NAME[sido] ? `${SIDO_SHORT_NAME[sido]} ${gu}` : null,
-  ].filter(Boolean);
+  const { regionQuery, regionFallback, regionShortFallback } = buildRegionQueries(sido, gu);
+  const queries = [regionQuery, regionFallback, regionShortFallback].filter(Boolean);
 
   let lastError = null;
   let answered = false;

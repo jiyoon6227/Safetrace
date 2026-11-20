@@ -48,6 +48,12 @@ public class EnvironmentController {
         return airQualityService.getAirQuality(sido);
     }
 
+    // 17개 시도 대기질 한 번에 조회 (공공정보 대시보드용)
+    @GetMapping("/air-quality/nationwide")
+    public Map<String, Map<String, Object>> getNationwideAirQuality() {
+        return airQualityService.getAllAirQuality();
+    }
+
     // 시/도명 기준 자외선지수 (기상청 생활기상지수)
     @GetMapping("/uv-index")
     public Map<String, Object> getUvIndex(@RequestParam String sido) {

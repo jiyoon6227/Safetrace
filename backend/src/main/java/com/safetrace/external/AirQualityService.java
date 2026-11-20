@@ -20,12 +20,20 @@ import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 한국환경공단_에어코리아_대기오염정보의 "시도별 실시간 측정정보 조회(getCtprvnRltmMesureDnsty)"를 호출한다.
@@ -41,9 +49,11 @@ public class AirQualityService {
     private static final String BASE_URL =
             "https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty";
 
+    private static final Duration EXTERNAL_TIMEOUT = Duration.ofSeconds(5);
+
     private final String serviceKey;
     private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
+            .connectTimeout(EXTERNAL_TIMEOUT)
             .build();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -133,7 +143,161 @@ public class AirQualityService {
         return fresh;
     }
 
-    private Map<String, Object> fetchFromExternalApi(String sidoFullName) {
+    // 전국 조회: 외부 API 동시 요청 수 / 실패 시 재시도 대기 / 실패한 시도의 재조회 금지 시간
+    private static final int NATIONWIDE_CONCURRENCY = 4;
+    private static final long NATIONWIDE_RETRY_DELAY_MILLIS = 700;
+    private final ReentrantLock nationwideLock = new ReentrantLock();
+    private final Map<String, Long> failedAtMillis = new ConcurrentHashMap<>();
+
+    // 전국 조회 전체 제한 시간 / 실패한 시도를 다시 외부 API로 조회하지 않는 시간 (테스트에서 줄여 쓰려고 패키지 공개)
+    Duration nationwideTimeout = Duration.ofSeconds(20);
+    Duration failureCooldown = Duration.ofMinutes(5);
+
+    /**
+     * 17개 시도 대기질을 한 번에 반환한다. 시도별 캐시(getAirQuality)를 그대로 쓰고,
+     * 전체 조회 시간은 nationwideTimeout 안으로 제한하며 외부 API 동시 요청은 4개로 제한한다.
+     * 실패한 시도는 남은 시간 안에 끝낼 수 있고 일부 시도만 실패했을 때만 한 번 재시도한다.
+     * 실패한 시도는 failureCooldown 동안 외부 API를 다시 부르지 않고 캐시 값을 쓰며,
+     * 만료된 캐시 값은 stale=true로 표시한다. 다른 요청이 조회 중이면 제한 시간의 절반까지만
+     * 기다렸다가 캐시 값만 반환한다.
+     */
+    public Map<String, Map<String, Object>> getAllAirQuality() {
+        long deadlineNanos = System.nanoTime() + nationwideTimeout.toNanos();
+        if (!acquireNationwideLock()) {
+            log.warn("[AirQuality] 전국 조회 대기 시간 초과, 캐시 값만 반환");
+            return readCachedOnly();
+        }
+        try {
+            Map<String, Map<String, Object>> result = new LinkedHashMap<>();
+            Set<String> failedNow = ConcurrentHashMap.newKeySet();
+            fetchSidos(ALL_SIDO_FULL_NAMES, deadlineNanos, failedNow, result);
+
+            List<String> failed = ALL_SIDO_FULL_NAMES.stream().filter(failedNow::contains).toList();
+            if (shouldRetry(failed.size(), deadlineNanos)) {
+                try {
+                    Thread.sleep(NATIONWIDE_RETRY_DELAY_MILLIS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return result;
+                }
+                fetchSidos(failed, deadlineNanos, failedNow, result);
+            }
+            return result;
+        } finally {
+            nationwideLock.unlock();
+        }
+    }
+
+    private boolean acquireNationwideLock() {
+        try {
+            return nationwideLock.tryLock(nationwideTimeout.toNanos() / 2, TimeUnit.NANOSECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    // 대부분 실패했으면 외부 API 장애로 보고 재시도하지 않고, 남은 시간 안에 끝날 수 없어도 재시도하지 않는다.
+    private boolean shouldRetry(int failedCount, long deadlineNanos) {
+        if (failedCount == 0 || failedCount * 2 > ALL_SIDO_FULL_NAMES.size()) {
+            return false;
+        }
+        int rounds = (failedCount + NATIONWIDE_CONCURRENCY - 1) / NATIONWIDE_CONCURRENCY;
+        long expectedNanos = rounds * EXTERNAL_TIMEOUT.toNanos() + TimeUnit.MILLISECONDS.toNanos(NATIONWIDE_RETRY_DELAY_MILLIS);
+        return expectedNanos <= deadlineNanos - System.nanoTime();
+    }
+
+    private void fetchSidos(List<String> sidos, long deadlineNanos, Set<String> failedNow, Map<String, Map<String, Object>> result) {
+        long remainingNanos = deadlineNanos - System.nanoTime();
+        if (remainingNanos <= 0) {
+            sidos.forEach(sido -> result.put(sido, cachedOrFailure(sido)));
+            return;
+        }
+
+        ExecutorService executor = Executors.newFixedThreadPool(NATIONWIDE_CONCURRENCY);
+        try {
+            List<Callable<Map<String, Object>>> tasks = sidos.stream()
+                    .map(sido -> (Callable<Map<String, Object>>) () -> loadSido(sido, failedNow))
+                    .toList();
+            // 제한 시간이 지나면 끝나지 않은 조회는 취소(중단)되어 백그라운드에 남지 않는다.
+            List<Future<Map<String, Object>>> futures = executor.invokeAll(tasks, remainingNanos, TimeUnit.NANOSECONDS);
+            for (int i = 0; i < sidos.size(); i++) {
+                String sido = sidos.get(i);
+                try {
+                    result.put(sido, futures.get(i).get());
+                } catch (CancellationException e) {
+                    log.warn("[AirQuality] 전국 조회 제한 시간 초과: sido={}", sido);
+                    markFailed(sido, failedNow);
+                    result.put(sido, cachedOrFailure(sido));
+                } catch (ExecutionException e) {
+                    log.warn("[AirQuality] 전국 조회 중 실패: sido={}, 원인={}", sido, LogSanitizer.describe(e.getCause()));
+                    markFailed(sido, failedNow);
+                    result.put(sido, cachedOrFailure(sido));
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            sidos.forEach(sido -> result.putIfAbsent(sido, cachedOrFailure(sido)));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    // 캐시가 유효하면 그대로, 최근에 실패한 시도는 외부 API를 부르지 않고 캐시 값을 쓴다.
+    // 이번 요청에서 이미 실패한 시도(재시도)는 쿨다운과 상관없이 한 번 더 조회한다.
+    private Map<String, Object> loadSido(String sido, Set<String> failedNow) {
+        CacheEntry cached = cache.get(sido);
+        if (cached != null && cached.isFresh()) {
+            return cached.data();
+        }
+        if (!failedNow.contains(sido) && isInFailureCooldown(sido)) {
+            return cachedOrFailure(sido);
+        }
+
+        Map<String, Object> data = getAirQuality(sido);
+        CacheEntry latest = cache.get(sido);
+        if (latest != null && latest.isFresh()) {
+            return data;
+        }
+        markFailed(sido, failedNow);
+        return isAvailable(data) ? cachedOrFailure(sido) : data;
+    }
+
+    private void markFailed(String sido, Set<String> failedNow) {
+        failedAtMillis.put(sido, System.currentTimeMillis());
+        failedNow.add(sido);
+    }
+
+    private boolean isInFailureCooldown(String sido) {
+        Long failedAt = failedAtMillis.get(sido);
+        return failedAt != null && System.currentTimeMillis() - failedAt < failureCooldown.toMillis();
+    }
+
+    // 캐시 값만 사용: 만료된 값은 stale=true로 표시하고, 캐시가 없으면 조회 불가로 응답
+    private Map<String, Object> cachedOrFailure(String sido) {
+        CacheEntry cached = cache.get(sido);
+        if (cached == null) {
+            return Map.of("available", false, "message", "대기질 정보를 가져오지 못했습니다.");
+        }
+        if (cached.isFresh()) {
+            return cached.data();
+        }
+        Map<String, Object> stale = new HashMap<>(cached.data());
+        stale.put("stale", true);
+        return stale;
+    }
+
+    private Map<String, Map<String, Object>> readCachedOnly() {
+        Map<String, Map<String, Object>> result = new LinkedHashMap<>();
+        ALL_SIDO_FULL_NAMES.forEach(sido -> result.put(sido, cachedOrFailure(sido)));
+        return result;
+    }
+
+    private boolean isAvailable(Map<String, Object> data) {
+        return data != null && Boolean.TRUE.equals(data.get("available"));
+    }
+
+    Map<String, Object> fetchFromExternalApi(String sidoFullName) {
         String sido = toSidoShortName(sidoFullName);
         if (sido == null) {
             return Map.of("available", false, "message", "대기질 조회를 지원하지 않는 지역입니다: " + sidoFullName);
@@ -146,7 +310,7 @@ public class AirQualityService {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
-                    .timeout(Duration.ofSeconds(5))
+                    .timeout(EXTERNAL_TIMEOUT)
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));

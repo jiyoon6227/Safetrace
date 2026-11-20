@@ -10,7 +10,7 @@ import { WEATHER_LOCATION_CACHE_KEY } from "./pages/Main/constants";
 import { reportStateOf } from "./utils/reportState";
 import { coordToAddress, coordToRegion } from "./utils/kakaoGeo";
 import { readWeatherCachedLocation, pickPriorityIncident } from "./pages/Main/utils";
-import { distanceMeters } from "./utils/nearbyShelters";
+import { distanceMeters, formatDistance } from "./utils/nearbyShelters";
 import MainHeader from "./pages/Main/MainHeader";
 import MainHero from "./pages/Main/MainHero";
 import QuickMenu from "./pages/Main/QuickMenu";
@@ -472,13 +472,6 @@ export default function MainPage() {
         (Number(a.distanceM) || Number.MAX_SAFE_INTEGER) -
         (Number(b.distanceM) || Number.MAX_SAFE_INTEGER)
     );
-
-  const formatShelterDistance = (distanceM) => {
-    const value = Number(distanceM);
-    if (!Number.isFinite(value)) return "거리 정보 없음";
-    if (value >= 1000) return `${(value / 1000).toFixed(1)}km`;
-    return `${Math.round(value)}m`;
-  };
 
   const openShelterPanel = () => {
     const willOpen = !shelterPanelOpen;
@@ -1154,7 +1147,7 @@ export default function MainPage() {
           setQuickShelterRefreshKey={setQuickShelterRefreshKey}
           requestWeatherLocation={requestWeatherLocation}
           filteredQuickShelters={filteredQuickShelters}
-          formatShelterDistance={formatShelterDistance}
+          formatShelterDistance={formatDistance}
           goTo={goTo}
         />
       )}
