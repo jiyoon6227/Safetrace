@@ -26,20 +26,9 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /**
- * 사건 종료와 자원 요청의 연동.
- *
- * 규칙 (기획 문서 "사건 종료와의 관계"와 같다)
- *  - 종료는 출고 전 요청(REQUESTED·APPROVED)만 정리한다. 출고된 자원(DISPATCHED)은 건드리지 않고 미반납으로 남는다.
- *  - 담당자가 화면에서 확인한 요청 목록(cancelRequestIds) 안에 모든 출고 전 요청이 들어 있어야 한다.
- *    하나라도 빠졌으면(그 사이 새 요청이 생긴 경우 포함) 409로 전체를 되돌린다.
- *  - 승인된 요청은 예약했던 가용 재고를 되돌리고, 요청 이력에 CANCEL_BY_CLOSE, 재고 이력에 RELEASE를 남긴다.
- *
- * 잠금 순서: 사건 행 → 출고 전 요청 전부(번호 오름차순) → 취소할 승인 건의 재고 행(STOCK_ID 오름차순, 중복 제거).
- * 요청을 하나 취소할 때마다 그 재고를 잡지 않고, 요청을 모두 처리한 뒤 재고를 번호순으로 잡는다.
- * 코드상 순서를 이렇게 정했으나 실제 Oracle에서의 잠금·재평가·동시성은 Oracle 통합 테스트(OracleConcurrencyTest, OracleRollbackTest)에서 확인한다.
- *
- * cancelOpenRequestsForClose는 IncidentService.changeStatus의 트랜잭션 안에서 불리고(같은 트랜잭션에 참여),
- * 사건을 CLOSED로 바꾸는 UPDATE는 호출한 쪽이 이어서 한다.
+ * 사건 종료 시 출고 전 요청(REQUESTED·APPROVED)을 함께 취소한다.
+ * 이미 출고된 자원은 그대로 두고 반납·손실 처리를 이어간다.
+ * 담당자가 확인한 목록과 서버의 목록이 다르면 409로 되돌린다.
  */
 @Service
 @RequiredArgsConstructor

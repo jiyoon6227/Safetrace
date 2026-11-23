@@ -23,26 +23,8 @@ import java.util.Set;
 
 /**
  * 출고·도착 확인·반납 신청·반납 확인·손실 확정.
- *
- * 규칙 (기획 문서 "상태 전이" 표와 같다)
- *  - 출고(ADMIN): APPROVED → DISPATCHED(반납형) 또는 COMPLETED(소모품). 반납형은 재고 숫자가 그대로이고(승인 때 이미 빠졌다),
- *    소모품은 총보유량이 요청 수량만큼 줄어든다(가용은 그대로).
- *  - 도착 확인(요청자 또는 ADMIN): 출고 이후 요청에 한 번만 도착 시각을 남긴다. 상태와 재고는 바뀌지 않는다.
- *  - 반납 신청(요청자 STAFF): 실제로 돌려보낼 수량을 신청 행으로 남긴다. 재고도 요청의 누적 반납도 바뀌지 않는다.
- *  - 반납 확인(ADMIN): 신청 PENDING → CONFIRMED. 그 수량만큼 누적 반납과 가용이 늘고, 남은 수량이 0이 되면 SETTLED.
- *  - 반납 신청 반려(ADMIN): PENDING → REJECTED. 사유 필수, 재고 변화 없음.
- *  - 손실 확정(ADMIN): 분실·파손으로 확인한 수량만 누적 손실과 총보유량에서 뺀다. 아직 돌아오지 않은 수량은 손실로 보지 않는다.
- *
- * 재고 정합성
- *  - 모든 메서드는 맨 처음에 요청 행을 잠그고(필요하면 그 다음에 재고 행) 현재 값을 다시 읽는다.
- *    잠금 순서는 요청 → 재고이고 반납 신청 행은 요청 행을 잠근 뒤에만 바꾼다. 사건 단계는 건너뛴다.
- *  - 상태·수량은 조건부 UPDATE이고, 0행이면 예외로 같은 트랜잭션의 변경을 모두 되돌린다.
- *    같은 반납 신청을 두 번 확인하면 두 번째는 신청 행 UPDATE(AND STATUS = 'PENDING')가 0행이라 409다.
- *    같은 손실 확정이 두 번 와도 expectedProcessedQty가 달라져 두 번째는 409다.
- *  - 요청 상태·누적 수량, 재고, 요청 이력, 재고 이력은 한 트랜잭션이다. 이력 INSERT가 실패하면 모두 롤백된다.
- *  - 잠금 대기가 3초를 넘으면 락 예외가 나고 GlobalExceptionHandler가 409(LOCK_CONFLICT)로 바꾼다.
- *  - 출고 이후(DISPATCHED)의 반납·손실 처리는 사건이 종료돼도 계속된다. 반면 출고는 종료된 사건이면 거절한다.
- *    사건 종료 처리가 출고 전 요청을 정리하기 전까지의 보조 방어선이다 (본 방어선은 사건 종료 처리).
+ * 소모품은 출고 시 바로 완료되고, 반납형은 반납이 모두 처리되면 SETTLED가 된다.
+ * 사건이 종료돼도 반납·손실 처리는 할 수 있고, 출고는 막는다.
  */
 @Service
 @RequiredArgsConstructor
@@ -68,7 +50,7 @@ public class ResourceFulfillmentService {
 
         ResourceRequest request = lockExistingRequest(requestId);
         requireStatus(request, "APPROVED", "승인된 요청만 출고할 수 있습니다. 이미 처리됐거나 취소된 요청입니다.");
-        // 사건 종료 처리가 출고 전 요청을 정리하기 전까지의 보조 방어선. 요청 행을 잠근 뒤에 읽는다.
+        // 종료된 사건이면 출고 불가
         if ("CLOSED".equals(approvalMapper.findIncidentStatus(request.getIncidentId()))) {
             throw new IllegalStateException("종료된 사건의 요청은 출고할 수 없습니다.");
         }

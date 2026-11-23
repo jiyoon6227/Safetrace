@@ -25,7 +25,7 @@
           AND STATUS = #{expectedStatus}
     </update>
 
-    <!-- 가용이 모자라거나 사용 중지면 0행. CK_SF_RES_STOCK_AVAILABLE(가용 0 이상)이 마지막 방어선 -->
+    <!-- 가용이 모자라거나 사용 중지면 0행 -->
     <update id="reserveStock">
         UPDATE SF_RESOURCE_STOCK
         SET AVAILABLE_QTY = AVAILABLE_QTY - #{quantity},
@@ -35,7 +35,7 @@
           AND AVAILABLE_QTY &gt;= #{quantity}
     </update>
 
-    <!-- 복구 후 가용이 총보유량을 넘으면 0행 (같은 취소가 두 번 반영되는 것을 막는 마지막 방어선) -->
+    <!-- 복구 후 가용이 총보유량을 넘으면 0행 -->
     <update id="releaseStock">
         UPDATE SF_RESOURCE_STOCK
         SET AVAILABLE_QTY = AVAILABLE_QTY + #{quantity},

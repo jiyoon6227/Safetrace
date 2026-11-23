@@ -251,7 +251,7 @@ ADMIN 출고
 - `@EnableMethodSecurity` 기반 STAFF·ADMIN 전용 API 접근제어
 - 자원 처리 시 역할을 토큰이 아닌 DB의 현재 값으로 재확인 (탈퇴·권한 변경 직후의 오래된 토큰 방어)
 - REST API 무효 인증 요청에 HTTP 401 반환
-- WebSocket Handshake 단계 JWT 검증
+- JWT 인증 후 발급받은 1회용 티켓(30초 유효)으로 WebSocket 연결 검증
 - Local / Production 허용 Origin 분리
 
 ### 데이터 정합성
